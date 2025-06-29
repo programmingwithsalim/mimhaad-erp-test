@@ -3,8 +3,8 @@ import type { Metadata } from "next"
 import { DashboardLayout } from "@/components/dashboard-layout"
 
 export const metadata: Metadata = {
-  title: "Dashboard | FinTech Admin",
-  description: "FinTech Admin Dashboard",
+  title: "Dashboard | Mimhaad Finance",
+  description: "FinTech Admin Financial Solution",
 }
 
 export default function ProtectedRouteLayout({
