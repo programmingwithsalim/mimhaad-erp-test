@@ -57,7 +57,7 @@ export default function AllTransactionsPage() {
   const [selectedTransaction, setSelectedTransaction] = useState(null)
 
   const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
+    switch (status?.toLowerCase()) {
       case "completed":
       case "successful":
       case "success":

@@ -1,14 +1,14 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const page = Number.parseInt(searchParams.get("page") || "1")
-    const limit = Number.parseInt(searchParams.get("limit") || "10")
-    const offset = (page - 1) * limit
+    const { searchParams } = new URL(request.url);
+    const page = Number.parseInt(searchParams.get("page") || "1");
+    const limit = Number.parseInt(searchParams.get("limit") || "10");
+    const offset = (page - 1) * limit;
 
     // Get journal entries from all transaction tables with correct column names
     const journalEntries = await sql`
@@ -199,23 +199,23 @@ export async function GET(request: NextRequest) {
             )
           WHEN at.source_module = 'expenses' THEN 
             jsonb_build_array(
-              jsonb_build_object('account', '5001', 'account_name', 'Operating Expenses', 'debit', at.amount, 'credit', 0),
+              jsonb_build_object('account', '5001', 'account_name', 'Expenses', 'debit', at.amount, 'credit', 0),
               jsonb_build_object('account', '1001', 'account_name', 'Cash in Till', 'debit', 0, 'credit', at.amount)
             )
           ELSE 
             jsonb_build_array(
               jsonb_build_object('account', '1001', 'account_name', 'Cash in Till', 'debit', at.amount, 'credit', 0),
-              jsonb_build_object('account', '4000', 'account_name', 'General Revenue', 'debit', 0, 'credit', at.amount)
+              jsonb_build_object('account', '9999', 'account_name', 'Other Revenue', 'debit', 0, 'credit', at.amount)
             )
         END as gl_entries
       FROM all_transactions at
-      LEFT JOIN branches b ON at.branch_id = b.id::text
+      LEFT JOIN branches b ON at.branch_id = b.id
       ORDER BY at.transaction_date DESC, at.source_id DESC
       LIMIT ${limit} OFFSET ${offset}
-    `
+    `;
 
-    // Get total count
-    const countResult = await sql`
+    // Get total count for pagination
+    const totalCount = await sql`
       WITH all_transactions AS (
         SELECT id FROM momo_transactions WHERE status = 'completed'
         UNION ALL
@@ -231,32 +231,26 @@ export async function GET(request: NextRequest) {
         UNION ALL
         SELECT id FROM expenses WHERE status IN ('approved', 'paid')
       )
-      SELECT COUNT(*) as total FROM all_transactions
-    `
+      SELECT COUNT(*) as total
+      FROM all_transactions
+    `;
 
-    const total = Number.parseInt(countResult[0]?.total || "0")
+    const total = totalCount[0]?.total || 0;
 
     return NextResponse.json({
-      success: true,
-      data: {
-        entries: journalEntries,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
+      data: journalEntries,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
       },
-    })
+    });
   } catch (error) {
-    console.error("Error fetching journal entries:", error)
+    console.error("Error fetching journal entries:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch journal entries",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
+      { error: "Failed to fetch journal entries" },
+      { status: 500 }
+    );
   }
 }

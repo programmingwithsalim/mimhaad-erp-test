@@ -1,19 +1,26 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const accountId = searchParams.get("accountId")
-    const dateFrom = searchParams.get("dateFrom")
-    const dateTo = searchParams.get("dateTo")
-    const transactionType = searchParams.get("transactionType")
-    const limit = Number.parseInt(searchParams.get("limit") || "50")
-    const offset = Number.parseInt(searchParams.get("offset") || "0")
+    const { searchParams } = request.nextUrl;
+    const accountId = searchParams.get("accountId");
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
+    const transactionType = searchParams.get("transactionType");
+    const limit = Number.parseInt(searchParams.get("limit") || "50");
+    const offset = Number.parseInt(searchParams.get("offset") || "0");
 
-    console.log("API received filters:", { accountId, dateFrom, dateTo, transactionType, limit, offset })
+    console.log("API received filters:", {
+      accountId,
+      dateFrom,
+      dateTo,
+      transactionType,
+      limit,
+      offset,
+    });
 
     // Check if GL tables exist
     const glTableCheck = await sql`
@@ -22,7 +29,7 @@ export async function GET(request: Request) {
         WHERE table_schema = 'public' 
         AND table_name = 'gl_transactions'
       );
-    `
+    `;
 
     if (!glTableCheck[0].exists) {
       return NextResponse.json({
@@ -30,7 +37,8 @@ export async function GET(request: Request) {
           {
             id: "sample-1",
             date: new Date().toISOString().split("T")[0],
-            description: "GL System not initialized - Create some manual journal entries to see data here",
+            description:
+              "GL System not initialized - Create some manual journal entries to see data here",
             source_module: "system",
             source_transaction_type: "info",
             debit: 0,
@@ -44,32 +52,36 @@ export async function GET(request: Request) {
         ],
         total: 1,
         hasMore: false,
-        message: "GL tables not found. Please create some manual journal entries first.",
-      })
+        message:
+          "GL tables not found. Please create some manual journal entries first.",
+      });
     }
 
     // Build WHERE conditions dynamically
-    const whereConditions = []
+    const whereConditions = [];
 
     if (accountId && accountId !== "all") {
-      whereConditions.push(`gte.account_id = '${accountId}'`)
+      whereConditions.push(`gte.account_id = '${accountId}'`);
     }
 
     if (dateFrom) {
-      whereConditions.push(`gt.date >= '${dateFrom}'`)
+      whereConditions.push(`gt.date >= '${dateFrom}'`);
     }
 
     if (dateTo) {
-      whereConditions.push(`gt.date <= '${dateTo}'`)
+      whereConditions.push(`gt.date <= '${dateTo}'`);
     }
 
     if (transactionType && transactionType !== "all") {
-      whereConditions.push(`gt.source_transaction_type = '${transactionType}'`)
+      whereConditions.push(`gt.source_transaction_type = '${transactionType}'`);
     }
 
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : ""
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
 
-    console.log("WHERE clause:", whereClause)
+    console.log("WHERE clause:", whereClause);
 
     // Get transactions with filters
     const transactions = await sql`
@@ -96,7 +108,7 @@ export async function GET(request: Request) {
       LIMIT ${limit}
       OFFSET ${offset}
     `.catch(async (error) => {
-      console.error("Query error, trying simpler approach:", error)
+      console.error("Query error, trying simpler approach:", error);
 
       // Fallback to simpler query without complex WHERE
       return await sql`
@@ -121,8 +133,8 @@ export async function GET(request: Request) {
         ORDER BY gt.date DESC, gt.created_at DESC
         LIMIT ${limit}
         OFFSET ${offset}
-      `
-    })
+      `;
+    });
 
     // Get count
     const countResult = await sql`
@@ -136,13 +148,17 @@ export async function GET(request: Request) {
         SELECT COUNT(*) as total
         FROM gl_transactions gt
         JOIN gl_journal_entries gte ON gt.id = gte.transaction_id
-      `
-    })
+      `;
+    });
 
-    const total = Number.parseInt(countResult[0]?.total || "0")
-    const hasMore = offset + limit < total
+    const total = Number.parseInt(countResult[0]?.total || "0");
+    const hasMore = offset + limit < total;
 
-    console.log("Query results:", { transactionCount: transactions.length, total, hasMore })
+    console.log("Query results:", {
+      transactionCount: transactions.length,
+      total,
+      hasMore,
+    });
 
     // If no transactions found, show helpful message
     if (!Array.isArray(transactions) || transactions.length === 0) {
@@ -167,23 +183,25 @@ export async function GET(request: Request) {
         total: 1,
         hasMore: false,
         message: "No transactions found with current filters.",
-      })
+      });
     }
 
     return NextResponse.json({
       transactions: Array.isArray(transactions) ? transactions : [],
       total,
       hasMore,
-    })
+    });
   } catch (error) {
-    console.error("Error fetching transaction history:", error)
+    console.error("Error fetching transaction history:", error);
 
     return NextResponse.json({
       transactions: [
         {
           id: "error-1",
           date: new Date().toISOString().split("T")[0],
-          description: `Database error: ${error instanceof Error ? error.message : "Unknown error"}`,
+          description: `Database error: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`,
           source_module: "system",
           source_transaction_type: "error",
           debit: 0,
@@ -198,6 +216,6 @@ export async function GET(request: Request) {
       total: 1,
       hasMore: false,
       error: error instanceof Error ? error.message : "Unknown error",
-    })
+    });
   }
 }

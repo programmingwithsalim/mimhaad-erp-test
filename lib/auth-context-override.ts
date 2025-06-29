@@ -5,7 +5,7 @@ import { useAuth } from "@/lib/auth-context"
 
 // This is a development-only hook to override the user's role for testing
 export function useAuthOverride() {
-  const { user, setUser } = useAuth()
+  const { user, updateUser } = useAuth()
 
   useEffect(() => {
     // Only in development
@@ -18,9 +18,9 @@ export function useAuthOverride() {
     // Override the user's role for testing
     if (user.role !== testRole) {
       console.log(`[DEV] Overriding user role: ${user.role} -> ${testRole}`)
-      setUser({ ...user, role: testRole })
+      updateUser({ ...user, role: testRole })
     }
-  }, [user, setUser])
+  }, [user, updateUser])
 
   return null
 }

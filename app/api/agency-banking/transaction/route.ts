@@ -106,7 +106,7 @@ export async function POST(request: Request) {
     await ensureSchemaExists()
 
     // Generate transaction ID
-    const transactionId = `abt-${uuidv4().substring(0, 8)}`
+    const transactionId = `${uuidv4().substring(0, 8)}`
     const now = new Date().toISOString()
 
     // Calculate cash till and float effects
