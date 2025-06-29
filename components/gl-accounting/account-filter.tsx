@@ -1,41 +1,122 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { Check, ChevronsUpDown } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { useState, useEffect } from "react";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Badge } from "@/components/ui/badge";
 
-// Mock data for accounts
-const accounts = [
-  { value: "1001", label: "1001 - Cash in Bank - Operations" },
-  { value: "1002", label: "1002 - Cash in Bank - Payroll" },
-  { value: "1003", label: "1003 - Petty Cash" },
-  { value: "1200", label: "1200 - Accounts Receivable" },
-  { value: "2001", label: "2001 - Accounts Payable" },
-  { value: "3001", label: "3001 - Share Capital" },
-  { value: "4001", label: "4001 - MoMo Commission Revenue" },
-  { value: "4002", label: "4002 - E-Zwich Commission Revenue" },
-  { value: "5001", label: "5001 - Salaries Expense" },
-  { value: "5002", label: "5002 - Rent Expense" },
-]
-
-interface AccountFilterProps {
-  selectedAccount: string | null
-  onAccountChange: (value: string | null) => void
+interface GLAccount {
+  id: string;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  balance?: number;
+  is_active: boolean;
 }
 
-export function AccountFilter({ selectedAccount, onAccountChange }: AccountFilterProps) {
-  const [open, setOpen] = React.useState(false)
+interface AccountFilterProps {
+  selectedAccount: string | null;
+  onAccountChange: (accountId: string | null) => void;
+}
 
-  const handleSelect = (value: string) => {
-    if (value === "all") {
-      onAccountChange(null)
-    } else {
-      onAccountChange(value === selectedAccount ? null : value)
+export function AccountFilter({
+  selectedAccount,
+  onAccountChange,
+}: AccountFilterProps) {
+  const [open, setOpen] = useState(false);
+  const [accounts, setAccounts] = useState<GLAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchAccounts();
+  }, []);
+
+  const fetchAccounts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch("/api/gl/accounts", {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch accounts: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      setAccounts(data.accounts || []);
+    } catch (error) {
+      console.error("Error fetching GL accounts:", error);
+      setError(
+        error instanceof Error ? error.message : "Failed to load accounts"
+      );
+    } finally {
+      setLoading(false);
     }
-    setOpen(false)
+  };
+
+  const selectedAccountData = accounts.find(
+    (account) => account.id === selectedAccount
+  );
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-GH", {
+      style: "currency",
+      currency: "GHS",
+      minimumFractionDigits: 2,
+    }).format(amount || 0);
+  };
+
+  const getAccountTypeColor = (type: string) => {
+    switch (type?.toLowerCase()) {
+      case "asset":
+        return "bg-green-100 text-green-800";
+      case "liability":
+        return "bg-red-100 text-red-800";
+      case "equity":
+        return "bg-blue-100 text-blue-800";
+      case "revenue":
+        return "bg-purple-100 text-purple-800";
+      case "expense":
+        return "bg-orange-100 text-orange-800";
+      default:
+        return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-10 px-3 border rounded-md">
+        <div className="text-sm text-muted-foreground">Loading accounts...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-10 px-3 border rounded-md">
+        <div className="text-sm text-red-600">Error loading accounts</div>
+      </div>
+    );
   }
 
   return (
@@ -45,29 +126,81 @@ export function AccountFilter({ selectedAccount, onAccountChange }: AccountFilte
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className="w-full justify-between"
-          onClick={() => setOpen(!open)}
+          className="w-full justify-between h-10"
         >
-          {selectedAccount ? accounts.find((account) => account.value === selectedAccount)?.label : "Select Account"}
+          {selectedAccount ? (
+            <div className="flex items-center gap-2 truncate">
+              <span className="font-mono text-xs">
+                {selectedAccountData?.account_code}
+              </span>
+              <span className="truncate">
+                {selectedAccountData?.account_name}
+              </span>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "text-xs",
+                  getAccountTypeColor(selectedAccountData?.account_type || "")
+                )}
+              >
+                {selectedAccountData?.account_type}
+              </Badge>
+            </div>
+          ) : (
+            "Select account..."
+          )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0">
+      <PopoverContent className="w-full p-0" align="start">
         <Command>
           <CommandInput placeholder="Search accounts..." />
           <CommandList>
             <CommandEmpty>No account found.</CommandEmpty>
-            <CommandGroup className="max-h-[300px] overflow-y-auto">
-              <CommandItem key="all" value="all" onSelect={() => handleSelect("all")}>
-                <Check className={cn("mr-2 h-4 w-4", !selectedAccount ? "opacity-100" : "opacity-0")} />
-                All Accounts
-              </CommandItem>
+            <CommandGroup>
               {accounts.map((account) => (
-                <CommandItem key={account.value} value={account.value} onSelect={() => handleSelect(account.value)}>
+                <CommandItem
+                  key={account.id}
+                  value={`${account.account_code} ${account.account_name} ${account.account_type}`}
+                  onSelect={() => {
+                    onAccountChange(
+                      account.id === selectedAccount ? null : account.id
+                    );
+                    setOpen(false);
+                  }}
+                >
                   <Check
-                    className={cn("mr-2 h-4 w-4", selectedAccount === account.value ? "opacity-100" : "opacity-0")}
+                    className={cn(
+                      "mr-2 h-4 w-4",
+                      selectedAccount === account.id
+                        ? "opacity-100"
+                        : "opacity-0"
+                    )}
                   />
-                  {account.label}
+                  <div className="flex items-center justify-between w-full">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs">
+                        {account.account_code}
+                      </span>
+                      <span className="truncate">{account.account_name}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          "text-xs",
+                          getAccountTypeColor(account.account_type)
+                        )}
+                      >
+                        {account.account_type}
+                      </Badge>
+                      {account.balance !== undefined && (
+                        <span className="text-xs text-muted-foreground">
+                          {formatCurrency(account.balance)}
+                        </span>
+                      )}
+                    </div>
+                  </div>
                 </CommandItem>
               ))}
             </CommandGroup>
@@ -75,5 +208,5 @@ export function AccountFilter({ selectedAccount, onAccountChange }: AccountFilte
         </Command>
       </PopoverContent>
     </Popover>
-  )
+  );
 }

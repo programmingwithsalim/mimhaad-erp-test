@@ -17,10 +17,12 @@ export async function GET() {
         status,
         created_at as "createdAt"
       FROM users 
-      WHERE role IN ('admin', 'manager', 'supervisor')
+      WHERE role IN ('Manager')
       AND status = 'active'
       ORDER BY role, first_name
     `
+
+    console.log("Managers data received:", managers)  
 
     return NextResponse.json({
       success: true,

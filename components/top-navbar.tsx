@@ -1,14 +1,30 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useRef } from "react"
-import { useTheme } from "next-themes"
-import { useRouter } from "next/navigation"
-import { Bell, User, LogOut, Settings, Maximize, Minimize, Sun, Moon, Building } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Badge } from "@/components/ui/badge"
-import { useAuth } from "@/lib/auth-context"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useState, useEffect, useRef } from "react";
+import { useTheme } from "next-themes";
+import { useRouter } from "next/navigation";
+import {
+  Bell,
+  User,
+  LogOut,
+  Settings,
+  Maximize,
+  Minimize,
+  Sun,
+  Moon,
+  Building,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/lib/auth-context";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Mock notification data
 const mockNotifications = [
@@ -44,111 +60,119 @@ const mockNotifications = [
     read: false,
     type: "transaction",
   },
-]
+];
 
 export function TopNavbar() {
-  const { theme, setTheme } = useTheme()
-  const router = useRouter()
-  const { user, logout, updateUser } = useAuth()
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const [mounted, setMounted] = useState(false)
-  const [notificationOpen, setNotificationOpen] = useState(false)
-  const notificationRef = useRef<HTMLDivElement>(null)
-  const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const userMenuRef = useRef<HTMLDivElement>(null)
+  const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const { user, logout, updateUser } = useAuth();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const notificationRef = useRef<HTMLDivElement>(null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
 
-  const [showSwitcher, setShowSwitcher] = useState(false)
-  const [tempRole, setTempRole] = useState(user?.role || "")
-  const [tempBranch, setTempBranch] = useState(user?.branchId || "")
+  const [showSwitcher, setShowSwitcher] = useState(false);
+  const [tempRole, setTempRole] = useState(user?.role || "");
+  const [tempBranch, setTempBranch] = useState(user?.branchId || "");
 
   // Count unread notifications
-  const unreadCount = mockNotifications.filter((notification) => !notification.read).length
+  const unreadCount = mockNotifications.filter(
+    (notification) => !notification.read
+  ).length;
 
   // Format date
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
+    const date = new Date(dateString);
     return new Intl.DateTimeFormat("en-GB", {
       day: "numeric",
       month: "short",
       hour: "2-digit",
       minute: "2-digit",
-    }).format(date)
-  }
+    }).format(date);
+  };
 
   // Handle theme toggle
   const handleThemeToggle = () => {
-    setTheme(theme === "dark" ? "light" : "dark")
-  }
+    setTheme(theme === "dark" ? "light" : "dark");
+  };
 
   // Handle fullscreen toggle
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().catch((e) => {
-        console.error(`Error attempting to enable fullscreen: ${e.message}`)
-      })
-      setIsFullscreen(true)
+        console.error(`Error attempting to enable fullscreen: ${e.message}`);
+      });
+      setIsFullscreen(true);
     } else {
       if (document.exitFullscreen) {
-        document.exitFullscreen()
-        setIsFullscreen(false)
+        document.exitFullscreen();
+        setIsFullscreen(false);
       }
     }
-  }
+  };
 
   // Handle logout
   const handleLogout = async () => {
-    await logout()
-  }
+    await logout();
+  };
 
   // Handle profile click
   const handleProfileClick = () => {
-    router.push("/profile")
-    setUserMenuOpen(false)
-  }
+    router.push("/profile");
+    setUserMenuOpen(false);
+  };
 
   // Handle notification view all click
   const handleViewAllNotifications = () => {
-    router.push("/profile?tab=notifications")
-    setNotificationOpen(false)
-  }
+    router.push("/profile?tab=notifications");
+    setNotificationOpen(false);
+  };
 
   // Close notification dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (notificationRef.current && !notificationRef.current.contains(event.target as Node)) {
-        setNotificationOpen(false)
+      if (
+        notificationRef.current &&
+        !notificationRef.current.contains(event.target as Node)
+      ) {
+        setNotificationOpen(false);
       }
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setUserMenuOpen(false)
+      if (
+        userMenuRef.current &&
+        !userMenuRef.current.contains(event.target as Node)
+      ) {
+        setUserMenuOpen(false);
       }
-    }
+    };
 
-    document.addEventListener("mousedown", handleClickOutside)
+    document.addEventListener("mousedown", handleClickOutside);
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside)
-    }
-  }, [])
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   // Check for fullscreen change
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
-    }
+      setIsFullscreen(!!document.fullscreenElement);
+    };
 
-    document.addEventListener("fullscreenchange", handleFullscreenChange)
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
     return () => {
-      document.removeEventListener("fullscreenchange", handleFullscreenChange)
-    }
-  }, [])
+      document.removeEventListener("fullscreenchange", handleFullscreenChange);
+    };
+  }, []);
 
   // Set mounted state to true after component mounts and set default theme to system
   useEffect(() => {
-    setMounted(true)
+    setMounted(true);
     // Set default theme to system if not already set
     if (!theme) {
-      setTheme("system")
+      setTheme("system");
     }
-  }, [theme, setTheme])
+  }, [theme, setTheme]);
 
   // Don't render theme toggle until after mounting to prevent hydration mismatch
   if (!mounted) {
@@ -160,7 +184,9 @@ export function TopNavbar() {
             <Building className="h-4 w-4 text-muted-foreground" />
             <div className="flex flex-col">
               <span className="font-medium">Loading...</span>
-              <span className="text-xs text-muted-foreground">Please wait...</span>
+              <span className="text-xs text-muted-foreground">
+                Please wait...
+              </span>
             </div>
           </div>
         </div>
@@ -171,7 +197,7 @@ export function TopNavbar() {
           <div className="h-9 w-9 rounded-full bg-muted animate-pulse"></div>
         </div>
       </header>
-    )
+    );
   }
 
   return (
@@ -181,9 +207,12 @@ export function TopNavbar() {
         <div className="flex items-center gap-2 rounded-md border border-border bg-background/50 px-3 py-1.5 text-sm">
           <Building className="h-4 w-4 text-muted-foreground" />
           <div className="flex flex-col">
-            <span className="font-medium">{user?.branchName || "No Branch Assigned"}</span>
+            <span className="font-medium">
+              {user?.branchName || "No Branch Assigned"}
+            </span>
             <span className="text-xs text-muted-foreground capitalize">
-              {user?.role || "User"} {user?.branchType && `• ${user.branchType}`}
+              {user?.role || "User"}{" "}
+              {user?.branchType && `• ${user.branchType}`}
             </span>
           </div>
         </div>
@@ -192,84 +221,6 @@ export function TopNavbar() {
       <div className="flex-1"></div>
 
       <div className="flex items-center gap-2">
-        {/* Temporary Role/Branch Switcher for Testing */}
-        {process.env.NODE_ENV === "development" && (
-          <div className="flex items-center gap-2 border-l pl-4">
-            <Button variant="outline" size="sm" onClick={() => setShowSwitcher(!showSwitcher)} className="text-xs">
-              Test Mode
-            </Button>
-
-            {showSwitcher && (
-              <div className="absolute right-20 top-full mt-1 w-80 rounded-md border bg-background p-4 shadow-lg z-50">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium">Test Role:</label>
-                    <Select value={tempRole} onValueChange={setTempRole}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="manager">Manager</SelectItem>
-                        <SelectItem value="finance">Finance</SelectItem>
-                        <SelectItem value="cashier">Cashier</SelectItem>
-                        <SelectItem value="user">User</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium">Test Branch:</label>
-                    <Select value={tempBranch} onValueChange={setTempBranch}>
-                      <SelectTrigger className="w-full">
-                        <SelectValue placeholder="Select branch" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Accra Main Branch</SelectItem>
-                        <SelectItem value="2">Kumasi Branch</SelectItem>
-                        <SelectItem value="3">Tamale Branch</SelectItem>
-                        <SelectItem value="4">Cape Coast Branch</SelectItem>
-                        <SelectItem value="5">Takoradi Branch</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <Button
-                    onClick={() => {
-                      // Update user context with test values
-                      const branchNames = {
-                        "1": "Accra Main Branch",
-                        "2": "Kumasi Branch",
-                        "3": "Tamale Branch",
-                        "4": "Cape Coast Branch",
-                        "5": "Takoradi Branch",
-                      }
-
-                      updateUser({
-                        role: tempRole,
-                        branchId: tempBranch,
-                        branchName: branchNames[tempBranch as keyof typeof branchNames] || "Unknown Branch",
-                      })
-                      setShowSwitcher(false)
-
-                      // Refresh the page to reload dashboard data
-                      window.location.reload()
-                    }}
-                    className="w-full"
-                    size="sm"
-                  >
-                    Apply Test Settings
-                  </Button>
-
-                  <Button onClick={() => setShowSwitcher(false)} variant="outline" className="w-full" size="sm">
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
         {/* Notification Dropdown */}
         <div ref={notificationRef} className="relative">
           <Button
@@ -291,27 +242,40 @@ export function TopNavbar() {
             <div className="absolute right-0 top-full mt-1 w-80 rounded-md border bg-background p-2 shadow-lg z-50">
               <div className="flex items-center justify-between p-2">
                 <h3 className="font-medium">Notifications</h3>
-                <Button variant="ghost" size="sm" className="h-auto p-1 text-xs" onClick={handleViewAllNotifications}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto p-1 text-xs"
+                  onClick={handleViewAllNotifications}
+                >
                   View all
                 </Button>
               </div>
               <div className="max-h-[300px] overflow-auto">
                 {mockNotifications.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-muted-foreground">No notifications</div>
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No notifications
+                  </div>
                 ) : (
                   <div className="space-y-1">
                     {mockNotifications.map((notification) => (
                       <div
                         key={notification.id}
-                        className={`rounded-md p-2 text-sm ${notification.read ? "" : "bg-muted"}`}
+                        className={`rounded-md p-2 text-sm ${
+                          notification.read ? "" : "bg-muted"
+                        }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-medium">{notification.title}</span>
+                          <span className="font-medium">
+                            {notification.title}
+                          </span>
                           <Badge variant="outline" className="text-[10px]">
                             {notification.type}
                           </Badge>
                         </div>
-                        <p className="mt-1 text-xs text-muted-foreground">{notification.message}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {notification.message}
+                        </p>
                         <div className="mt-1 text-[10px] text-muted-foreground">
                           {formatDate(notification.timestamp)}
                         </div>
@@ -340,15 +304,27 @@ export function TopNavbar() {
 
         {/* Fullscreen Toggle */}
         <Button variant="ghost" size="icon" onClick={toggleFullscreen}>
-          {isFullscreen ? <Minimize className="h-5 w-5" /> : <Maximize className="h-5 w-5" />}
+          {isFullscreen ? (
+            <Minimize className="h-5 w-5" />
+          ) : (
+            <Maximize className="h-5 w-5" />
+          )}
           <span className="sr-only">Toggle fullscreen</span>
         </Button>
 
         {/* User Profile Menu */}
         <div ref={userMenuRef} className="relative">
-          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setUserMenuOpen(!userMenuOpen)}>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onClick={() => setUserMenuOpen(!userMenuOpen)}
+          >
             <Avatar className="h-8 w-8">
-              <AvatarImage src={user?.avatar || "/abstract-geometric-shapes.png"} alt={user?.name || "User"} />
+              <AvatarImage
+                src={user?.avatar || "/abstract-geometric-shapes.png"}
+                alt={user?.name || "User"}
+              />
               <AvatarFallback>
                 {user?.name
                   ? user.name
@@ -364,8 +340,12 @@ export function TopNavbar() {
             <div className="absolute right-0 top-full mt-1 w-56 rounded-md border bg-background p-1 shadow-lg z-50">
               <div className="border-b p-2">
                 <p className="font-medium">{user?.name || "User"}</p>
-                <p className="text-xs text-muted-foreground">{user?.email || "user@example.com"}</p>
-                <p className="text-xs text-muted-foreground capitalize">{user?.role || "User"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {user?.email || "user@example.com"}
+                </p>
+                <p className="text-xs text-muted-foreground capitalize">
+                  {user?.role || "User"}
+                </p>
               </div>
               <div className="p-1">
                 <button
@@ -395,5 +375,5 @@ export function TopNavbar() {
         </div>
       </div>
     </header>
-  )
+  );
 }

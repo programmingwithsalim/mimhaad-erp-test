@@ -35,6 +35,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useServiceStatistics } from "@/hooks/use-service-statistics";
 import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
+import { TransactionEditDialog } from "@/components/shared/transaction-edit-dialog";
+import { TransactionDeleteDialog } from "@/components/shared/transaction-delete-dialog";
 import {
   Building2,
   TrendingUp,
@@ -64,6 +66,11 @@ export default function AgencyBankingPage() {
   const [floatAccounts, setFloatAccounts] = useState([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [loadingFloats, setLoadingFloats] = useState(false);
+
+  // Dialog states for edit and delete
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     type: "",
@@ -282,6 +289,69 @@ export default function AgencyBankingPage() {
     }
   };
 
+  // Handle edit transaction
+  const handleEditTransaction = (transaction: any) => {
+    console.log("🔧 [AGENCY-EDIT] Transaction clicked:", transaction);
+    console.log(
+      "🔧 [AGENCY-EDIT] Current state - editDialogOpen:",
+      editDialogOpen
+    );
+    console.log(
+      "🔧 [AGENCY-EDIT] Current state - selectedTransaction:",
+      selectedTransaction
+    );
+
+    // Map the transaction data to match what the dialog expects (snake_case)
+    const mappedTransaction = {
+      ...transaction,
+      customer_name: transaction.customer_name || transaction.customerName,
+      created_at: transaction.created_at || transaction.date,
+      transaction_type: transaction.type,
+    };
+    console.log("🔧 [AGENCY-EDIT] Mapped transaction:", mappedTransaction);
+
+    setSelectedTransaction(mappedTransaction);
+    console.log("🔧 [AGENCY-EDIT] Set selectedTransaction");
+
+    setEditDialogOpen(true);
+    console.log("🔧 [AGENCY-EDIT] Set editDialogOpen to true");
+  };
+
+  // Handle delete transaction
+  const handleDeleteTransaction = (transaction: any) => {
+    console.log("🗑️ [AGENCY-DELETE] Transaction clicked:", transaction);
+    console.log(
+      "🗑️ [AGENCY-DELETE] Current state - deleteDialogOpen:",
+      deleteDialogOpen
+    );
+    console.log(
+      "🗑️ [AGENCY-DELETE] Current state - selectedTransaction:",
+      selectedTransaction
+    );
+
+    // Map the transaction data to match what the dialog expects (snake_case)
+    const mappedTransaction = {
+      ...transaction,
+      customer_name: transaction.customer_name || transaction.customerName,
+      created_at: transaction.created_at || transaction.date,
+      transaction_type: transaction.type,
+    };
+    console.log("🗑️ [AGENCY-DELETE] Mapped transaction:", mappedTransaction);
+
+    setSelectedTransaction(mappedTransaction);
+    console.log("🗑️ [AGENCY-DELETE] Set selectedTransaction");
+
+    setDeleteDialogOpen(true);
+    console.log("🗑️ [AGENCY-DELETE] Set deleteDialogOpen to true");
+  };
+
+  // Handle successful edit/delete
+  const handleTransactionSuccess = () => {
+    loadTransactions();
+    loadFloatAccounts();
+    refreshStatistics();
+  };
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -291,17 +361,42 @@ export default function AgencyBankingPage() {
             Manage agency banking transactions and partner bank operations
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            loadTransactions();
-            loadFloatAccounts();
-            refreshStatistics();
-          }}
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => {
+              // This will focus on the transaction form
+              const transactionTab = document.querySelector(
+                '[data-value="transaction"]'
+              ) as HTMLElement;
+              if (transactionTab) {
+                transactionTab.click();
+              }
+            }}
+            className="flex items-center gap-2"
+          >
+            <Plus className="h-4 w-4" />
+            New Transaction
+          </Button>
+          <Button
+            variant="outline"
+            onClick={exportToCSV}
+            className="flex items-center gap-2"
+          >
+            <Download className="h-4 w-4" />
+            Export
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => {
+              loadTransactions();
+              loadFloatAccounts();
+              refreshStatistics();
+            }}
+          >
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Float Alerts */}
@@ -676,7 +771,9 @@ export default function AgencyBankingPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => alert("Edit functionality not implemented yet")}
+                              onClick={() => {
+                                handleEditTransaction(transaction);
+                              }}
                               title="Edit Transaction"
                             >
                               <Edit className="h-4 w-4" />
@@ -684,7 +781,9 @@ export default function AgencyBankingPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => alert("Delete functionality not implemented yet")}
+                              onClick={() => {
+                                handleDeleteTransaction(transaction);
+                              }}
                               title="Delete Transaction"
                               className="text-red-600 hover:text-red-700"
                             >
@@ -701,6 +800,28 @@ export default function AgencyBankingPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Dialog */}
+      {editDialogOpen && selectedTransaction && (
+        <TransactionEditDialog
+          open={editDialogOpen}
+          onOpenChange={setEditDialogOpen}
+          transaction={selectedTransaction}
+          sourceModule="agency_banking"
+          onSuccess={handleTransactionSuccess}
+        />
+      )}
+
+      {/* Delete Dialog */}
+      {deleteDialogOpen && selectedTransaction && (
+        <TransactionDeleteDialog
+          open={deleteDialogOpen}
+          onOpenChange={setDeleteDialogOpen}
+          transaction={selectedTransaction}
+          sourceModule="agency_banking"
+          onSuccess={handleTransactionSuccess}
+        />
+      )}
     </div>
   );
 }

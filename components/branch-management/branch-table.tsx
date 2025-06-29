@@ -21,6 +21,8 @@ export function BranchTable({ branches, onEdit, onDelete, onView }: BranchTableP
   // Safety check: ensure branches is always an array
   const safeBranches = Array.isArray(branches) ? branches : []
 
+  console.log("Brancheees", safeBranches)
+
   const handleSort = (field: keyof Branch) => {
     if (sortField === field) {
       setSortDirection(sortDirection === "asc" ? "desc" : "asc")

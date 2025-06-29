@@ -1,38 +1,41 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const status = searchParams.get("status")
-    const branchId = searchParams.get("branchId")
-    const month = searchParams.get("month")
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get("status");
+    const branchId = searchParams.get("branchId");
+    const month = searchParams.get("month");
 
-    const whereConditions = []
-    const queryParams: any[] = []
-    let paramIndex = 1
+    const whereConditions = [];
+    const queryParams: any[] = [];
+    let paramIndex = 1;
 
     if (status && status !== "all") {
-      whereConditions.push(`status = $${paramIndex}`)
-      queryParams.push(status)
-      paramIndex++
+      whereConditions.push(`status = $${paramIndex}`);
+      queryParams.push(status);
+      paramIndex++;
     }
 
     if (branchId && branchId !== "all") {
-      whereConditions.push(`branch_id = $${paramIndex}`)
-      queryParams.push(branchId)
-      paramIndex++
+      whereConditions.push(`branch_id = $${paramIndex}`);
+      queryParams.push(branchId);
+      paramIndex++;
     }
 
     if (month) {
-      whereConditions.push(`month = $${paramIndex}`)
-      queryParams.push(month)
-      paramIndex++
+      whereConditions.push(`month = $${paramIndex}`);
+      queryParams.push(month);
+      paramIndex++;
     }
 
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : ""
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
 
     const commissions = await sql`
       SELECT 
@@ -55,34 +58,38 @@ export async function GET(request: NextRequest) {
         created_at as "createdAt",
         updated_at as "updatedAt"
       FROM commissions
-      ${whereConditions.length > 0 ? sql.unsafe(`WHERE ${whereConditions.join(" AND ")}`) : sql``}
+      ${
+        whereConditions.length > 0
+          ? sql.unsafe(`WHERE ${whereConditions.join(" AND ")}`)
+          : sql``
+      }
       ORDER BY created_at DESC
-    `
+    `;
 
-    return NextResponse.json(commissions)
+    return NextResponse.json(commissions);
   } catch (error) {
-    console.error("Error fetching commissions:", error)
+    console.error("Error fetching commissions:", error);
     return NextResponse.json(
       {
         error: "Failed to fetch commissions",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const contentType = request.headers.get("content-type") || ""
-    let data: any
+    const contentType = request.headers.get("content-type") || "";
+    let data: any;
 
-    console.log("Commission POST request - Content Type:", contentType)
+    console.log("Commission POST request - Content Type:", contentType);
 
     // Handle FormData (multipart/form-data)
     if (contentType.includes("multipart/form-data")) {
-      const formData = await request.formData()
-      console.log("Processing FormData submission")
+      const formData = await request.formData();
+      console.log("Processing FormData submission");
 
       // Extract form fields
       data = {
@@ -91,41 +98,52 @@ export async function POST(request: NextRequest) {
         reference: formData.get("reference")?.toString() || "",
         month: formData.get("month")?.toString() || "",
         amount: Number.parseFloat(formData.get("amount")?.toString() || "0"),
-        transactionVolume: Number.parseFloat(formData.get("transactionVolume")?.toString() || "0"),
-        commissionRate: Number.parseFloat(formData.get("commissionRate")?.toString() || "0"),
+        transactionVolume: Number.parseFloat(
+          formData.get("transactionVolume")?.toString() || "0"
+        ),
+        commissionRate: Number.parseFloat(
+          formData.get("commissionRate")?.toString() || "0"
+        ),
         description: formData.get("description")?.toString() || "",
         notes: formData.get("notes")?.toString() || "",
         status: formData.get("status")?.toString() || "paid",
         createdBy: formData.get("createdBy")?.toString() || "system",
-        createdByName: formData.get("createdByName")?.toString() || "System User",
+        createdByName:
+          formData.get("createdByName")?.toString() || "System User",
         branchId: formData.get("branchId")?.toString() || "",
         branchName: formData.get("branchName")?.toString() || "",
-      }
+      };
 
       // Handle file upload
-      const receiptFile = formData.get("receipt") as File
+      const receiptFile = formData.get("receipt") as File;
       if (receiptFile && receiptFile.size > 0) {
-        data.receiptUrl = `/uploads/receipts/${data.reference}-${receiptFile.name}`
-        console.log("Receipt file uploaded:", receiptFile.name, receiptFile.size)
+        data.receiptUrl = `/uploads/receipts/${data.reference}-${receiptFile.name}`;
+        console.log(
+          "Receipt file uploaded:",
+          receiptFile.name,
+          receiptFile.size
+        );
       }
     } else {
       // Handle JSON data
-      data = await request.json()
+      data = await request.json();
     }
 
-    console.log("Processed commission data:", data)
+    console.log("Processed commission data:", data);
 
     // Validate required fields
     if (!data.source || !data.sourceName || !data.reference || !data.month) {
-      throw new Error("Missing required fields: source, sourceName, reference, month")
+      throw new Error(
+        "Missing required fields: source, sourceName, reference, month"
+      );
     }
 
     if (!data.amount || data.amount <= 0) {
-      throw new Error("Amount must be greater than 0")
+      throw new Error("Amount must be greater than 0");
     }
 
     // Generate proper UUID for commission ID
-    const id = crypto.randomUUID()
+    const id = crypto.randomUUID();
 
     // Insert commission
     const result = await sql`
@@ -169,17 +187,17 @@ export async function POST(request: NextRequest) {
         NOW()
       )
       RETURNING *
-    `
+    `;
 
-    console.log("Commission created successfully:", result[0])
+    console.log("Commission created successfully:", result[0]);
 
     return NextResponse.json({
       success: true,
       commission: result[0],
       message: "Commission created successfully",
-    })
+    });
   } catch (error) {
-    console.error("Error creating commission:", error)
+    console.error("Error creating commission:", error);
 
     return NextResponse.json(
       {
@@ -187,7 +205,7 @@ export async function POST(request: NextRequest) {
         details: error instanceof Error ? error.message : "Unknown error",
         success: false,
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

@@ -227,12 +227,12 @@ export async function GET(request: NextRequest) {
       success: true,
       data: {
         transactions: paginatedTransactions,
-        pagination: {
+      pagination: {
           page,
-          limit,
+        limit,
           total: allTransactions.length,
           totalPages: Math.ceil(allTransactions.length / limit),
-        },
+      },
       },
     });
   } catch (error) {
@@ -331,8 +331,8 @@ async function getAllTransactions(
           columns.includes("provider")
             ? "provider"
             : columns.includes("partner_bank")
-            ? "partner_bank as provider"
-            : "'Unknown' as provider"
+              ? "partner_bank as provider"
+              : "'Unknown' as provider"
         },
         ${
           columns.includes("created_at") ? "created_at" : "NOW() as created_at"

@@ -1,91 +1,93 @@
-"use server"
+"use server";
 
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const includeInactive = searchParams.get("includeInactive") === "true"
+    const { searchParams } = request.nextUrl;
+    const includeInactive = searchParams.get("includeInactive") === "true";
 
-    let query = `
-      SELECT 
-        id,
-        name,
-        code,
-        location,
-        region,
-        phone,
-        email,
-        address,
-        is_active,
-        created_at,
-        updated_at
-      FROM branches
-    `
+    let branches;
 
-    if (!includeInactive) {
-      query += " WHERE is_active = true"
+    if (includeInactive) {
+      branches = await sql`
+        SELECT 
+          id, name, code, location, region, manager, phone, email, address,
+          status, created_at, updated_at
+        FROM branches
+        ORDER BY name ASC
+      `;
+    } else {
+      branches = await sql`
+        SELECT 
+          id, name, code, location, region, manager, phone, email, address,
+          status, created_at, updated_at
+        FROM branches
+        WHERE status = 'active'
+        ORDER BY name ASC
+      `;
     }
 
-    query += " ORDER BY name ASC"
+    console.log("Fetched branches:", branches);
 
-    const branches = await sql.unsafe(query)
-
-    return NextResponse.json({
-      success: true,
-      branches: branches || [],
-    })
+    return NextResponse.json(branches || []);
   } catch (error) {
-    console.error("Error fetching branches:", error)
+    console.error("Error fetching branches:", error);
 
-    // Return mock data if database fails
-    const mockBranches = [
-      {
-        id: "635844ab-029a-43f8-8523-d7882915266a",
-        name: "Main Branch",
-        code: "MB001",
-        location: "Accra",
-        region: "Greater Accra",
-        phone: "+233 20 123 4567",
-        email: "main@mimhaad.com",
-        address: "123 Main Street, Accra",
-        is_active: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ]
-
-    return NextResponse.json({
-      success: true,
-      branches: mockBranches,
-    })
+    return NextResponse.json([]);
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { name, code, location, region, phone, email, address } = body
+    const body = await request.json();
+    const { name, code, location, region, phone, email, address } = body;
 
     if (!name || !code) {
-      return NextResponse.json({ success: false, error: "Name and code are required" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Name and code are required" },
+        { status: 400 }
+      );
+    }
+
+    // Check if branch code already exists
+    const existingBranch = await sql`
+      SELECT id FROM branches WHERE code = ${code}
+    `;
+
+    if (existingBranch.length > 0) {
+      return NextResponse.json(
+        { success: false, error: "Branch code already exists" },
+        { status: 400 }
+      );
     }
 
     const [branch] = await sql`
-      INSERT INTO branches (name, code, location, region, phone, email, address)
-      VALUES (${name}, ${code}, ${location || ""}, ${region || ""}, ${phone || ""}, ${email || ""}, ${address || ""})
+      INSERT INTO branches (name, code, location, region, phone, email, address, status, created_at, updated_at)
+      VALUES (${name}, ${code}, ${location || ""}, ${region || ""}, ${
+      phone || ""
+    }, ${email || ""}, ${address || ""}, 'active', NOW(), NOW())
       RETURNING *
-    `
+    `;
+
+    console.log("Created branch:", branch);
 
     return NextResponse.json({
       success: true,
       branch,
-    })
+    });
   } catch (error) {
-    console.error("Error creating branch:", error)
-    return NextResponse.json({ success: false, error: "Failed to create branch" }, { status: 500 })
+    console.error("Error creating branch:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to create branch",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }

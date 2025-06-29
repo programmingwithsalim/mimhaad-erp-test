@@ -191,7 +191,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-3xl font-bold">Dashboard</h1>
           <p className="text-muted-foreground">
-            Welcome back, {user?.name}! Overview of {user?.branchName || "your branch"} operations
+            Welcome back, {user?.firstName} {user?.lastName}! Overview of {user?.branchName || "your branch"} operations
           </p>
         </div>
         <Button variant="outline" onClick={loadDashboardData}>

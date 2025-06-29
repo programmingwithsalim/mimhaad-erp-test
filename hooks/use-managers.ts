@@ -40,27 +40,6 @@ export function useManagers() {
       console.error("Error fetching managers:", error)
       setError(error instanceof Error ? error.message : "Failed to fetch managers")
 
-      // Fallback to mock data if API fails
-      setManagers([
-        {
-          id: "manager-1",
-          name: "John Manager",
-          firstName: "John",
-          lastName: "Manager",
-          email: "john@example.com",
-          role: "manager",
-          status: "active",
-        },
-        {
-          id: "admin-1",
-          name: "Admin User",
-          firstName: "Admin",
-          lastName: "User",
-          email: "admin@example.com",
-          role: "admin",
-          status: "active",
-        },
-      ])
     } finally {
       setLoading(false)
     }

@@ -181,36 +181,21 @@ export function BranchForm({ branch, onSubmit, onCancel }: BranchFormProps) {
             name="manager"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Branch Manager</FormLabel>
+                <FormLabel>Branch Manager*</FormLabel>
                 <Select onValueChange={field.onChange} value={field.value} disabled={managersLoading}>
                   <FormControl>
                     <SelectTrigger>
-                      <SelectValue
-                        placeholder={
-                          managersLoading
-                            ? "Loading managers..."
-                            : managersError
-                              ? "Error loading managers"
-                              : "Select manager"
-                        }
-                      />
+                      <SelectValue placeholder={managersLoading ? "Loading managers..." : "Select manager"} />
                     </SelectTrigger>
                   </FormControl>
                   <SelectContent>
-                    {managers.length > 0 ? (
-                      managers.map((manager) => (
-                        <SelectItem key={manager.id} value={manager.name}>
-                          {manager.name} ({manager.role})
-                        </SelectItem>
-                      ))
-                    ) : (
-                      <SelectItem value="no-managers" disabled>
-                        No managers available
+                    {managers.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.name}>
+                        {manager.name} ({manager.role})
                       </SelectItem>
-                    )}
+                    ))}
                   </SelectContent>
                 </Select>
-                {managersError && <p className="text-sm text-red-500">Error: {managersError}</p>}
                 <FormMessage />
               </FormItem>
             )}

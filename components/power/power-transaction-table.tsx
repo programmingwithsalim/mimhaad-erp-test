@@ -1,31 +1,38 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Edit, Trash2, Printer } from "lucide-react"
-import { EditPowerTransactionDialog } from "./edit-power-transaction-dialog"
+import { useState } from "react";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Edit, Trash2, Printer } from "lucide-react";
+import { EditPowerTransactionDialog } from "./edit-power-transaction-dialog";
 
 interface PowerTransaction {
-  id: string
-  reference: string
-  meterNumber: string
-  provider: string
-  amount: number
-  customerName?: string
-  customerPhone?: string
-  status: string
-  createdAt: string
+  id: string;
+  reference: string;
+  meterNumber: string;
+  provider: string;
+  amount: number;
+  customerName?: string;
+  customerPhone?: string;
+  status: string;
+  createdAt: string;
 }
 
 interface PowerTransactionTableProps {
-  transactions: PowerTransaction[]
-  onTransactionUpdated?: () => void
-  onTransactionDeleted?: () => void
-  onEdit?: (transaction: PowerTransaction) => void
-  onDelete?: (transactionId: string) => void
-  onPrintReceipt?: (transaction: PowerTransaction) => void
+  transactions: PowerTransaction[];
+  onTransactionUpdated?: () => void;
+  onTransactionDeleted?: () => void;
+  onEdit?: (transaction: PowerTransaction) => void;
+  onDelete?: (transactionId: string) => void;
+  onPrintReceipt?: (transaction: PowerTransaction) => void;
 }
 
 export function PowerTransactionTable({
@@ -36,28 +43,29 @@ export function PowerTransactionTable({
   onDelete,
   onPrintReceipt,
 }: PowerTransactionTableProps) {
-  const [editingTransaction, setEditingTransaction] = useState<PowerTransaction | null>(null)
+  const [editingTransaction, setEditingTransaction] =
+    useState<PowerTransaction | null>(null);
 
   const handleEdit = (transaction: PowerTransaction) => {
-    setEditingTransaction(transaction)
-  }
+    setEditingTransaction(transaction);
+  };
 
   const handleDelete = (transactionId: string) => {
     if (onDelete) {
-      onDelete(transactionId)
+      onDelete(transactionId);
     }
-  }
+  };
 
   const handlePrintReceipt = (transaction: PowerTransaction) => {
     if (onPrintReceipt) {
-      onPrintReceipt(transaction)
+      onPrintReceipt(transaction);
     }
-  }
+  };
 
   const handleTransactionUpdated = () => {
-    setEditingTransaction(null)
-    onTransactionUpdated?.()
-  }
+    setEditingTransaction(null);
+    onTransactionUpdated?.();
+  };
 
   return (
     <>
@@ -77,7 +85,10 @@ export function PowerTransactionTable({
           <TableBody>
             {transactions.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                <TableCell
+                  colSpan={7}
+                  className="text-center py-8 text-muted-foreground"
+                >
                   No transactions found
                 </TableCell>
               </TableRow>
@@ -91,22 +102,40 @@ export function PowerTransactionTable({
                   <TableCell>{transaction.provider}</TableCell>
                   <TableCell>
                     <div>
-                      <div className="font-medium">{transaction.customerName || "N/A"}</div>
-                      <div className="text-sm text-muted-foreground">{transaction.customerPhone || ""}</div>
+                      <div className="font-medium">
+                        {transaction.customerName || "N/A"}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {transaction.customerPhone || ""}
+                      </div>
                     </div>
                   </TableCell>
                   <TableCell>GHS {transaction.amount.toFixed(2)}</TableCell>
                   <TableCell>
-                    <Badge variant={transaction.status === "completed" ? "default" : "secondary"}>
+                    <Badge
+                      variant={
+                        transaction.status === "completed"
+                          ? "default"
+                          : "secondary"
+                      }
+                    >
                       {transaction.status}
                     </Badge>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <Button variant="ghost" size="sm" onClick={() => handlePrintReceipt(transaction)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handlePrintReceipt(transaction)}
+                      >
                         <Printer className="h-4 w-4" />
                       </Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleEdit(transaction)}>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleEdit(transaction)}
+                      >
                         <Edit className="h-4 w-4" />
                       </Button>
                       <Button
@@ -134,5 +163,5 @@ export function PowerTransactionTable({
         onSuccess={handleTransactionUpdated}
       />
     </>
-  )
+  );
 }

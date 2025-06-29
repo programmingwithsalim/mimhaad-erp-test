@@ -1,16 +1,32 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import * as z from "zod"
-import { Loader2 } from "lucide-react"
+import { useState } from "react";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useForm } from "react-hook-form";
+import * as z from "zod";
+import { Loader2 } from "lucide-react";
 
-import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { useManagers } from "@/hooks/use-managers"
+import type { Branch } from "@/hooks/use-branches"
 
 // Form schema with validation
 const formSchema = z.object({
@@ -25,15 +41,19 @@ const formSchema = z.object({
   status: z.enum(["active", "inactive"]),
   address: z.string().optional(),
   phone: z.string().optional(),
-})
+});
 
 interface CreateBranchFormProps {
-  onSubmit: (data: z.infer<typeof formSchema>) => Promise<void>
-  onCancel: () => void
+  onSubmit: (data: z.infer<typeof formSchema>) => Promise<void>;
+  onCancel: () => void;
 }
 
-export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) {
-  const [loading, setLoading] = useState(false)
+export function CreateBranchForm({
+  onSubmit,
+  onCancel,
+}: CreateBranchFormProps) {
+  const { managers, loading: managersLoading, error: managersError } = useManagers()
+  const [loading, setLoading] = useState(false);
 
   // Initialize form with default values
   const form = useForm<z.infer<typeof formSchema>>({
@@ -51,16 +71,16 @@ export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) 
       address: "",
       phone: "",
     },
-  })
+  });
 
   const handleSubmit = async (data: z.infer<typeof formSchema>) => {
     try {
-      setLoading(true)
-      await onSubmit(data)
+      setLoading(true);
+      await onSubmit(data);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <Form {...form}>
@@ -89,7 +109,9 @@ export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) 
                 <FormControl>
                   <Input placeholder="MB001" {...field} />
                 </FormControl>
-                <FormDescription>Unique identifier for the branch</FormDescription>
+                <FormDescription>
+                  Unique identifier for the branch
+                </FormDescription>
                 <FormMessage />
               </FormItem>
             )}
@@ -127,11 +149,32 @@ export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) 
             control={form.control}
             name="manager"
             render={({ field }) => (
-              <FormItem>
+              <FormItem className="flex flex-col">
                 <FormLabel>Branch Manager*</FormLabel>
-                <FormControl>
-                  <Input placeholder="John Doe" {...field} />
-                </FormControl>
+                <Select
+                  onValueChange={field.onChange}
+                  value={field.value}
+                  disabled={managersLoading}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          managersLoading
+                            ? "Loading managers..."
+                            : "Select manager"
+                        }
+                      />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {managers.map((manager) => (
+                      <SelectItem key={manager.id} value={manager.name}>
+                        {manager.name} ({manager.role})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <FormMessage />
               </FormItem>
             )}
@@ -185,7 +228,10 @@ export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) 
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Status*</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select status" />
@@ -231,7 +277,12 @@ export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) 
         />
 
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={loading}
+          >
             Cancel
           </Button>
           <Button type="submit" disabled={loading}>
@@ -241,5 +292,5 @@ export function CreateBranchForm({ onSubmit, onCancel }: CreateBranchFormProps) 
         </div>
       </form>
     </Form>
-  )
+  );
 }

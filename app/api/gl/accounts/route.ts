@@ -1,103 +1,102 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.CONNECTION_STRING!)
+const sql = neon(process.env.DATABASE_URL!);
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    console.log("Fetching GL accounts...")
+    const searchParams = request.nextUrl.searchParams;
+    const active = searchParams.get("active");
+    const type = searchParams.get("type");
+    const search = searchParams.get("search");
 
-    // Check if GL accounts table exists
-    const tableExists = await sql`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_name = 'gl_accounts'
-      )
-    `
-
-    if (!tableExists[0].exists) {
-      console.log("GL accounts table does not exist")
-      return NextResponse.json({
-        success: false,
-        error: "GL accounts table does not exist. Please initialize the system first.",
-        accounts: [],
-      })
-    }
-
-    // First, check what columns actually exist
-    const columns = await sql`
-      SELECT column_name 
-      FROM information_schema.columns 
-      WHERE table_name = 'gl_accounts'
-      ORDER BY ordinal_position
-    `
-
-    console.log(
-      "Available columns:",
-      columns.map((c) => c.column_name),
-    )
-
-    // Get all GL accounts with only existing columns
-    const accounts = await sql`
+    let query = `
       SELECT 
-        id, 
-        code as account_code, 
-        name as account_name, 
-        type as account_type, 
-        parent_id,
+        id,
+        code as account_code,
+        name as account_name,
+        type as account_type,
         COALESCE(balance, 0) as balance,
-        COALESCE(is_active, true) as is_active,
-        created_at,
-        updated_at
-      FROM gl_accounts 
-      WHERE COALESCE(is_active, true) = true
-      ORDER BY code
-    `
+        is_active
+      FROM gl_accounts
+      WHERE 1=1
+    `;
 
-    console.log(`Found ${accounts.length} GL accounts`)
+    const params: any[] = [];
 
-    // Log first few accounts for debugging
-    if (accounts.length > 0) {
-      console.log("Sample accounts:", accounts.slice(0, 3))
+    if (active === "true") {
+      query += ` AND is_active = true`;
     }
+
+    if (type) {
+      query += ` AND type = $${params.length + 1}`;
+      params.push(type);
+    }
+
+    if (search) {
+      query += ` AND (code ILIKE $${params.length + 1} OR name ILIKE $${
+        params.length + 1
+      })`;
+      params.push(`%${search}%`);
+    }
+
+    query += ` ORDER BY code ASC`;
+
+    const accounts = await sql.unsafe(query, ...params);
 
     return NextResponse.json({
       success: true,
-      accounts: accounts,
-      count: accounts.length,
-      timestamp: new Date().toISOString(),
-      columns: columns.map((c) => c.column_name),
-    })
+      accounts: accounts.map((account) => ({
+        id: account.id,
+        account_code: account.account_code,
+        account_name: account.account_name,
+        account_type: account.account_type,
+        balance: Number(account.balance) || 0,
+        is_active: account.is_active,
+      })),
+    });
   } catch (error) {
-    console.error("Error fetching GL accounts:", error)
+    console.error("Error fetching GL accounts:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "Failed to fetch GL accounts",
-        accounts: [],
-        stack: error.stack,
+        error: "Failed to fetch GL accounts",
+        details: error instanceof Error ? error.message : String(error),
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { account_code, account_name, account_type, parent_id, description, is_active = true } = body
+    const body = await request.json();
+    const {
+      account_code,
+      account_name,
+      account_type,
+      parent_id,
+      description,
+      is_active = true,
+    } = body;
 
     if (!account_code || !account_name || !account_type) {
-      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
     }
 
     // Check if account code already exists
     const existing = await sql`
       SELECT id FROM gl_accounts WHERE code = ${account_code}
-    `
+    `;
 
     if (existing.length > 0) {
-      return NextResponse.json({ success: false, error: "Account code already exists" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Account code already exists" },
+        { status: 400 }
+      );
     }
 
     // Create new account with UUID generation
@@ -125,22 +124,22 @@ export async function POST(request: Request) {
         NOW()
       )
       RETURNING *
-    `
+    `;
 
     return NextResponse.json({
       success: true,
       account: result[0],
       message: "GL account created successfully",
-    })
+    });
   } catch (error) {
-    console.error("Error creating GL account:", error)
+    console.error("Error creating GL account:", error);
     return NextResponse.json(
       {
         success: false,
         error: error.message || "Failed to create GL account",
         details: error.stack,
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

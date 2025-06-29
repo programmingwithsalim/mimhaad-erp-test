@@ -1,10 +1,10 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { format, isValid, parseISO } from "date-fns"
+import { useState, useEffect, useMemo, useCallback } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { format, isValid, parseISO } from "date-fns";
 import {
   Download,
   RefreshCw,
@@ -17,47 +17,78 @@ import {
   Edit,
   Trash2,
   Smartphone,
-} from "lucide-react"
+  Loader2,
+  TrendingDown,
+  Users,
+} from "lucide-react";
 
 // Import the export utilities at the top
-import { exportToCSV, formatTransactionForExport } from "@/lib/export-utils"
+import { exportToCSV, formatTransactionForExport } from "@/lib/export-utils";
 
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
-import { useToast } from "@/hooks/use-toast"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { formatCurrency } from "@/lib/currency"
-import { useCurrentUser } from "@/hooks/use-current-user"
-import { BranchIndicator } from "@/components/branch/branch-indicator"
-import { useBranchFloatAccounts } from "@/hooks/use-branch-float-accounts"
-import { useBranchTransactions } from "@/hooks/use-branch-transactions"
-import { BranchFloatDisplay } from "@/components/shared/branch-float-display"
-import { useCashInTillEnhanced } from "@/hooks/use-cash-in-till-enhanced"
-import { EditMoMoTransactionDialog } from "@/components/transactions/edit-momo-transaction-dialog"
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatCurrency } from "@/lib/currency";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { BranchIndicator } from "@/components/branch/branch-indicator";
+import { useBranchFloatAccounts } from "@/hooks/use-branch-float-accounts";
+import { useBranchTransactions } from "@/hooks/use-branch-transactions";
+import { BranchFloatDisplay } from "@/components/shared/branch-float-display";
+import { useCashInTillEnhanced } from "@/hooks/use-cash-in-till-enhanced";
+import { TransactionEditDialog } from "@/components/shared/transaction-edit-dialog";
+import { TransactionDeleteDialog } from "@/components/shared/transaction-delete-dialog";
+import { TransactionReceipt } from "@/components/shared/transaction-receipt";
+import { useServiceStatistics } from "@/hooks/use-service-statistics";
 
 // Transaction interface
 interface MoMoTransaction {
-  id: string
-  date: string
-  customerName: string
-  phoneNumber: string
-  amount: number
-  fee: number
-  type: "cash-in" | "cash-out"
-  provider: string
-  reference?: string
-  status: string
-  branchId: string
-  userId: string
-  cashTillAffected: number
-  floatAffected: number
+  id: string;
+  date: string;
+  customerName: string;
+  phoneNumber: string;
+  amount: number;
+  fee: number;
+  type: "cash-in" | "cash-out";
+  provider: string;
+  reference?: string;
+  status: string;
+  branchId: string;
+  userId: string;
+  cashTillAffected: number;
+  floatAffected: number;
 }
 
 // Transaction form schema
@@ -71,30 +102,40 @@ const transactionFormSchema = z.object({
   }),
   amount: z.string().refine(
     (value) => {
-      const num = Number(value)
-      return !isNaN(num) && num > 0
+      const num = Number(value);
+      return !isNaN(num) && num > 0;
     },
     {
       message: "Amount must be a valid number greater than zero.",
-    },
+    }
   ),
   fee: z.string().optional(),
   provider: z.string().min(1, { message: "Provider is required" }),
   reference: z.string().optional(),
-})
+});
+
+type FormValues = z.infer<typeof transactionFormSchema>;
 
 export default function MoMoPageFixed() {
-  const { toast } = useToast()
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [currentTransaction, setCurrentTransaction] = useState<any>(null)
-  const [activeTab, setActiveTab] = useState("new")
-  const [showReceiptDialog, setShowReceiptDialog] = useState(false)
-  const [showEditDialog, setShowEditDialog] = useState(false)
-  const [selectedTransactionForEdit, setSelectedTransactionForEdit] = useState(null)
-  const [feeCalculation, setFeeCalculation] = useState(null)
+  const { toast } = useToast();
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentTransaction, setCurrentTransaction] = useState<any>(null);
+  const [activeTab, setActiveTab] = useState("new");
+  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+
+  // New unified dialog states
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+
+  const [feeCalculation, setFeeCalculation] = useState(null);
 
   // Get current authenticated user
-  const { user: currentUser, isLoading: isLoadingUser, error: userError } = useCurrentUser()
+  const {
+    user: currentUser,
+    isLoading: isLoadingUser,
+    error: userError,
+  } = useCurrentUser();
 
   // Use branch-aware hooks
   const {
@@ -102,7 +143,7 @@ export default function MoMoPageFixed() {
     loading: isLoadingFloatAccounts,
     error: floatAccountsError,
     refetch: refreshFloatAccounts,
-  } = useBranchFloatAccounts()
+  } = useBranchFloatAccounts();
 
   const {
     transactions,
@@ -110,14 +151,21 @@ export default function MoMoPageFixed() {
     loading: isLoadingTransactions,
     error: transactionsError,
     refetch: fetchTransactions,
-  } = useBranchTransactions("momo")
+  } = useBranchTransactions("momo");
 
   const {
     cashAccount,
     isLoading: isCashLoading,
     error: cashError,
     refreshCashTill,
-  } = useCashInTillEnhanced(currentUser?.branchId)
+  } = useCashInTillEnhanced(currentUser?.branchId);
+
+  const {
+    statistics,
+    floatAlerts,
+    isLoading: statsLoading,
+    refreshStatistics,
+  } = useServiceStatistics("momo");
 
   // Filter MoMo accounts - FIXED to include all MoMo providers including Z-Pay
   const momoAccounts = useMemo(() => {
@@ -125,16 +173,24 @@ export default function MoMoPageFixed() {
       (account) =>
         account.account_type === "momo" &&
         account.is_active &&
-        (["mtn", "vodafone", "airteltigo", "telecel", "zpay", "z-pay", "momo"].some((provider) =>
-          account.provider.toLowerCase().includes(provider),
+        ([
+          "mtn",
+          "vodafone",
+          "airteltigo",
+          "telecel",
+          "zpay",
+          "z-pay",
+          "momo",
+        ].some((provider) =>
+          account.provider.toLowerCase().includes(provider)
         ) ||
           account.provider.toLowerCase().includes("mobile") ||
-          account.provider.toLowerCase().includes("money")),
-    )
-  }, [floatAccounts])
+          account.provider.toLowerCase().includes("money"))
+    );
+  }, [floatAccounts]);
 
   // Form initialization
-  const form = useForm({
+  const form = useForm<FormValues>({
     resolver: zodResolver(transactionFormSchema),
     defaultValues: {
       transactionType: "cash-in",
@@ -145,443 +201,565 @@ export default function MoMoPageFixed() {
       provider: "",
       reference: "",
     },
-  })
+  });
 
-  const watchTransactionType = form.watch("transactionType")
-  const watchProvider = form.watch("provider")
-  const watchAmount = form.watch("amount")
+  // Watch form values for fee calculation
+  const watchAmount = form.watch("amount");
+  const watchTransactionType = form.watch("transactionType");
 
-  // Get the selected MoMo account based on provider
-  const selectedMoMoAccount = useMemo(() => {
-    return momoAccounts.find((account) => account.provider.toLowerCase() === watchProvider.toLowerCase()) || null
-  }, [watchProvider, momoAccounts])
-
-  // Auto-calculate fee when amount or transaction type changes
-  useEffect(() => {
-    const calculateFee = async () => {
-      if (!watchAmount || !watchTransactionType || !watchProvider) {
-        form.setValue("fee", "")
-        setFeeCalculation(null)
-        return
-      }
-
-      const amount = Number(watchAmount)
-      if (isNaN(amount) || amount <= 0) {
-        form.setValue("fee", "")
-        setFeeCalculation(null)
-        return
-      }
-
-      try {
-        const response = await fetch("/api/momo/calculate-fee", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            amount,
-            transactionType: watchTransactionType,
-            provider: watchProvider,
-          }),
-        })
-
-        if (response.ok) {
-          const feeCalc = await response.json()
-          setFeeCalculation(feeCalc)
-          form.setValue("fee", feeCalc.fee.toString(), { shouldValidate: true })
-        } else {
-          // Fallback calculation
-          const calculatedFee = calculateFallbackFee(amount, watchTransactionType)
-          form.setValue("fee", calculatedFee.toString(), { shouldValidate: true })
-        }
-      } catch (error) {
-        console.error("Error calculating fee:", error)
-        // Fallback calculation
-        const calculatedFee = calculateFallbackFee(amount, watchTransactionType)
-        form.setValue("fee", calculatedFee.toString(), { shouldValidate: true })
-      }
-    }
-
-    calculateFee()
-  }, [watchAmount, watchTransactionType, watchProvider, form])
-
-  // Fallback fee calculation
-  const calculateFallbackFee = (amount: number, transactionType: string) => {
-    // Standard MoMo fees
-    if (transactionType === "cash-out") {
-      if (amount <= 100) return 1
-      if (amount <= 500) return 2
-      if (amount <= 1000) return 5
-      return Math.min(amount * 0.01, 20) // 1% max 20 GHS
-    }
-    return 0 // No fee for cash-in by default
-  }
-
-  // Refresh all data
-  const refreshAllBalances = useCallback(() => {
-    refreshFloatAccounts()
-    fetchTransactions()
-    refreshCashTill()
-  }, [refreshFloatAccounts, fetchTransactions, refreshCashTill])
-
-  // Process transaction - FIXED error handling
-  const onSubmit = async (data: any) => {
-    setIsProcessing(true)
+  // Calculate fee based on amount and transaction type
+  const calculateFee = async () => {
+    if (!watchAmount || Number(watchAmount) <= 0) return;
 
     try {
-      const amount = Number(data.amount)
-      const fee = data.fee ? Number(data.fee) : 0
-
-      console.log("🏦 Processing MoMo Transaction:", {
-        type: data.transactionType,
-        amount,
-        fee,
-        customerName: data.customerName,
-        phoneNumber: data.phoneNumber,
-        provider: data.provider,
-        branchId: currentUser?.branchId,
-      })
-
-      // Prepare transaction data for API call
-      const selectedAccount = momoAccounts.find((acc) => acc.provider === data.provider)
-      if (!selectedAccount) {
-        throw new Error("Selected MoMo provider not found")
-      }
-
-      const transactionData = {
-        type: data.transactionType,
-        amount: amount,
-        fee: fee,
-        phone_number: data.phoneNumber,
-        customer_name: data.customerName,
-        reference: data.reference || `MOMO-${Date.now()}`,
-        float_account_id: selectedAccount.id, // Use the actual account ID
-        provider: selectedAccount.provider,
-        user_id: currentUser?.id,
-        processed_by: currentUser?.id,
-        branch_id: currentUser?.branchId,
-        username: currentUser?.username,
-        branchName: currentUser?.branchName,
-      }
-
-      // Create transaction via API
-      const response = await fetch("/api/momo/transaction", {
+      const response = await fetch("/api/momo/calculate-fee", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(transactionData),
-      })
+        body: JSON.stringify({
+          amount: Number(watchAmount),
+          type: watchTransactionType,
+        }),
+      });
 
-      // Check if response is JSON
-      const contentType = response.headers.get("content-type")
-      if (!contentType || !contentType.includes("application/json")) {
-        const textResponse = await response.text()
-        console.error("❌ [MOMO] Non-JSON response:", textResponse)
-        throw new Error("Server returned an invalid response. Please try again.")
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          form.setValue("fee", data.fee.toString());
+          setFeeCalculation(data);
+        } else {
+          // Fallback to default fee calculation
+          const fallbackFee = calculateFallbackFee(
+            Number(watchAmount),
+            watchTransactionType
+          );
+          form.setValue("fee", fallbackFee.toString());
+        }
+      } else {
+        // Fallback to default fee calculation
+        const fallbackFee = calculateFallbackFee(
+          Number(watchAmount),
+          watchTransactionType
+        );
+        form.setValue("fee", fallbackFee.toString());
       }
-
-      const result = await response.json()
-
-      if (!response.ok) {
-        throw new Error(result.error || result.message || "Failed to process transaction")
-      }
-
-      if (!result.success) {
-        throw new Error(result.error || "Transaction failed")
-      }
-
-      const transaction = result.transaction
-      setCurrentTransaction(transaction)
-
-      // Refresh transactions to get updated stats
-      fetchTransactions()
-
-      // Show receipt dialog
-      setShowReceiptDialog(true)
-
-      // Reset form
-      form.reset({
-        transactionType: "cash-in",
-        customerName: "",
-        phoneNumber: "",
-        amount: "",
-        fee: "",
-        provider: "",
-        reference: "",
-      })
-
-      toast({
-        title: "Transaction Successful",
-        description: `${data.transactionType.charAt(0).toUpperCase() + data.transactionType.slice(1)} of ${formatCurrency(amount)} processed successfully.`,
-      })
-
-      // Switch to history tab after successful transaction
-      setActiveTab("history")
     } catch (error) {
-      console.error("Error processing transaction:", error)
-
-      toast({
-        title: "Transaction Failed",
-        description: error instanceof Error ? error.message : "Failed to process transaction",
-        variant: "destructive",
-      })
-    } finally {
-      setIsProcessing(false)
+      console.error("Error calculating fee:", error);
+      // Fallback to default fee calculation
+      const fallbackFee = calculateFallbackFee(
+        Number(watchAmount),
+        watchTransactionType
+      );
+      form.setValue("fee", fallbackFee.toString());
     }
-  }
+  };
 
-  // Helper function to safely format dates
-  const formatDate = (dateString: string) => {
+  // Auto-calculate fee when amount or transaction type changes
+  useEffect(() => {
+    if (watchAmount && Number(watchAmount) > 0) {
+      calculateFee();
+    }
+  }, [watchAmount, watchTransactionType]);
+
+  const calculateFallbackFee = (amount: number, transactionType: string) => {
+    // Default fee calculation logic
+    if (transactionType === "cash-in") {
+      return Math.min(amount * 0.01, 10); // 1% up to GHS 10
+    } else {
+      return Math.min(amount * 0.015, 15); // 1.5% up to GHS 15
+    }
+  };
+
+  // Process transaction - FIXED error handling
+  const onSubmit = async (data: FormValues) => {
+    setIsProcessing(true);
+
     try {
-      if (!dateString) return "N/A"
-      const date = parseISO(dateString)
-      if (!isValid(date)) return "Invalid date"
-      return format(date, "MMM d, yyyy h:mm a")
+      if (!currentUser?.branchId) {
+        throw new Error("Branch ID not found");
+      }
+
+      const selectedAccount = momoAccounts.find(
+        (acc) => acc.provider === data.provider
+      );
+      if (!selectedAccount) {
+        throw new Error("Selected provider account not found");
+      }
+
+      const requestData = {
+        type: data.transactionType,
+        amount: Number(data.amount),
+        fee: Number(data.fee || 0),
+        customer_name: data.customerName,
+        phone_number: data.phoneNumber,
+        float_account_id: selectedAccount.id,
+        reference: data.reference || `MOMO-${Date.now()}`,
+        user_id: currentUser.id,
+        processed_by:
+          currentUser.username || currentUser.fullName || "Unknown User",
+        branch_id: currentUser.branchId,
+      };
+
+      console.log("🔷 [MOMO] Submitting request:", requestData);
+
+      const response = await fetch(
+        `/api/momo/branch/${currentUser.branchId}/transactions`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-user-id": currentUser.id,
+            "x-user-name":
+              currentUser.username || currentUser.fullName || "Unknown User",
+            "x-user-role": currentUser.role || "user",
+            "x-branch-id": currentUser.branchId,
+            "x-branch-name": currentUser.branchName || "Unknown Branch",
+          },
+          body: JSON.stringify(requestData),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Created Successfully",
+          description: `${
+            data.transactionType === "cash-in" ? "Cash-in" : "Cash-out"
+          } of ${formatCurrency(Number(data.amount))} processed for ${
+            data.customerName
+          }`,
+        });
+
+        // Reset form
+        form.reset();
+        setFeeCalculation(null);
+
+        // Refresh data
+        fetchTransactions();
+        refreshFloatAccounts();
+        refreshCashTill();
+        refreshStatistics();
+
+        // Show receipt
+        setCurrentTransaction({
+          transactionId: result.transaction?.id || `momo-${Date.now()}`,
+          sourceModule: "momo",
+          transactionType: data.transactionType,
+          amount: Number(data.amount),
+          fee: Number(data.fee || 0),
+          customerName: data.customerName,
+          reference: data.reference,
+          branchName: currentUser.branchName || "Unknown Branch",
+          date: new Date().toISOString(),
+          additionalData: {
+            phoneNumber: data.phoneNumber,
+            provider: data.provider,
+          },
+        });
+        setShowReceiptDialog(true);
+      } else {
+        throw new Error(result.error || "Failed to create transaction");
+      }
     } catch (error) {
-      console.error("Date formatting error:", error)
-      return "Invalid date"
+      console.error("❌ [MOMO] Error:", error);
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to create transaction",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
     }
-  }
+  };
+
+  // Handle edit transaction
+  const handleEditTransaction = (transaction: any) => {
+    console.log("🔧 [EDIT] Transaction clicked:", transaction);
+    console.log("🔧 [EDIT] Current state - editDialogOpen:", editDialogOpen);
+    console.log(
+      "🔧 [EDIT] Current state - selectedTransaction:",
+      selectedTransaction
+    );
+
+    // Map the transaction data to match what the dialog expects (snake_case)
+    const mappedTransaction = {
+      ...transaction,
+      customer_name: transaction.customerName,
+      phone_number: transaction.phoneNumber,
+      created_at: transaction.date,
+      transaction_type: transaction.type,
+    };
+    console.log("🔧 [EDIT] Mapped transaction:", mappedTransaction);
+
+    setSelectedTransaction(mappedTransaction);
+    console.log("🔧 [EDIT] Set selectedTransaction");
+
+    setEditDialogOpen(true);
+    console.log("🔧 [EDIT] Set editDialogOpen to true");
+  };
+
+  // Handle delete transaction
+  const handleDeleteTransaction = (transaction: any) => {
+    console.log("🗑️ [DELETE] Transaction clicked:", transaction);
+    console.log(
+      "🗑️ [DELETE] Current state - deleteDialogOpen:",
+      deleteDialogOpen
+    );
+    console.log(
+      "🗑️ [DELETE] Current state - selectedTransaction:",
+      selectedTransaction
+    );
+
+    // Map the transaction data to match what the dialog expects (snake_case)
+    const mappedTransaction = {
+      ...transaction,
+      customer_name: transaction.customerName,
+      phone_number: transaction.phoneNumber,
+      created_at: transaction.date,
+      transaction_type: transaction.type,
+    };
+    console.log("🗑️ [DELETE] Mapped transaction:", mappedTransaction);
+
+    setSelectedTransaction(mappedTransaction);
+    console.log("🗑️ [DELETE] Set selectedTransaction");
+
+    setDeleteDialogOpen(true);
+    console.log("🗑️ [DELETE] Set deleteDialogOpen to true");
+  };
+
+  // Handle successful edit/delete
+  const handleTransactionSuccess = () => {
+    fetchTransactions();
+    refreshStatistics();
+    refreshFloatAccounts();
+    refreshCashTill();
+  };
+
+  // Refresh all data
+  const refreshAllData = useCallback(() => {
+    fetchTransactions();
+    refreshFloatAccounts();
+    refreshCashTill();
+    refreshStatistics();
+  }, [
+    fetchTransactions,
+    refreshFloatAccounts,
+    refreshCashTill,
+    refreshStatistics,
+  ]);
+
+  // Load initial data
+  useEffect(() => {
+    refreshAllData();
+  }, [refreshAllData]);
+
+  const formatDate = (dateString: string) => {
+    return format(parseISO(dateString), "MMM dd, yyyy HH:mm");
+  };
 
   const getTransactionTypeBadge = (type: string) => {
-    switch (type) {
-      case "cash-in":
-        return <Badge className="bg-green-100 text-green-800">Cash In</Badge>
-      case "cash-out":
-        return <Badge className="bg-blue-100 text-blue-800">Cash Out</Badge>
-      default:
-        return <Badge>{type}</Badge>
-    }
-  }
+    return (
+      <Badge variant={type === "cash-in" ? "default" : "secondary"}>
+        {type === "cash-in" ? "Cash In" : "Cash Out"}
+      </Badge>
+    );
+  };
 
   const printReceipt = (transaction: any) => {
-    setCurrentTransaction(transaction)
-    setShowReceiptDialog(true)
-  }
+    setCurrentTransaction({
+      transactionId: transaction.id,
+      sourceModule: "momo",
+      transactionType: transaction.type,
+      amount: transaction.amount,
+      fee: transaction.fee,
+      customerName: transaction.customerName,
+      reference: transaction.reference,
+      branchName: transaction.branchName || "Unknown Branch",
+      date: transaction.date,
+      additionalData: {
+        phoneNumber: transaction.phoneNumber,
+        provider: transaction.provider,
+      },
+    });
+    setShowReceiptDialog(true);
+  };
 
-  const handleEditTransaction = useCallback((transaction) => {
-    setSelectedTransactionForEdit(transaction)
-    setShowEditDialog(true)
-  }, [])
-
-  const handleDeleteTransaction = useCallback(
-    async (transaction) => {
-      const confirmed = window.confirm(
-        "Are you sure you want to delete this transaction? This will restore the float balance.",
-      )
-
-      if (!confirmed) return
-
-      try {
-        const response = await fetch(`/api/momo/transactions/${transaction.id}`, {
-          method: "DELETE",
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          throw new Error(errorData.error || "Failed to delete transaction")
-        }
-
-        toast({
-          title: "Transaction Deleted",
-          description: "Transaction has been deleted and float balance restored.",
-        })
-
-        refreshAllBalances()
-      } catch (error) {
-        console.error("Delete error:", error)
-        toast({
-          title: "Delete Failed",
-          description: error instanceof Error ? error.message : "Failed to delete the transaction. Please try again.",
-          variant: "destructive",
-        })
-      }
-    },
-    [refreshAllBalances, toast],
-  )
-
-  const handleEditSuccess = useCallback(() => {
-    setShowEditDialog(false)
-    setSelectedTransactionForEdit(null)
-    refreshAllBalances()
-  }, [refreshAllBalances])
-
-  // Add safety check for momoStats
-  const safeMomoStats = momoStats || {
-    totalTransactions: 0,
-    totalVolume: 0,
-    totalCommission: 0,
-  }
-
-  // Replace the exportTransactions function with:
   const exportTransactions = () => {
-    try {
-      if (transactions.length === 0) {
-        toast({
-          title: "No Data",
-          description: "No transactions available to export",
-          variant: "destructive",
-        })
-        return
-      }
-
-      const exportData = transactions.map(formatTransactionForExport)
-      exportToCSV(exportData, "momo-transactions")
-
+    if (!transactions || transactions.length === 0) {
       toast({
-        title: "Export Successful",
-        description: "Transaction history has been exported to CSV",
-      })
-    } catch (error) {
-      console.error("Export error:", error)
-      toast({
-        title: "Export Failed",
-        description: "Failed to export transaction history",
+        title: "No Data",
+        description: "No transactions to export",
         variant: "destructive",
-      })
+      });
+      return;
     }
+
+    const formattedTransactions = transactions.map((tx) =>
+      formatTransactionForExport({
+        id: tx.id,
+        date: tx.date,
+        customerName: tx.customerName,
+        phoneNumber: tx.phoneNumber,
+        type: tx.type,
+        provider: tx.provider,
+        amount: tx.amount,
+        fee: tx.fee,
+        status: tx.status,
+        reference: tx.reference,
+      })
+    );
+
+    exportToCSV(
+      formattedTransactions,
+      `momo-transactions-${new Date().toISOString().split("T")[0]}`
+    );
+  };
+
+  // Loading states
+  if (isLoadingUser) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2">Loading user data...</span>
+      </div>
+    );
+  }
+
+  if (userError) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertTriangle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+          <p className="text-red-600">Error loading user data: {userError}</p>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-            <Smartphone className="h-8 w-8" />
-            Mobile Money (MoMo) - Fixed
-          </h1>
-          <p className="text-muted-foreground">Process mobile money transactions and view transaction history</p>
+          <h1 className="text-3xl font-bold">Mobile Money</h1>
+          <p className="text-muted-foreground">
+            Process mobile money transactions and manage float accounts
+          </p>
         </div>
         <BranchIndicator />
       </div>
 
-      {/* Error displays */}
-      {cashError && (
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-800 mb-4">
-          <div className="flex items-center">
-            <AlertTriangle className="mr-2 h-4 w-4" />
-            <span>Error loading cash-in-till data: {cashError}</span>
-          </div>
+      {/* Test Section for Debugging */}
+      <div className="p-4 border rounded-lg bg-yellow-50">
+        <h3 className="font-semibold mb-2">🧪 Debug Test Section</h3>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              console.log("🧪 [TEST] Edit dialog test clicked");
+              const testTransaction = {
+                id: "test-123",
+                customerName: "Test Customer",
+                phoneNumber: "1234567890",
+                amount: 100,
+                fee: 5,
+                type: "cash-in",
+                provider: "MTN",
+                date: new Date().toISOString(),
+                status: "completed",
+                customer_name: "Test Customer",
+                phone_number: "1234567890",
+                created_at: new Date().toISOString(),
+                transaction_type: "cash-in",
+              };
+              setSelectedTransaction(testTransaction);
+              setEditDialogOpen(true);
+            }}
+          >
+            Test Edit Dialog
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              console.log("🧪 [TEST] Delete dialog test clicked");
+              const testTransaction = {
+                id: "test-123",
+                customerName: "Test Customer",
+                phoneNumber: "1234567890",
+                amount: 100,
+                fee: 5,
+                type: "cash-in",
+                provider: "MTN",
+                date: new Date().toISOString(),
+                status: "completed",
+                customer_name: "Test Customer",
+                phone_number: "1234567890",
+                created_at: new Date().toISOString(),
+                transaction_type: "cash-in",
+              };
+              setSelectedTransaction(testTransaction);
+              setDeleteDialogOpen(true);
+            }}
+          >
+            Test Delete Dialog
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              console.log("🧪 [TEST] Current state:", {
+                editDialogOpen,
+                deleteDialogOpen,
+                selectedTransaction,
+              });
+            }}
+          >
+            Log State
+          </Button>
         </div>
-      )}
+      </div>
 
-      {floatAccountsError && (
-        <div className="rounded-md bg-red-50 p-3 text-sm text-red-800 mb-4">
-          <div className="flex items-center">
-            <AlertTriangle className="mr-2 h-4 w-4" />
-            <span>Error loading MoMo accounts: {floatAccountsError.message}</span>
-          </div>
-        </div>
-      )}
-
-      {momoAccounts.length === 0 && !isLoadingFloatAccounts && (
-        <div className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-800 mb-4">
-          <div className="flex flex-col space-y-2">
-            <div className="flex items-center">
-              <AlertTriangle className="mr-2 h-4 w-4" />
-              <span className="font-medium">No MoMo accounts found</span>
-            </div>
-            <p>Please contact your administrator to set up MoMo accounts for this branch.</p>
-          </div>
-        </div>
-      )}
-
-      {/* Debug info for MoMo accounts */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="rounded-md bg-blue-50 p-4 text-sm text-blue-800 mb-4">
-          <div className="flex flex-col space-y-2">
-            <div className="flex items-center">
-              <AlertTriangle className="mr-2 h-4 w-4" />
-              <span className="font-medium">Debug: MoMo Accounts Found</span>
-            </div>
-            <p>Total Float Accounts: {floatAccounts.length}</p>
-            <p>MoMo Accounts: {momoAccounts.length}</p>
-            <div className="text-xs">
-              {momoAccounts.map((acc) => (
-                <div key={acc.id}>
-                  {acc.provider} - {acc.account_type} - Active: {acc.is_active ? "Yes" : "No"}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Cards */}
+      {/* Statistics Cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Transactions</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Transactions
+            </CardTitle>
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{safeMomoStats?.totalTransactions || 0}</div>
-            <p className="text-xs text-muted-foreground">Volume: {formatCurrency(safeMomoStats?.totalVolume || 0)}</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Commission Earned</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(safeMomoStats?.totalCommission || 0)}</div>
-            <p className="text-xs text-muted-foreground">Today's earnings</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Providers</CardTitle>
-            <Building2 className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{momoAccounts.filter((acc) => acc.is_active).length}</div>
+            <div className="text-2xl font-bold">
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                statistics?.totalTransactions || 0
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
-              {selectedMoMoAccount ? `Selected: ${selectedMoMoAccount.provider}` : "None selected"}
+              All time transactions
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total MoMo Float</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Amount</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(momoAccounts.reduce((total, acc) => total + (acc.current_balance || 0), 0))}
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                formatCurrency(statistics?.totalAmount || 0)
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">Combined float balance</p>
+            <p className="text-xs text-muted-foreground">
+              Total transaction value
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Fees</CardTitle>
+            <TrendingDown className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                formatCurrency(statistics?.totalFees || 0)
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total fees collected
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Active Customers
+            </CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {statsLoading ? (
+                <Loader2 className="h-6 w-6 animate-spin" />
+              ) : (
+                statistics?.uniqueCustomers || 0
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Unique customers served
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+      {/* Float Alerts */}
+      {floatAlerts.length > 0 && (
+        <div className="space-y-2">
+          {floatAlerts.map((alert, index) => (
+            <div
+              key={index}
+              className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg"
+            >
+              <AlertTriangle className="h-4 w-4 text-yellow-600" />
+              <span className="text-sm text-yellow-800">{alert.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Float Account Display */}
+      <BranchFloatDisplay serviceType="momo" />
+
+      <Tabs
+        value={activeTab}
+        onValueChange={setActiveTab}
+        className="space-y-4"
+      >
         <TabsList>
           <TabsTrigger value="new">New Transaction</TabsTrigger>
           <TabsTrigger value="history">Transaction History</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="new" className="space-y-4">
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Transaction Form */}
-            <Card>
-              <CardHeader>
-                <CardTitle>New MoMo Transaction</CardTitle>
-                <CardDescription>Process a new mobile money transaction</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+        <TabsContent value="new">
+          <Card>
+            <CardHeader>
+              <CardTitle>Create New Transaction</CardTitle>
+              <CardDescription>
+                Process a new mobile money transaction
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form
+                onSubmit={form.handleSubmit(onSubmit)}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="transactionType">Transaction Type</Label>
                     <Select
-                      onValueChange={(value) => {
-                        form.setValue("transactionType", value as "cash-in" | "cash-out")
-                      }}
-                      defaultValue={form.getValues("transactionType")}
+                      value={form.watch("transactionType")}
+                      onValueChange={(value) =>
+                        form.setValue(
+                          "transactionType",
+                          value as "cash-in" | "cash-out"
+                        )
+                      }
                     >
                       <SelectTrigger>
                         <SelectValue placeholder="Select transaction type" />
@@ -592,203 +770,184 @@ export default function MoMoPageFixed() {
                       </SelectContent>
                     </Select>
                     {form.formState.errors.transactionType && (
-                      <p className="text-sm text-red-500">{form.formState.errors.transactionType.message}</p>
+                      <p className="text-sm text-red-500">
+                        {form.formState.errors.transactionType.message}
+                      </p>
                     )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="provider">MoMo Provider</Label>
+                    <Label htmlFor="provider">Provider</Label>
                     <Select
-                      onValueChange={(value) => {
+                      value={form.watch("provider")}
+                      onValueChange={(value) =>
                         form.setValue("provider", value)
-                      }}
+                      }
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select MoMo provider" />
+                        <SelectValue placeholder="Select provider" />
                       </SelectTrigger>
                       <SelectContent>
-                        {isLoadingFloatAccounts ? (
-                          <SelectItem value="loading" disabled>
-                            Loading providers...
+                        {momoAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.provider}>
+                            {account.provider} -{" "}
+                            {formatCurrency(account.current_balance)}
                           </SelectItem>
-                        ) : momoAccounts.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            No MoMo accounts available
-                          </SelectItem>
-                        ) : (
-                          momoAccounts.map((account) => (
-                            <SelectItem key={account.id} value={account.provider}>
-                              <div className="flex items-center justify-between w-full">
-                                <span>{account.provider}</span>
-                                <span className="text-sm text-muted-foreground ml-2">
-                                  {formatCurrency(account.current_balance)}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))
-                        )}
+                        ))}
                       </SelectContent>
                     </Select>
                     {form.formState.errors.provider && (
-                      <p className="text-sm text-red-500">{form.formState.errors.provider.message}</p>
-                    )}
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="customerName">Customer Name</Label>
-                      <Input id="customerName" placeholder="Enter customer name" {...form.register("customerName")} />
-                      {form.formState.errors.customerName && (
-                        <p className="text-sm text-red-500">{form.formState.errors.customerName.message}</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="phoneNumber">Phone Number</Label>
-                      <Input id="phoneNumber" placeholder="Enter phone number" {...form.register("phoneNumber")} />
-                      {form.formState.errors.phoneNumber && (
-                        <p className="text-sm text-red-500">{form.formState.errors.phoneNumber.message}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="amount">Amount (GHS)</Label>
-                      <Input id="amount" type="number" step="0.01" placeholder="0.00" {...form.register("amount")} />
-                      {form.formState.errors.amount && (
-                        <p className="text-sm text-red-500">{form.formState.errors.amount.message}</p>
-                      )}
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="fee">Fee (GHS)</Label>
-                      <Input
-                        id="fee"
-                        type="number"
-                        step="0.01"
-                        placeholder="Auto-calculated"
-                        {...form.register("fee")}
-                      />
-                      {feeCalculation && (
-                        <p className="mt-1 text-xs text-muted-foreground">
-                          {feeCalculation.feeSource === "database" ? "Database fee" : "Calculated fee"} (
-                          {feeCalculation.feeType})
-                        </p>
-                      )}
-                      <p className="text-xs text-muted-foreground">
-                        Optional. Will be auto-calculated based on transaction type and amount.
+                      <p className="text-sm text-red-500">
+                        {form.formState.errors.provider.message}
                       </p>
-                      {form.formState.errors.fee && (
-                        <p className="text-sm text-red-500">{form.formState.errors.fee.message}</p>
-                      )}
-                    </div>
+                    )}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="reference">Reference/Note</Label>
-                    <Textarea
-                      id="reference"
-                      placeholder="Enter transaction reference or notes"
-                      className="resize-none"
-                      {...form.register("reference")}
+                    <Label htmlFor="amount">Amount (GHS)</Label>
+                    <Input
+                      id="amount"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      placeholder="0.00"
+                      {...form.register("amount")}
                     />
-                  </div>
-
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={
-                      isProcessing ||
-                      !watchProvider ||
-                      momoAccounts.length === 0 ||
-                      isLoadingFloatAccounts ||
-                      isLoadingUser ||
-                      !currentUser
-                    }
-                  >
-                    {isProcessing ? (
-                      <>
-                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      "Process Transaction"
+                    {form.formState.errors.amount && (
+                      <p className="text-sm text-red-500">
+                        {form.formState.errors.amount.message}
+                      </p>
                     )}
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            {/* Balance Cards */}
-            <div className="flex flex-col gap-6">
-              {/* Cash in Till Card */}
-              <BranchFloatDisplay
-                title="Cash in Till"
-                description="Available cash for transactions"
-                serviceType="cash-in-till"
-                accounts={cashAccount ? [cashAccount] : []}
-                isLoading={isCashLoading}
-                error={cashError}
-                onRefresh={refreshAllBalances}
-                branchName={currentUser?.branchName || "Main Branch"}
-              />
-
-              {/* Selected Provider Float Card */}
-              <BranchFloatDisplay
-                title={selectedMoMoAccount ? `${selectedMoMoAccount.provider} Float` : "MoMo Float"}
-                description={
-                  selectedMoMoAccount
-                    ? `Available float for ${selectedMoMoAccount.provider} transactions`
-                    : "Select a provider to view float balance"
-                }
-                serviceType="momo"
-                accounts={selectedMoMoAccount ? [selectedMoMoAccount] : momoAccounts}
-                selectedAccount={selectedMoMoAccount}
-                isLoading={isLoadingFloatAccounts}
-                error={floatAccountsError}
-                onRefresh={refreshAllBalances}
-                branchName={currentUser?.branchName || "Main Branch"}
-              />
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Stats</CardTitle>
-                  <CardDescription>Today's transaction summary</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{safeMomoStats?.totalTransactions || 0}</div>
-                      <div className="text-sm text-muted-foreground">Today's Transactions</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{formatCurrency(safeMomoStats?.totalVolume || 0)}</div>
-                      <div className="text-sm text-muted-foreground">Transaction Volume</div>
-                    </div>
-                    <div className="text-center">
-                      <div className="text-2xl font-bold">{formatCurrency(safeMomoStats?.totalCommission || 0)}</div>
-                      <div className="text-sm text-muted-foreground">Commission Earned</div>
-                    </div>
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="fee">Fee (GHS)</Label>
+                    <Input
+                      id="fee"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      {...form.register("fee")}
+                    />
+                    {form.formState.errors.fee && (
+                      <p className="text-sm text-red-500">
+                        {form.formState.errors.fee.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="customerName">Customer Name</Label>
+                    <Input
+                      id="customerName"
+                      placeholder="Enter customer name"
+                      {...form.register("customerName")}
+                    />
+                    {form.formState.errors.customerName && (
+                      <p className="text-sm text-red-500">
+                        {form.formState.errors.customerName.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="phoneNumber">Phone Number</Label>
+                    <Input
+                      id="phoneNumber"
+                      placeholder="0241234567"
+                      {...form.register("phoneNumber")}
+                    />
+                    {form.formState.errors.phoneNumber && (
+                      <p className="text-sm text-red-500">
+                        {form.formState.errors.phoneNumber.message}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="reference">Reference (Optional)</Label>
+                  <Input
+                    id="reference"
+                    placeholder="Enter reference number"
+                    {...form.register("reference")}
+                  />
+                  {form.formState.errors.reference && (
+                    <p className="text-sm text-red-500">
+                      {form.formState.errors.reference.message}
+                    </p>
+                  )}
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isProcessing}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Processing Transaction...
+                    </>
+                  ) : (
+                    <>
+                      <Smartphone className="mr-2 h-4 w-4" />
+                      Process Transaction
+                    </>
+                  )}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="history">
           <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <Input placeholder="Search transactions..." className="max-w-sm" />
+              <Input
+                placeholder="Search transactions..."
+                className="max-w-sm"
+              />
               <div className="flex items-center space-x-2">
-                <Button variant="outline" size="sm" onClick={refreshAllBalances}>
+                <Button variant="outline" size="sm" onClick={refreshAllData}>
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Refresh
                 </Button>
-                <Button variant="outline" size="sm" onClick={exportTransactions}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportTransactions}
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export CSV
+                </Button>
+                {/* Test button for debugging */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    console.log("🧪 [TEST] Test button clicked");
+                    const testTransaction = {
+                      id: "test-123",
+                      customerName: "Test Customer",
+                      phoneNumber: "1234567890",
+                      amount: 100,
+                      fee: 5,
+                      type: "cash-in",
+                      provider: "MTN",
+                      date: new Date().toISOString(),
+                      status: "completed",
+                    };
+                    console.log(
+                      "🧪 [TEST] Setting test transaction:",
+                      testTransaction
+                    );
+                    setSelectedTransaction(testTransaction);
+                    setEditDialogOpen(true);
+                  }}
+                >
+                  Test Edit
                 </Button>
               </div>
             </div>
@@ -821,14 +980,17 @@ export default function MoMoPageFixed() {
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-4">
                       <span className="text-sm text-muted-foreground">
-                        No transactions available. Create a new transaction or try refreshing.
+                        No transactions available. Create a new transaction or
+                        try refreshing.
                       </span>
                     </TableCell>
                   </TableRow>
                 ) : (
                   transactions.map((tx) => (
                     <TableRow key={tx.id}>
-                      <TableCell className="whitespace-nowrap">{formatDate(tx.date)}</TableCell>
+                      <TableCell className="whitespace-nowrap">
+                        {formatDate(tx.date)}
+                      </TableCell>
                       <TableCell>{tx.customerName}</TableCell>
                       <TableCell>{tx.phoneNumber}</TableCell>
                       <TableCell>{getTransactionTypeBadge(tx.type)}</TableCell>
@@ -837,16 +999,20 @@ export default function MoMoPageFixed() {
                           <span>{tx.provider}</span>
                         </div>
                       </TableCell>
-                      <TableCell className="text-right font-medium">{formatCurrency(tx.amount)}</TableCell>
-                      <TableCell className="text-right">{formatCurrency(tx.fee)}</TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(tx.amount)}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {formatCurrency(tx.fee)}
+                      </TableCell>
                       <TableCell>
                         <Badge
                           variant={
                             tx.status === "completed"
                               ? "default"
                               : tx.status === "pending"
-                                ? "secondary"
-                                : "destructive"
+                              ? "secondary"
+                              : "destructive"
                           }
                         >
                           {tx.status}
@@ -854,7 +1020,12 @@ export default function MoMoPageFixed() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="icon" onClick={() => printReceipt(tx)} title="Print Receipt">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => printReceipt(tx)}
+                            title="Print Receipt"
+                          >
                             <Printer className="h-4 w-4" />
                           </Button>
                           {tx.status === "completed" && (
@@ -862,7 +1033,13 @@ export default function MoMoPageFixed() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => handleEditTransaction(tx)}
+                                onClick={() => {
+                                  console.log(
+                                    "🔧 [EDIT-BUTTON] Clicked for transaction:",
+                                    tx
+                                  );
+                                  handleEditTransaction(tx);
+                                }}
                                 title="Edit Transaction"
                                 className="text-blue-600 hover:text-blue-700"
                               >
@@ -871,7 +1048,13 @@ export default function MoMoPageFixed() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => handleDeleteTransaction(tx)}
+                                onClick={() => {
+                                  console.log(
+                                    "🗑️ [DELETE-BUTTON] Clicked for transaction:",
+                                    tx
+                                  );
+                                  handleDeleteTransaction(tx);
+                                }}
                                 title="Delete Transaction"
                                 className="text-red-600 hover:text-red-700"
                               >
@@ -895,89 +1078,39 @@ export default function MoMoPageFixed() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Transaction Receipt</DialogTitle>
-            <DialogDescription>Transaction details for printing</DialogDescription>
+            <DialogDescription>
+              Transaction details for printing
+            </DialogDescription>
           </DialogHeader>
           {currentTransaction && (
-            <div id="receipt-content" className="space-y-4">
-              <div className="text-center">
-                <div className="flex justify-center mb-2">
-                  <img src="/logo.png" alt="Mimhaad Financial Services Logo" className="w-12 h-12 rounded-full" />
-                </div>
-                <h3 className="text-lg font-bold">MIMHAAD FINANCIAL SERVICES</h3>
-                <p className="text-sm">{currentTransaction.branchName || "Main Branch"}</p>
-                <p className="text-sm">Tel: 0241378880</p>
-                <p className="text-sm">{formatDate(currentTransaction.date)}</p>
-              </div>
-              <div className="border-t border-b py-2">
-                <div className="flex justify-between text-sm py-1">
-                  <span>Transaction ID:</span>
-                  <span>{currentTransaction.id}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1">
-                  <span>Customer:</span>
-                  <span>{currentTransaction.customerName}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1">
-                  <span>Phone Number:</span>
-                  <span>{currentTransaction.phoneNumber}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1">
-                  <span>Transaction Type:</span>
-                  <span>{currentTransaction.type}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1">
-                  <span>Provider:</span>
-                  <span>{currentTransaction.provider}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1">
-                  <span>Amount:</span>
-                  <span>{formatCurrency(currentTransaction.amount)}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1">
-                  <span>Fee:</span>
-                  <span>{formatCurrency(currentTransaction.fee)}</span>
-                </div>
-                <div className="flex justify-between text-sm py-1 font-medium">
-                  <span>Total:</span>
-                  <span>
-                    {formatCurrency(
-                      currentTransaction.amount + (currentTransaction.type === "cash-in" ? 0 : currentTransaction.fee),
-                    )}
-                  </span>
-                </div>
-                {currentTransaction.reference && (
-                  <div className="flex justify-between text-sm py-1">
-                    <span>Reference:</span>
-                    <span>{currentTransaction.reference}</span>
-                  </div>
-                )}
-              </div>
-              <div className="text-center text-xs">
-                <p>Thank you for using our service!</p>
-                <p>For inquiries, please call our customer service at 0241378880</p>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end">
-            <Button
-              onClick={() => {
-                window.print()
-                setShowReceiptDialog(false)
+            <TransactionReceipt
+              data={currentTransaction}
+              onPrint={() => {
+                window.print();
+                setShowReceiptDialog(false);
               }}
-            >
-              Print Receipt
-            </Button>
-          </div>
+            />
+          )}
         </DialogContent>
       </Dialog>
 
       {/* Edit Transaction Dialog */}
-      <EditMoMoTransactionDialog
-        transaction={selectedTransactionForEdit}
-        open={showEditDialog}
-        onOpenChange={setShowEditDialog}
-        onSuccess={handleEditSuccess}
+      <TransactionEditDialog
+        open={editDialogOpen}
+        onOpenChange={setEditDialogOpen}
+        transaction={selectedTransaction}
+        sourceModule="momo"
+        onSuccess={handleTransactionSuccess}
+      />
+
+      {/* Delete Transaction Dialog */}
+      <TransactionDeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        transaction={selectedTransaction}
+        sourceModule="momo"
+        onSuccess={handleTransactionSuccess}
       />
     </div>
-  )
+  );
 }
