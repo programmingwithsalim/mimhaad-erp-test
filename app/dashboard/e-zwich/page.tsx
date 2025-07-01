@@ -119,6 +119,7 @@ export default function EZwichPage() {
     settlement_account_id: "",
     partner_account_id: "",
     notes: "",
+    reference: "",
   });
 
   const formatCurrency = (amount: number) => {
@@ -335,14 +336,14 @@ export default function EZwichPage() {
       setSubmitting(true);
 
       const settlementData = {
-        type: "settlement",
+        branchId: user.branchId,
+        partnerAccountId: settleForm.partner_account_id,
         amount: Number.parseFloat(settleForm.amount),
-        settlement_account_id: settleForm.settlement_account_id,
-        partner_account_id: settleForm.partner_account_id,
-        notes: settleForm.notes,
-        user_id: user.id,
-        branch_id: user.branchId,
-        processed_by: user.name || user.id,
+        reference:
+          settleForm.reference ||
+          `End-of-day settlement ${new Date().toISOString().split("T")[0]}`,
+        processedBy: user.name || user.id,
+        userId: user.id,
       };
 
       const response = await fetch("/api/e-zwich/settlement/process", {
@@ -369,6 +370,7 @@ export default function EZwichPage() {
           settlement_account_id: "",
           partner_account_id: "",
           notes: "",
+          reference: "",
         });
         setShowSettleDialog(false);
 
@@ -1019,7 +1021,7 @@ export default function EZwichPage() {
                     floatAccounts
                       .filter(
                         (account: any) =>
-                          account.isezwichpartner === true &&
+                          // account.isezwichpartner === true &&
                           account.account_type === "e-zwich" &&
                           account.is_active
                       )
@@ -1053,8 +1055,8 @@ export default function EZwichPage() {
                     floatAccounts
                       .filter(
                         (account: any) =>
-                          account.isezwichpartner !== true &&
-                          account.account_type === "partner" &&
+                          account.isezwichpartner === true &&
+                          account.account_type === "agency-banking" &&
                           account.is_active
                       )
                       .map((account: any) => (

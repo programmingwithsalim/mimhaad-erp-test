@@ -206,7 +206,7 @@ export default function EnhancedCardIssuanceForm({
       ]);
     if (step === 1)
       valid = await trigger(["id_type", "id_number", "id_expiry_date"]);
-    if (step === 2)
+    if (step === 2) {
       valid = await trigger([
         "card_type",
         "card_number",
@@ -216,6 +216,15 @@ export default function EnhancedCardIssuanceForm({
         "id_front_image",
         "id_back_image",
       ]);
+      if (!valid) {
+        toast({
+          title: "Missing or invalid fields",
+          description:
+            "Please fill all required card details and upload all images.",
+          variant: "destructive",
+        });
+      }
+    }
     if (step === 3) valid = true;
     if (valid && step < steps.length - 1)
       setStep((s) => Math.min(s + 1, steps.length - 1));
@@ -223,6 +232,7 @@ export default function EnhancedCardIssuanceForm({
   const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
   const onSubmit = async (data: any) => {
+    console.log("Ezwich form submitted", data); // DEBUG
     if (!user?.branchId || !user?.id) {
       toast({
         title: "Error",

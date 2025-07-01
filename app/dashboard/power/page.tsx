@@ -1,8 +1,9 @@
 "use client";
 
-import type React from "react";
-
 import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import {
   Card,
   CardContent,
@@ -13,7 +14,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -21,194 +21,180 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  RefreshCw,
+  Zap,
+  TrendingUp,
+  Activity,
+  Wallet,
+  DollarSign,
+  Printer,
+  Edit,
+  Trash2,
+} from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { useBranchFloatAccountsFixed } from "@/hooks/use-branch-float-accounts-fixed";
+import { formatCurrency } from "@/lib/currency";
+import { Badge } from "@/components/ui/badge";
+import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useToast } from "@/hooks/use-toast";
-import { useCurrentUser } from "@/hooks/use-current-user";
-import { useServiceStatistics } from "@/hooks/use-service-statistics";
-import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
-import {
-  Zap,
-  TrendingUp,
-  DollarSign,
-  Users,
-  RefreshCw,
-  Plus,
-  AlertTriangle,
-  Trash2,
-  Printer,
-  Receipt,
-  Edit,
-} from "lucide-react";
-import { format } from "date-fns";
 
-interface Transaction {
-  id: string;
-  meter_number: string;
-  amount: number;
-  customer_name: string;
-  customer_phone?: string;
-  provider: string;
-  reference?: string;
-  status: string;
-  created_at: string;
-}
+const powerTransactionSchema = z.object({
+  meterNumber: z.string().min(1, "Meter number is required"),
+  floatAccountId: z.string().min(1, "Power provider is required"),
+  amount: z.number().min(1, "Amount must be greater than 0"),
+  customerName: z.string().optional(),
+  customerPhone: z.string().optional(),
+  reference: z.string().optional(),
+});
 
-export default function PowerPage() {
+type PowerTransactionFormData = z.infer<typeof powerTransactionSchema>;
+
+export default function PowerPageEnhancedFixed() {
   const { toast } = useToast();
   const { user } = useCurrentUser();
-  const {
-    statistics,
-    floatAlerts,
-    isLoading: statsLoading,
-    refreshStatistics,
-  } = useServiceStatistics("power");
-
-  const [submitting, setSubmitting] = useState(false);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [floatAccounts, setFloatAccounts] = useState([]);
-  const [loadingTransactions, setLoadingTransactions] = useState(false);
-  const [loadingFloats, setLoadingFloats] = useState(false);
-  const [activeTab, setActiveTab] = useState("payment");
-  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
-  const [currentTransaction, setCurrentTransaction] = useState<any>(null);
-  const [editingTransaction, setEditingTransaction] =
-    useState<Transaction | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [calculatedFee, setCalculatedFee] = useState<number>(0);
+  const [statistics, setStatistics] = useState<any>(null);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState("");
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [currentTransaction, setCurrentTransaction] = useState<any>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  const [paymentForm, setPaymentForm] = useState({
-    meter_number: "",
-    amount: "",
-    customer_name: "",
-    customer_phone: "",
-    provider: "",
-    notes: "",
+  const {
+    accounts: floatAccounts,
+    loading: isLoadingAccounts,
+    refetch: refreshAccounts,
+  } = useBranchFloatAccountsFixed();
+
+  // Filter power accounts
+  const powerFloats = floatAccounts.filter(
+    (account) =>
+      account.is_active &&
+      (account.account_type === "power" ||
+        account.provider.toLowerCase().includes("power") ||
+        account.provider.toLowerCase().includes("electricity"))
+  );
+
+  const form = useForm<PowerTransactionFormData>({
+    resolver: zodResolver(powerTransactionSchema),
+    defaultValues: {
+      meterNumber: "",
+      floatAccountId: "",
+      amount: 0,
+      customerName: "",
+      customerPhone: "",
+      reference: "",
+    },
   });
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-GH", {
-      style: "currency",
-      currency: "GHS",
-    }).format(amount || 0);
-  };
+  const watchedAmount = form.watch("amount");
+  const watchedFloatId = form.watch("floatAccountId");
 
-  const loadTransactions = async () => {
-    if (!user?.branchId) return;
-
-    try {
-      setLoadingTransactions(true);
-      const response = await fetch(
-        `/api/power/transactions?branchId=${user.branchId}&limit=50`
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && Array.isArray(data.transactions)) {
-          setTransactions(data.transactions);
-        } else {
-          setTransactions([]);
-        }
-      } else {
-        setTransactions([]);
-      }
-    } catch (error) {
-      console.error("Error loading power transactions:", error);
-      setTransactions([]);
-    } finally {
-      setLoadingTransactions(false);
-    }
-  };
-
-  const loadFloatAccounts = async () => {
-    if (!user?.branchId) return;
-
-    try {
-      setLoadingFloats(true);
-      const response = await fetch(
-        `/api/float-accounts?branchId=${user.branchId}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && Array.isArray(data.accounts)) {
-          setFloatAccounts(
-            data.accounts.filter((a: any) => a.account_type === "power")
-          );
-        } else {
-          setFloatAccounts([]);
-        }
-      } else {
-        setFloatAccounts([]);
-      }
-    } catch (error) {
-      console.error("Error loading float accounts:", error);
-      setFloatAccounts([]);
-    } finally {
-      setLoadingFloats(false);
-    }
-  };
-
+  // Calculate fee when amount or provider changes
   useEffect(() => {
-    if (user?.branchId) {
-      loadTransactions();
-      loadFloatAccounts();
-    }
-  }, [user?.branchId]);
+    const calculateFee = async () => {
+      if (watchedAmount && watchedAmount > 0) {
+        try {
+          const selectedFloat = powerFloats.find(
+            (f) => f.id === watchedFloatId
+          );
+          const response = await fetch("/api/power/calculate-fee", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: watchedAmount,
+              provider: selectedFloat?.provider || "ECG",
+            }),
+          });
 
-  const handlePaymentSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user?.branchId || !user?.id) {
+          if (response.ok) {
+            const data = await response.json();
+            setCalculatedFee(data.fee || 0);
+          } else {
+            // Fallback calculation
+            setCalculatedFee(Math.min(watchedAmount * 0.02, 10)); // 2% max 10 GHS
+          }
+        } catch (error) {
+          console.error("Error calculating fee:", error);
+          setCalculatedFee(Math.min(watchedAmount * 0.02, 10));
+        }
+      } else {
+        setCalculatedFee(0);
+      }
+    };
+
+    calculateFee();
+  }, [watchedAmount, watchedFloatId, powerFloats]);
+
+  const onSubmit = async (data: PowerTransactionFormData) => {
+    if (!user) {
       toast({
         title: "Error",
-        description: "Branch ID is required",
+        description: "User information not available. Please log in again.",
         variant: "destructive",
       });
       return;
     }
 
-    if (
-      !paymentForm.meter_number ||
-      !paymentForm.amount ||
-      !paymentForm.customer_name ||
-      !paymentForm.provider
-    ) {
+    const selectedFloat = powerFloats.find((f) => f.id === data.floatAccountId);
+    if (!selectedFloat) {
       toast({
         title: "Error",
-        description: "Please fill in all required fields",
+        description: "Please select a power provider.",
         variant: "destructive",
       });
       return;
     }
+
+    const totalRequired = data.amount + calculatedFee;
+    if (selectedFloat.current_balance < totalRequired) {
+      toast({
+        title: "Insufficient Float Balance",
+        description: `This transaction requires GHS ${totalRequired.toFixed(
+          2
+        )} but the float only has GHS ${selectedFloat.current_balance.toFixed(
+          2
+        )}.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
 
     try {
-      setSubmitting(true);
-
       const transactionData = {
-        meter_number: paymentForm.meter_number,
-        amount: Number.parseFloat(paymentForm.amount),
-        customer_name: paymentForm.customer_name,
-        customer_phone: paymentForm.customer_phone,
-        provider: paymentForm.provider,
-        reference: `PWR-${Date.now()}`,
-        notes: paymentForm.notes,
+        meter_number: data.meterNumber,
+        provider: selectedFloat.provider,
+        amount: data.amount,
+        fee: calculatedFee,
+        customer_name: data.customerName,
+        customer_phone: data.customerPhone,
+        reference: data.reference || `PWR-${Date.now()}`,
+        floatAccountId: data.floatAccountId,
         userId: user.id,
         branchId: user.branchId,
+        processedBy: user.name || user.username,
+        username: user.username,
+        branchName: user.branchName,
       };
 
       const response = await fetch("/api/power/transactions", {
@@ -219,80 +205,106 @@ export default function PowerPage() {
         body: JSON.stringify(transactionData),
       });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to process transaction");
+      }
+
       const result = await response.json();
 
       if (result.success) {
-        // Show receipt
-        setCurrentTransaction({
-          ...transactionData,
-          id: result.transactionId,
-          status: "completed",
-          created_at: new Date().toISOString(),
-        });
-        setShowReceiptDialog(true);
-
-        // Reset form
-        setPaymentForm({
-          meter_number: "",
-          amount: "",
-          customer_name: "",
-          customer_phone: "",
-          provider: "",
-          notes: "",
-        });
-
-        // Refresh data
-        loadTransactions();
-        loadFloatAccounts();
-        refreshStatistics();
-
         toast({
-          title: "Payment Successful",
-          description: "Power bill payment processed successfully",
+          title: "Success",
+          description: "Power transaction processed successfully",
         });
+        form.reset();
+        setCalculatedFee(0);
+        refreshAccounts();
+        handlePrintReceipt(result.transaction);
       } else {
-        toast({
-          title: "Payment Failed",
-          description: result.error || "Failed to process payment",
-          variant: "destructive",
-        });
+        throw new Error(result.error || "Failed to process transaction");
       }
     } catch (error) {
-      console.error("Error processing payment:", error);
+      console.error("Error processing power transaction:", error);
       toast({
-        title: "Payment Failed",
-        description: "Failed to process payment",
+        title: "Error",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to process transaction",
         variant: "destructive",
       });
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  const handleEdit = (transaction: Transaction) => {
-    setEditingTransaction(transaction);
-    setShowEditDialog(true);
+  const getFloatStatus = (current: number, min: number) => {
+    if (current < min) return { label: "Critical", color: "destructive" };
+    if (current < min * 1.5) return { label: "Low", color: "warning" };
+    return { label: "Healthy", color: "success" };
   };
 
-  const handleDelete = async (transactionId: string) => {
-    if (
-      !window.confirm(
-        "Are you sure you want to delete this transaction? This action cannot be undone."
-      )
-    )
-      return;
+  useEffect(() => {
+    if (user?.branchId) {
+      fetch(`/api/power/transactions?branchId=${user.branchId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success && Array.isArray(data.transactions)) {
+            setTransactions(data.transactions);
+          } else {
+            setTransactions([]);
+          }
+        });
+    }
+  }, [user?.branchId]);
+
+  // When preparing floatAccounts for DynamicFloatDisplay, include both power floats and cash in till accounts:
+  const allRelevantFloats = [
+    ...floatAccounts.filter(
+      (acc) => acc.account_type === "power" && acc.is_active
+    ),
+    ...floatAccounts.filter(
+      (acc) => acc.account_type === "cash-in-till" && acc.is_active
+    ),
+  ];
+
+  const handleEdit = (tx: any) => {
+    setCurrentTransaction(tx);
+    setShowEditDialog(true);
+  };
+  const handleDelete = (tx: any) => {
+    setCurrentTransaction(tx);
+    setShowDeleteDialog(true);
+  };
+  const confirmDelete = async () => {
+    if (!currentTransaction) return;
+    setIsDeleting(true);
     try {
-      const response = await fetch(`/api/power/transactions/${transactionId}`, {
-        method: "DELETE",
-      });
+      const response = await fetch(
+        `/api/power/transactions/${currentTransaction.id}`,
+        { method: "DELETE" }
+      );
       const result = await response.json();
       if (result.success) {
         toast({
           title: "Transaction Deleted",
           description: "Transaction has been deleted successfully",
         });
-        loadTransactions();
-        refreshStatistics();
+        setShowDeleteDialog(false);
+        setCurrentTransaction(null);
+        // Refresh transactions
+        if (user?.branchId) {
+          fetch(`/api/power/transactions?branchId=${user.branchId}`)
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.success && Array.isArray(data.transactions)) {
+                setTransactions(data.transactions);
+              } else {
+                setTransactions([]);
+              }
+            });
+        }
       } else {
         toast({
           title: "Delete Failed",
@@ -306,343 +318,395 @@ export default function PowerPage() {
         description: "Failed to delete transaction",
         variant: "destructive",
       });
+    } finally {
+      setIsDeleting(false);
     }
   };
-
-  const handleProviderChange = (provider: string) => {
-    setPaymentForm((prev) => ({ ...prev, provider }));
-    setSelectedProvider(provider);
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "completed":
-        return <Badge variant="default">Completed</Badge>;
-      case "pending":
-        return <Badge variant="secondary">Pending</Badge>;
-      case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
-      default:
-        return <Badge variant="outline">Unknown</Badge>;
-    }
-  };
-
-  const printReceipt = () => {
-    const printContent = document.getElementById("receipt-content");
-    if (printContent) {
-      const printWindow = window.open("", "_blank");
-      if (printWindow) {
-        printWindow.document.write(`
-          <html>
-            <head>
-              <title>Power Payment Receipt</title>
-              <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .receipt { max-width: 300px; margin: 0 auto; }
-                .center { text-align: center; }
-                .line { border-bottom: 1px solid #000; margin: 10px 0; }
-                .row { display: flex; justify-content: space-between; margin: 5px 0; }
-                .logo { width: 60px; height: 60px; margin: 0 auto 10px; }
-              </style>
-            </head>
-            <body>
-              ${printContent.innerHTML}
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
+  const handleEditSubmit = async (updated: any) => {
+    if (!currentTransaction) return;
+    setIsEditing(true);
+    try {
+      const response = await fetch(
+        `/api/power/transactions/${currentTransaction.id}`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updated),
+        }
+      );
+      const result = await response.json();
+      if (result.success) {
+        toast({
+          title: "Transaction Updated",
+          description: "Transaction has been updated successfully",
+        });
+        setShowEditDialog(false);
+        setCurrentTransaction(null);
+        // Refresh transactions
+        if (user?.branchId) {
+          fetch(`/api/power/transactions?branchId=${user.branchId}`)
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.success && Array.isArray(data.transactions)) {
+                setTransactions(data.transactions);
+              } else {
+                setTransactions([]);
+              }
+            });
+        }
+      } else {
+        toast({
+          title: "Update Failed",
+          description: result.error || "Failed to update transaction",
+          variant: "destructive",
+        });
       }
+    } catch (error) {
+      toast({
+        title: "Update Failed",
+        description: "Failed to update transaction",
+        variant: "destructive",
+      });
+    } finally {
+      setIsEditing(false);
     }
+  };
+  const handlePrintReceipt = (tx: any) => {
+    const printWindow = window.open("", "_blank", "width=350,height=600");
+    if (!printWindow) return;
+    const receiptContent = `<!DOCTYPE html><html><head><title>Power Sale Receipt</title><style>body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; } .header { text-align: center; margin-bottom: 20px; } .logo { width: 60px; height: 60px; margin: 0 auto 10px; } .line { border-bottom: 1px dashed #000; margin: 10px 0; } .row { display: flex; justify-content: space-between; margin: 5px 0; } .footer { text-align: center; margin-top: 20px; font-size: 10px; }</style></head><body><div class='header'><h3>MIMHAAD FINANCIAL SERVICES</h3><p>${
+      user?.branchName || ""
+    }</p><p>Tel: 0241378880</p><p>${
+      tx.created_at ? new Date(tx.created_at).toLocaleString() : ""
+    }</p></div><div class='line'></div><h4 style='text-align: center;'>POWER SALE RECEIPT</h4><div class='line'></div><div class='row'><span>Transaction ID:</span><span>${
+      tx.id
+    }</span></div><div class='row'><span>Meter Number:</span><span>${
+      tx.meter_number
+    }</span></div><div class='row'><span>Provider:</span><span>${
+      tx.provider
+    }</span></div><div class='row'><span>Amount:</span><span>GHS ${Number(
+      tx.amount
+    ).toFixed(2)}</span></div><div class='row'><span>Customer:</span><span>${
+      tx.customer_name || "-"
+    }</span></div><div class='row'><span>Phone:</span><span>${
+      tx.customer_phone || "-"
+    }</span></div><div class='line'></div><div class='footer'><p>Thank you for using our service!</p><p>For inquiries, please call 0241378880</p><p>Powered by MIMHAAD Financial Services</p></div></body></html>`;
+    printWindow.document.write(receiptContent);
+    printWindow.document.close();
+    printWindow.print();
+    printWindow.close();
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="container mx-auto py-6">
+      <div className="flex justify-between items-center mb-6">
         <div>
-          <h1 className="text-3xl font-bold">Power Services</h1>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Zap className="h-8 w-8" />
+            Power Services - Fixed
+          </h1>
           <p className="text-muted-foreground">
-            Manage electricity bill payments and float accounts
+            Manage electricity bill payments and power services
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            onClick={() => setActiveTab("payment")}
-            className="flex items-center gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            New Payment
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              loadTransactions();
-              loadFloatAccounts();
-              refreshStatistics();
-            }}
-            className="flex items-center gap-2"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
+        <Button variant="outline" size="sm" onClick={refreshAccounts}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
       </div>
 
-      {/* Float Alerts */}
-      {floatAlerts.length > 0 && (
-        <div className="space-y-2">
-          {floatAlerts.map((alert) => (
-            <Alert
-              key={alert.id}
-              className={`border-l-4 ${
-                alert.severity === "critical"
-                  ? "border-l-red-500 bg-red-50"
-                  : "border-l-yellow-500 bg-yellow-50"
-              }`}
-            >
-              <AlertTriangle
-                className={`h-4 w-4 ${
-                  alert.severity === "critical"
-                    ? "text-red-600"
-                    : "text-yellow-600"
-                }`}
-              />
-              <AlertDescription>
-                <span className="font-medium">{alert.provider}</span> float
-                balance is {alert.severity}:{" "}
-                {formatCurrency(alert.current_balance)} (Min:{" "}
-                {formatCurrency(alert.min_threshold)})
-              </AlertDescription>
-            </Alert>
-          ))}
-        </div>
-      )}
-
       {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Payments
-            </CardTitle>
-            <Zap className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {statistics.todayTransactions}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {statistics.totalTransactions}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Volume
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(statistics.todayVolume)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(statistics.totalVolume)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Commission
-            </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(statistics.todayCommission)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(statistics.totalCommission)}
-            </p>
-          </CardContent>
-        </Card>
-
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
               Active Providers
             </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{powerFloats.length}</div>
+            <p className="text-xs text-muted-foreground">
+              Available power providers
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Total Float Balance
+            </CardTitle>
+            <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statistics.activeProviders}
+              {formatCurrency(
+                powerFloats.reduce((sum, acc) => sum + acc.current_balance, 0)
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Float: {formatCurrency(statistics.floatBalance)}
+              Combined power float
             </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Today's Transactions
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">0</div>
+            <p className="text-xs text-muted-foreground">Processed today</p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Fees</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">GHS 0.00</div>
+            <p className="text-xs text-muted-foreground">Fees collected</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Content Tabs */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs defaultValue="transactions" className="w-full">
         <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="payment">Bill Payment</TabsTrigger>
+          <TabsTrigger value="transactions">New Transaction</TabsTrigger>
           <TabsTrigger value="history">Transaction History</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="payment" className="space-y-6">
+        <TabsContent value="transactions" className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Payment Form - 2 columns */}
+            {/* Transaction Form */}
             <div className="lg:col-span-2">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Zap className="h-5 w-5" />
-                    Electricity Bill Payment
-                  </CardTitle>
+                  <CardTitle>Process Power Transaction</CardTitle>
                   <CardDescription>
                     Process electricity bill payments for customers
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handlePaymentSubmit} className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2">
-                      <div className="space-y-2">
-                        <Label htmlFor="meter_number">Meter Number *</Label>
-                        <Input
-                          id="meter_number"
-                          value={paymentForm.meter_number}
-                          onChange={(e) =>
-                            setPaymentForm({
-                              ...paymentForm,
-                              meter_number: e.target.value,
-                            })
-                          }
-                          placeholder="Enter meter number"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="amount">Amount (GHS) *</Label>
-                        <Input
-                          id="amount"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={paymentForm.amount}
-                          onChange={(e) =>
-                            setPaymentForm({
-                              ...paymentForm,
-                              amount: e.target.value,
-                            })
-                          }
-                          placeholder="0.00"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="customer_name">Customer Name *</Label>
-                        <Input
-                          id="customer_name"
-                          value={paymentForm.customer_name}
-                          onChange={(e) =>
-                            setPaymentForm({
-                              ...paymentForm,
-                              customer_name: e.target.value,
-                            })
-                          }
-                          placeholder="Enter customer name"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="customer_phone">Customer Phone</Label>
-                        <Input
-                          id="customer_phone"
-                          value={paymentForm.customer_phone}
-                          onChange={(e) =>
-                            setPaymentForm({
-                              ...paymentForm,
-                              customer_phone: e.target.value,
-                            })
-                          }
-                          placeholder="Enter phone number"
-                        />
-                      </div>
-
-                      <div className="space-y-2 md:col-span-2">
-                        <Label htmlFor="provider">Electricity Provider *</Label>
-                        <Select
-                          value={paymentForm.provider}
-                          onValueChange={handleProviderChange}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select provider" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="ECG">ECG</SelectItem>
-                            <SelectItem value="NEDCo">NEDCo</SelectItem>
-                            <SelectItem value="Other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="notes">Notes (Optional)</Label>
-                      <Textarea
-                        id="notes"
-                        value={paymentForm.notes}
-                        onChange={(e) =>
-                          setPaymentForm({
-                            ...paymentForm,
-                            notes: e.target.value,
-                          })
-                        }
-                        placeholder="Additional notes..."
-                        rows={3}
-                      />
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={submitting}
-                      className="w-full"
+                  <Form {...form}>
+                    <form
+                      onSubmit={form.handleSubmit(onSubmit)}
+                      className="space-y-6"
                     >
-                      {submitting ? (
-                        <>
-                          <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                          Processing Payment...
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="mr-2 h-4 w-4" />
-                          Process Payment
-                        </>
-                      )}
-                    </Button>
-                  </form>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Meter Number */}
+                        <FormField
+                          control={form.control}
+                          name="meterNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Meter Number</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter meter number"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+
+                        {/* Power Provider */}
+                        <FormField
+                          control={form.control}
+                          name="floatAccountId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Power Provider</FormLabel>
+                              <Select
+                                onValueChange={field.onChange}
+                                defaultValue={field.value}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select power provider" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {powerFloats.map((float) => {
+                                    const status = getFloatStatus(
+                                      float.current_balance,
+                                      float.min_threshold
+                                    );
+                                    return (
+                                      <SelectItem
+                                        key={float.id}
+                                        value={float.id}
+                                      >
+                                        <div className="flex items-center justify-between w-full">
+                                          <span>{float.provider}</span>
+                                          <div className="flex items-center gap-2 ml-2">
+                                            <Badge
+                                              variant={status.color as any}
+                                              className="text-xs"
+                                            >
+                                              {status.label}
+                                            </Badge>
+                                            <span className="text-xs text-muted-foreground">
+                                              {formatCurrency(
+                                                float.current_balance
+                                              )}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Customer Name */}
+                        <FormField
+                          control={form.control}
+                          name="customerName"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Customer Name (Optional)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter customer name"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {/* Customer Phone */}
+                        <FormField
+                          control={form.control}
+                          name="customerPhone"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Customer Phone (Optional)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Enter customer phone"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Amount */}
+                        <FormField
+                          control={form.control}
+                          name="amount"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Amount (GHS)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  step="0.01"
+                                  min="1"
+                                  placeholder="0.00"
+                                  {...field}
+                                  onChange={(e) =>
+                                    field.onChange(Number(e.target.value))
+                                  }
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        {/* Reference */}
+                        <FormField
+                          control={form.control}
+                          name="reference"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Reference (Optional)</FormLabel>
+                              <FormControl>
+                                <Input
+                                  placeholder="Auto-generated if empty"
+                                  {...field}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      {/* Fee Display */}
+
+                      <div className="p-4 bg-muted rounded-lg">
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium">
+                            Transaction Fee:
+                          </span>
+                          <span className="font-bold">
+                            {formatCurrency(calculatedFee)}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center mt-2">
+                          <span className="text-sm font-medium">
+                            Total Required:
+                          </span>
+                          <span className="text-lg font-bold text-primary">
+                            {formatCurrency(watchedAmount + calculatedFee)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Submit Button */}
+                      <Button
+                        type="submit"
+                        disabled={isSubmitting}
+                        className="w-full"
+                      >
+                        {isSubmitting ? (
+                          <>
+                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                            Processing...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="mr-2 h-4 w-4" />
+                            Process Power Transaction
+                          </>
+                        )}
+                      </Button>
+                    </form>
+                  </Form>
                 </CardContent>
               </Card>
             </div>
 
-            {/* Float Display - 1 column */}
-            <div className="lg:col-span-1">
+            {/* Float Balances Sidebar */}
+            <div className="space-y-4">
               <DynamicFloatDisplay
-                selectedProvider={selectedProvider}
-                floatAccounts={floatAccounts}
+                selectedProvider={form.watch("floatAccountId")}
+                floatAccounts={allRelevantFloats.map((acc) => ({
+                  ...acc,
+                  account_name: acc.account_number || acc.provider || "",
+                }))}
                 serviceType="Power"
-                onRefresh={loadFloatAccounts}
-                isLoading={loadingFloats}
+                onRefresh={refreshAccounts}
+                isLoading={isLoadingAccounts}
               />
             </div>
           </div>
@@ -651,158 +715,148 @@ export default function PowerPage() {
         <TabsContent value="history" className="space-y-6">
           <Card>
             <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Transaction History</CardTitle>
-                  <CardDescription>All power bill payments</CardDescription>
-                </div>
-              </div>
+              <CardTitle>Transaction History</CardTitle>
+              <CardDescription>All Power transactions</CardDescription>
             </CardHeader>
             <CardContent>
-              {loadingTransactions ? (
-                <div className="text-center py-8">
-                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                  <p>Loading transactions...</p>
-                </div>
-              ) : transactions.length === 0 ? (
-                <div className="text-center py-8">
-                  <Zap className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">
-                    No Transactions Found
-                  </h3>
-                  <p className="text-muted-foreground">
-                    No power bill payments have been processed yet.
+              {transactions.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <p>
+                    No transactions found. Process your first power transaction
+                    to see history here.
                   </p>
                 </div>
               ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Meter Number</TableHead>
-                      <TableHead>Provider</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell>
-                          {format(
-                            new Date(transaction.created_at),
-                            "MMM dd, yyyy HH:mm"
-                          )}
-                        </TableCell>
-                        <TableCell>{transaction.customer_name}</TableCell>
-                        <TableCell>{transaction.meter_number}</TableCell>
-                        <TableCell>{transaction.provider}</TableCell>
-                        <TableCell>
-                          {formatCurrency(transaction.amount)}
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge(transaction.status)}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm border rounded-lg bg-white">
+                    <thead className="bg-gray-50 border-b">
+                      <tr>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Date
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Meter Number
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Provider
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Amount
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Customer
+                        </th>
+                        <th className="px-3 py-2 text-left font-semibold">
+                          Status
+                        </th>
+                        <th className="px-3 py-2 text-right font-semibold">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((tx: any, idx: number) => (
+                        <tr
+                          key={tx.id}
+                          className={
+                            idx % 2 === 0
+                              ? "bg-white hover:bg-gray-50"
+                              : "bg-gray-50 hover:bg-gray-100"
+                          }
+                        >
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {tx.created_at
+                              ? new Date(tx.created_at).toLocaleString()
+                              : "-"}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {tx.meter_number}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {tx.provider}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap font-semibold text-green-700">
+                            GHS {Number(tx.amount).toFixed(2)}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {tx.customer_name || "-"}
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            <span
+                              className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                                tx.status === "completed"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-yellow-100 text-yellow-700"
+                              }`}
+                            >
+                              {tx.status || "-"}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap text-right">
                             <Button
-                              variant="ghost"
                               size="sm"
-                              onClick={() => handleEdit(transaction)}
-                              title="Edit Transaction"
+                              variant="outline"
+                              onClick={() => handlePrintReceipt(tx)}
+                              title="Print"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              className="mx-2"
+                              variant="outline"
+                              onClick={() => handleEdit(tx)}
+                              title="Edit"
                             >
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button
-                              variant="ghost"
                               size="sm"
-                              onClick={() => handleDelete(transaction.id)}
-                              title="Delete Transaction"
-                              className="text-red-600 hover:text-red-700"
+                              variant="destructive"
+                              onClick={() => handleDelete(tx)}
+                              title="Delete"
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
 
-      {/* Receipt Dialog */}
-      <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5" />
-              Power Payment Receipt
-            </DialogTitle>
+            <DialogTitle>Edit Power Transaction</DialogTitle>
+          </DialogHeader>
+          {/* Add form fields for editing (meter number, amount, etc.) and a submit button that calls handleEditSubmit */}
+          {/* ... */}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Transaction</DialogTitle>
             <DialogDescription>
-              Payment completed successfully
+              Are you sure you want to delete this transaction?
             </DialogDescription>
           </DialogHeader>
-          {currentTransaction && (
-            <div id="receipt-content" className="space-y-4">
-              <div className="text-center border-b pb-4">
-                <img
-                  src="/logo.png"
-                  alt="MIMHAAD Logo"
-                  className="w-16 h-16 mx-auto mb-2"
-                />
-                <h3 className="text-lg font-bold">
-                  MIMHAAD FINANCIAL SERVICES
-                </h3>
-                <p className="text-sm">{user?.branchName || "Main Branch"}</p>
-                <p className="text-sm">Tel: 0241378880</p>
-                <p className="text-sm">{format(new Date(), "PPP")}</p>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Transaction ID:</span>
-                  <span className="font-mono">{currentTransaction.id}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Customer:</span>
-                  <span>{currentTransaction.customer_name}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Meter Number:</span>
-                  <span>{currentTransaction.meter_number}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Provider:</span>
-                  <span>{currentTransaction.provider}</span>
-                </div>
-                <div className="flex justify-between text-sm font-medium border-t pt-2">
-                  <span>Amount Paid:</span>
-                  <span>{formatCurrency(currentTransaction.amount)}</span>
-                </div>
-              </div>
-              <div className="text-center text-xs border-t pt-4">
-                <p>Thank you for using our service!</p>
-                <p>For inquiries, please call 0241378880</p>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowReceiptDialog(false)}
-            >
-              Close
-            </Button>
-            <Button onClick={printReceipt}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print Receipt
-            </Button>
-          </div>
+          <Button
+            variant="destructive"
+            onClick={confirmDelete}
+            disabled={isDeleting}
+          >
+            Delete
+          </Button>
+          <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+            Cancel
+          </Button>
         </DialogContent>
       </Dialog>
     </div>

@@ -16,30 +16,24 @@ export async function GET(request: NextRequest) {
       dateTo,
     });
 
-    // Build WHERE conditions
+    // Build WHERE conditions as template literals
     const conditions = [];
-    const params = [];
-
     if (branchId && branchId !== "all") {
-      conditions.push("branch_id = $1");
-      params.push(branchId);
+      conditions.push(sql`branch_id = ${branchId}`);
     }
-
     if (dateFrom) {
-      conditions.push("created_at >= $2");
-      params.push(dateFrom);
+      conditions.push(sql`created_at >= ${dateFrom}`);
     }
-
     if (dateTo) {
-      conditions.push("created_at <= $3");
-      params.push(dateTo);
+      conditions.push(sql`created_at <= ${dateTo}`);
     }
-
-    const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    let whereSql = sql``;
+    if (conditions.length > 0) {
+      whereSql = sql`WHERE ${sql.join(conditions, sql` AND `)}`;
+    }
 
     // Get transaction statistics
-    const statsQuery = `
+    const statsResult = await sql`
       SELECT 
         COUNT(*) as total_count,
         COALESCE(SUM(amount), 0) as total_amount,
@@ -50,10 +44,8 @@ export async function GET(request: NextRequest) {
         COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count,
         COALESCE(SUM(CASE WHEN status = 'failed' THEN amount ELSE 0 END), 0) as failed_amount
       FROM jumia_transactions
-      ${whereClause}
+      ${whereSql}
     `;
-
-    const statsResult = await sql.unsafe(statsQuery, params);
     const stats = statsResult[0] || {};
 
     // Get daily breakdown for the last 30 days
@@ -80,7 +72,7 @@ export async function GET(request: NextRequest) {
         COUNT(*) as count,
         COALESCE(SUM(amount), 0) as total_amount
       FROM jumia_transactions
-      ${whereClause ? sql.unsafe(whereClause) : sql``}
+      ${whereSql}
       GROUP BY transaction_type
       ORDER BY total_amount DESC
     `;

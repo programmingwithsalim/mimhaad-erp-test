@@ -56,6 +56,15 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
 
 export default function JumiaPage() {
   const { toast } = useToast();
@@ -69,7 +78,7 @@ export default function JumiaPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [transactions, setTransactions] = useState([]);
-  const [floatAccounts, setFloatAccounts] = useState([]);
+  const [floatAccounts, setFloatAccounts] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [loadingFloats, setLoadingFloats] = useState(false);
   const [activeTab, setActiveTab] = useState("package_receipt");
@@ -79,6 +88,7 @@ export default function JumiaPage() {
     customer_name: "",
     customer_phone: "",
     notes: "",
+    float_account_id: "",
   });
 
   const [podForm, setPodForm] = useState({
@@ -105,6 +115,9 @@ export default function JumiaPage() {
   const [currentTransaction, setCurrentTransaction] = useState<any>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
+  const [selectedSettlementFloat, setSelectedSettlementFloat] =
+    useState<any>(null);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -219,10 +232,12 @@ export default function JumiaPage() {
           customer_name: "",
           customer_phone: "",
           notes: "",
+          float_account_id: "",
         });
         // Refresh data
         loadTransactions();
         refreshStatistics();
+        printReceipt(result.data);
       } else {
         toast({
           title: "Error",
@@ -293,6 +308,7 @@ export default function JumiaPage() {
         loadTransactions();
         loadFloatAccounts();
         refreshStatistics();
+        printReceipt(result.data);
       } else {
         toast({
           title: "Error",
@@ -480,18 +496,18 @@ export default function JumiaPage() {
     return "";
   };
 
-  const handleEdit = (transaction: any) => {
-    setCurrentTransaction(transaction);
+  const handleEdit = (tx: any) => {
+    setCurrentTransaction(tx);
     setShowEditDialog(true);
   };
 
-  const handleDelete = (transaction: any) => {
-    setCurrentTransaction(transaction);
+  const handleDelete = (tx: any) => {
+    setCurrentTransaction(tx);
     setShowDeleteDialog(true);
   };
 
-  const handlePrint = (transaction: any) => {
-    setCurrentTransaction(transaction);
+  const handlePrint = (tx: any) => {
+    setCurrentTransaction(tx);
     setShowPrintDialog(true);
   };
 
@@ -534,6 +550,7 @@ export default function JumiaPage() {
   };
 
   const handleEditSubmit = async (updated: any) => {
+    if (!currentTransaction) return;
     setIsEditing(true);
     try {
       const response = await fetch(
@@ -572,28 +589,27 @@ export default function JumiaPage() {
     }
   };
 
-  const printReceipt = () => {
-    if (!currentTransaction) return;
-    const printWindow = window.open("", "_blank", "width=300,height=600");
+  const printReceipt = (tx: any) => {
+    const printWindow = window.open("", "_blank", "width=350,height=600");
     if (!printWindow) return;
-    const receiptContent = `<!DOCTYPE html><html><head><title>Jumia Transaction Receipt</title><style>body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; } .header { text-align: center; margin-bottom: 20px; } .logo { width: 60px; height: 60px; margin: 0 auto 10px; } .line { border-bottom: 1px dashed #000; margin: 10px 0; } .row { display: flex; justify-content: space-between; margin: 5px 0; } .footer { text-align: center; margin-top: 20px; font-size: 10px; }</style></head><body><div class='header'><img src='/logo.png' alt='MIMHAAD Logo' class='logo' /><h3>MIMHAAD FINANCIAL SERVICES</h3><p>${
+    const receiptContent = `<!DOCTYPE html><html><head><title>Jumia Transaction Receipt</title><style>body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; } .header { text-align: center; margin-bottom: 20px; } .logo { width: 60px; height: 60px; margin: 0 auto 10px; } .line { border-bottom: 1px dashed #000; margin: 10px 0; } .row { display: flex; justify-content: space-between; margin: 5px 0; } .footer { text-align: center; margin-top: 20px; font-size: 10px; }</style></head><body><div class='header'><h3>MIMHAAD FINANCIAL SERVICES</h3><p>${
       user?.branchName || ""
-    }</p><p>Tel: 0241378880</p><p>${new Date(
-      currentTransaction.created_at
-    ).toLocaleString()}</p></div><div class='line'></div><h4 style='text-align: center;'>JUMIA TRANSACTION RECEIPT</h4><div class='line'></div><div class='row'><span>Transaction ID:</span><span>${
-      currentTransaction.transaction_id
+    }</p><p>Tel: 0241378880</p><p>${
+      tx.created_at ? new Date(tx.created_at).toLocaleString() : ""
+    }</p></div><div class='line'></div><h4 style='text-align: center;'>JUMIA TRANSACTION RECEIPT</h4><div class='line'></div><div class='row'><span>Transaction ID:</span><span>${
+      tx.transaction_id
     }</span></div><div class='row'><span>Type:</span><span>${
-      currentTransaction.transaction_type
+      tx.transaction_type
     }</span></div><div class='row'><span>Tracking ID:</span><span>${
-      currentTransaction.tracking_id
+      tx.tracking_id
     }</span></div><div class='row'><span>Customer:</span><span>${
-      currentTransaction.customer_name
+      tx.customer_name
     }</span></div><div class='row'><span>Phone:</span><span>${
-      currentTransaction.customer_phone
+      tx.customer_phone
     }</span></div><div class='row'><span>Amount:</span><span>GHS ${Number(
-      currentTransaction.amount
+      tx.amount
     ).toFixed(2)}</span></div><div class='row'><span>Status:</span><span>${
-      currentTransaction.status
+      tx.status || tx.delivery_status || "-"
     }</span></div><div class='line'></div><div class='footer'><p>Thank you for using our service!</p><p>For inquiries, please call 0241378880</p><p>Powered by MIMHAAD Financial Services</p></div></body></html>`;
     printWindow.document.write(receiptContent);
     printWindow.document.close();
@@ -965,29 +981,69 @@ export default function JumiaPage() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="payment_method">
+                            <Label htmlFor="pod_payment_method">
                               Payment Method
                             </Label>
                             <Select
                               value={podForm.payment_method}
-                              onValueChange={(value) =>
+                              onValueChange={(value) => {
                                 setPodForm({
                                   ...podForm,
                                   payment_method: value,
-                                })
-                              }
+                                  float_account_id: "",
+                                });
+                              }}
                             >
                               <SelectTrigger>
                                 <SelectValue placeholder="Select payment method" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="cash">Cash</SelectItem>
-                                <SelectItem value="momo">
-                                  Mobile Money
+                                <SelectItem value="momo">MoMo</SelectItem>
+                                <SelectItem value="agency-banking">
+                                  Agency Banking
                                 </SelectItem>
-                                <SelectItem value="bank_transfer">
-                                  Bank Transfer
-                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="pod_float_account_id">
+                              Float Account
+                            </Label>
+                            <Select
+                              value={podForm.float_account_id}
+                              onValueChange={(value) =>
+                                setPodForm({
+                                  ...podForm,
+                                  float_account_id: value,
+                                })
+                              }
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select float account" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {floatAccounts
+                                  .filter((account) =>
+                                    podForm.payment_method === ""
+                                      ? true
+                                      : account.account_type ===
+                                        podForm.payment_method
+                                  )
+                                  .map((account) => (
+                                    <SelectItem
+                                      key={account.id}
+                                      value={account.id}
+                                    >
+                                      {account.provider} -{" "}
+                                      {account.account_number} (GHS{" "}
+                                      {Number(
+                                        account.current_balance || 0
+                                      ).toFixed(2)}
+                                      )
+                                    </SelectItem>
+                                  ))}
                               </SelectContent>
                             </Select>
                           </div>
@@ -1077,28 +1133,63 @@ export default function JumiaPage() {
                             </Label>
                             <Select
                               value={settlementForm.float_account_id}
-                              onValueChange={(value) =>
+                              onValueChange={(value) => {
                                 setSettlementForm({
                                   ...settlementForm,
                                   float_account_id: value,
-                                })
-                              }
+                                });
+                                const selected =
+                                  floatAccounts.find((a) => a.id === value) ||
+                                  null;
+                                setSelectedSettlementFloat(selected);
+                              }}
+                              disabled={loadingFloats}
                             >
                               <SelectTrigger>
-                                <SelectValue placeholder="Select float account" />
+                                <SelectValue
+                                  placeholder={
+                                    loadingFloats
+                                      ? "Loading..."
+                                      : "Select float account"
+                                  }
+                                />
                               </SelectTrigger>
                               <SelectContent>
-                                {floatAccounts.map((account: any) => (
-                                  <SelectItem
-                                    key={account.id}
-                                    value={account.id}
-                                  >
-                                    {account.provider} -{" "}
-                                    {formatCurrency(account.current_balance)}
+                                {floatAccounts.length === 0 ? (
+                                  <SelectItem value="none" disabled>
+                                    No float accounts found
                                   </SelectItem>
-                                ))}
+                                ) : (
+                                  floatAccounts.map((account) => (
+                                    <SelectItem
+                                      key={account.id}
+                                      value={account.id}
+                                    >
+                                      {account.provider} -{" "}
+                                      {account.account_number} (GHS{" "}
+                                      {Number(
+                                        account.current_balance || 0
+                                      ).toFixed(2)}
+                                      )
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
+                            {/* Dynamic balance display */}
+                            {selectedSettlementFloat && (
+                              <Alert className="mt-2 border-blue-200 bg-blue-50">
+                                <AlertDescription>
+                                  <span className="font-medium">Balance:</span>{" "}
+                                  GHS{" "}
+                                  {Number(
+                                    selectedSettlementFloat.current_balance || 0
+                                  ).toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                  })}
+                                </AlertDescription>
+                              </Alert>
+                            )}
                           </div>
                         </div>
 
@@ -1240,29 +1331,28 @@ export default function JumiaPage() {
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Button
-                              size="icon"
-                              variant="ghost"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => printReceipt(transaction)}
+                              title="Print"
+                            >
+                              <Printer className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
                               onClick={() => handleEdit(transaction)}
                               title="Edit"
                             >
-                              <Edit className="w-5 h-5" />
+                              <Edit className="h-4 w-4" />
                             </Button>
                             <Button
-                              size="icon"
-                              variant="ghost"
+                              size="sm"
+                              variant="destructive"
                               onClick={() => handleDelete(transaction)}
                               title="Delete"
-                              className="text-red-600 hover:text-red-700"
                             >
-                              <Trash2 className="w-5 h-5" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() => handlePrint(transaction)}
-                              title="Print"
-                            >
-                              <Printer className="w-5 h-5" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </TableCell>
@@ -1425,7 +1515,7 @@ export default function JumiaPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">
-            <Button onClick={printReceipt}>
+            <Button onClick={() => printReceipt(currentTransaction)}>
               <Printer className="mr-2 h-4 w-4" /> Print Receipt
             </Button>
             <Button variant="outline" onClick={() => setShowPrintDialog(false)}>

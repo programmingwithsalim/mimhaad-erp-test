@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
       console.error("Error creating power_transactions table:", tableError);
     }
 
-    let transactions = [];
+    let transactions: any[] = [];
 
     try {
       transactions = await sql`
@@ -131,6 +131,14 @@ export async function POST(request: NextRequest) {
       const { GLPostingServiceEnhanced } = await import(
         "@/lib/services/gl-posting-service-enhanced"
       );
+      const { GLDatabase } = await import("@/lib/gl-database");
+
+      // Fetch real GL account IDs
+      const cashAccount = await GLDatabase.getGLAccountByCode("1001");
+      const powerPayableAccount = await GLDatabase.getGLAccountByCode("2300");
+      if (!cashAccount || !powerPayableAccount) {
+        throw new Error("Required GL accounts not found");
+      }
 
       // Create simple GL entries for power transactions
       const glResult = await GLPostingServiceEnhanced.createAndPostTransaction({
@@ -141,7 +149,7 @@ export async function POST(request: NextRequest) {
         description: `Power bill payment - ${body.provider} - ${body.meter_number}`,
         entries: [
           {
-            accountId: "cash-account-id",
+            accountId: cashAccount.id,
             accountCode: "1001",
             debit: 0,
             credit: body.amount,
@@ -153,7 +161,7 @@ export async function POST(request: NextRequest) {
             },
           },
           {
-            accountId: "power-payable-account-id",
+            accountId: powerPayableAccount.id,
             accountCode: "2300",
             debit: body.amount,
             credit: 0,
@@ -189,17 +197,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Update float and cash in till balances
-    // 1. Decrease power float
-    await sql`
-      UPDATE float_accounts
-      SET current_balance = current_balance - ${body.amount},
-          updated_at = NOW()
-      WHERE branch_id = ${body.branchId}
-        AND account_type = 'power-float'
-        AND is_active = true
-    `;
+    // 1. Decrease power float by id
+    if (body.floatAccountId) {
+      await sql`
+        UPDATE float_accounts
+        SET current_balance = current_balance - ${body.amount},
+            updated_at = NOW()
+        WHERE id = ${body.floatAccountId}
+      `;
+    }
 
-    // 2. Increase cash in till
+    // 2. Increase cash in till (by branch/type as before)
     await sql`
       UPDATE float_accounts
       SET current_balance = current_balance + ${body.amount},

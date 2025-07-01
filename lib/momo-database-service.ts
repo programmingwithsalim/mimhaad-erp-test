@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { GLPostingServiceEnhanced } from "./gl-posting-service-enhanced";
+import { GLPostingServiceEnhanced } from "./services/gl-posting-service-enhanced";
 
 // MoMo Transaction interface
 export interface MoMoTransaction {
