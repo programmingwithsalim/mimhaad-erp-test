@@ -1,16 +1,40 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
-import { GLPostingService } from "@/lib/services/gl-posting-service-universal"
-import { auditLogger } from "@/lib/services/audit-logger-service"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { GLPostingService } from "@/lib/services/gl-posting-service-universal";
+import { auditLogger } from "@/lib/services/audit-logger-service";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    console.log("🔄 [E-ZWICH] Processing card issuance:", body)
+    const form = await request.formData();
+    const get = (key) => form.get(key);
+    // Extract all fields from form data
+    const cardNumber = get("card_number");
+    const partnerBank = get("partner_bank");
+    const customerName = get("customer_name");
+    const phoneNumber = get("customer_phone");
+    const email = get("customer_email");
+    const dateOfBirth = get("date_of_birth");
+    const gender = get("gender");
+    const addressLine1 = get("address");
+    const addressLine2 = get("address_line2");
+    const city = get("city");
+    const region = get("region");
+    const postalCode = get("postal_code");
+    const idType = get("id_type");
+    const idNumber = get("id_number");
+    const idExpiryDate = get("id_expiry_date");
+    const fee = get("fee");
+    const paymentMethod = get("payment_method");
+    const reference = get("reference");
+    const customerPhoto = get("customer_photo");
+    const idPhoto = get("id_photo");
+    const user_id = get("user_id");
+    const branch_id = get("branch_id");
+    const processed_by = get("processed_by");
 
-    const {
+    console.log("🔄 [E-ZWICH] Processing card issuance:", {
       cardNumber,
       partnerBank,
       customerName,
@@ -34,7 +58,7 @@ export async function POST(request: NextRequest) {
       user_id,
       branch_id,
       processed_by,
-    } = body
+    });
 
     // Validate required fields
     const requiredFields = {
@@ -53,14 +77,14 @@ export async function POST(request: NextRequest) {
       paymentMethod: !!paymentMethod,
       branch_id: !!branch_id,
       processed_by: !!processed_by,
-    }
+    };
 
     const missingFields = Object.entries(requiredFields)
       .filter(([_, isValid]) => !isValid)
-      .map(([field]) => field)
+      .map(([field]) => field);
 
     if (missingFields.length > 0) {
-      console.error("❌ [E-ZWICH] Missing required fields:", missingFields)
+      console.error("❌ [E-ZWICH] Missing required fields:", missingFields);
       return NextResponse.json(
         {
           success: false,
@@ -68,18 +92,21 @@ export async function POST(request: NextRequest) {
           details: `${missingFields.join(", ")} are required`,
           missingFields,
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Validate age (must be at least 18 years old)
-    const birthDate = new Date(dateOfBirth)
-    const today = new Date()
-    let age = today.getFullYear() - birthDate.getFullYear()
-    const monthDiff = today.getMonth() - birthDate.getMonth()
+    const birthDate = new Date(dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
 
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--
+    if (
+      monthDiff < 0 ||
+      (monthDiff === 0 && today.getDate() < birthDate.getDate())
+    ) {
+      age--;
     }
 
     if (age < 18) {
@@ -89,15 +116,15 @@ export async function POST(request: NextRequest) {
           error: "Age validation failed",
           details: "Customer must be at least 18 years old",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Check if card number already exists
     const existingCard = await sql`
       SELECT id FROM e_zwich_card_issuances 
       WHERE card_number = ${cardNumber}
-    `
+    `;
 
     if (existingCard.length > 0) {
       return NextResponse.json(
@@ -106,8 +133,8 @@ export async function POST(request: NextRequest) {
           error: "Card number already exists",
           details: `Card number ${cardNumber} has already been issued`,
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Find available card batch for this branch
@@ -119,7 +146,7 @@ export async function POST(request: NextRequest) {
       AND status = 'received'
       ORDER BY created_at ASC
       LIMIT 1
-    `
+    `;
 
     if (availableBatch.length === 0) {
       return NextResponse.json(
@@ -128,32 +155,33 @@ export async function POST(request: NextRequest) {
           error: "No card inventory available",
           details: "No card batches with available cards found for this branch",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
-    const batch = availableBatch[0]
-    const finalReference = reference || `CARD-${cardNumber}-${Date.now()}`
+    const batch = availableBatch[0];
+    const finalReference = reference || `CARD-${cardNumber}-${Date.now()}`;
 
     // Get user details if user_id is provided and is a valid UUID
-    let actualUserId = null
-    let issuedBy = processed_by
+    let actualUserId = null;
+    let issuedBy = processed_by;
 
     if (user_id) {
       // Check if user_id is a valid UUID format
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (uuidRegex.test(user_id)) {
-        actualUserId = user_id
+        actualUserId = user_id;
         // Get user details for issued_by field
         const userDetails = await sql`
           SELECT id, email FROM users WHERE id = ${user_id}
-        `
+        `;
         if (userDetails.length > 0) {
-          issuedBy = userDetails[0].email || processed_by
+          issuedBy = userDetails[0].id;
         }
       } else {
         // If user_id is not a UUID (like an email), use it as processed_by
-        issuedBy = user_id
+        issuedBy = user_id;
       }
     }
 
@@ -169,21 +197,25 @@ export async function POST(request: NextRequest) {
           created_at
         ) VALUES (
           ${cardNumber}, ${partnerBank}, ${customerName}, ${phoneNumber},
-          ${email || null}, ${dateOfBirth}, ${gender}, ${addressLine1}, ${addressLine2 || null},
+          ${email || null}, ${dateOfBirth}, ${gender}, ${addressLine1}, ${
+        addressLine2 || null
+      },
           ${city}, ${region}, ${postalCode || null}, ${idType}, ${idNumber}, 
           ${idExpiryDate || null}, ${fee}, ${paymentMethod}, ${finalReference},
-          ${customerPhoto || null}, ${idPhoto || null}, 'completed', ${issuedBy},
+          ${customerPhoto || null}, ${
+        idPhoto || null
+      }, 'completed', ${issuedBy},
           ${branch_id}, CURRENT_TIMESTAMP
         )
         RETURNING *
-      `
+      `;
 
-      const issuance = issuanceResult[0]
+      const issuance = issuanceResult[0];
 
       // Update card batch inventory - handle the constraint properly
-      const currentQuantity = Number(batch.quantity_available)
-      const newQuantityAvailable = Math.max(0, currentQuantity - 1)
-      const newQuantityIssued = Number(batch.quantity_issued || 0) + 1
+      const currentQuantity = Number(batch.quantity_available);
+      const newQuantityAvailable = Math.max(0, currentQuantity - 1);
+      const newQuantityIssued = Number(batch.quantity_issued || 0) + 1;
 
       await sql`
         UPDATE ezwich_card_batches 
@@ -191,9 +223,11 @@ export async function POST(request: NextRequest) {
             quantity_issued = ${newQuantityIssued},
             updated_at = CURRENT_TIMESTAMP
         WHERE id = ${batch.id}
-      `
+      `;
 
-      console.log(`✅ [E-ZWICH] Updated batch ${batch.batch_code}: ${newQuantityAvailable} cards remaining`)
+      console.log(
+        `✅ [E-ZWICH] Updated batch ${batch.batch_code}: ${newQuantityAvailable} cards remaining`
+      );
 
       // Create GL entries for card issuance
       try {
@@ -209,15 +243,15 @@ export async function POST(request: NextRequest) {
           processedBy: issuedBy,
           branchId: branch_id,
           branchName: "Unknown Branch",
-        })
+        });
 
         if (!glResult.success) {
-          console.warn("⚠️ [E-ZWICH] GL posting failed:", glResult.error)
+          console.warn("⚠️ [E-ZWICH] GL posting failed:", glResult.error);
         } else {
-          console.log("✅ [E-ZWICH] GL entries created successfully")
+          console.log("✅ [E-ZWICH] GL entries created successfully");
         }
       } catch (glError) {
-        console.error("❌ [E-ZWICH] GL posting error:", glError)
+        console.error("❌ [E-ZWICH] GL posting error:", glError);
         // Don't fail the transaction if GL posting fails
       }
 
@@ -238,10 +272,13 @@ export async function POST(request: NextRequest) {
             batch_code: batch.batch_code,
           },
           severity: "low",
-        })
+        });
       }
 
-      console.log("✅ [E-ZWICH] Card issuance processed successfully:", issuance.id)
+      console.log(
+        "✅ [E-ZWICH] Card issuance processed successfully:",
+        issuance.id
+      );
 
       return NextResponse.json({
         success: true,
@@ -251,20 +288,20 @@ export async function POST(request: NextRequest) {
           remaining_cards: newQuantityAvailable,
         },
         message: "E-Zwich card issued successfully",
-      })
+      });
     } catch (error) {
-      console.error("❌ [E-ZWICH] Transaction failed:", error)
-      throw error
+      console.error("❌ [E-ZWICH] Transaction failed:", error);
+      throw error;
     }
   } catch (error) {
-    console.error("❌ [E-ZWICH] Card issuance error:", error)
+    console.error("❌ [E-ZWICH] Card issuance error:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to issue E-Zwich card",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

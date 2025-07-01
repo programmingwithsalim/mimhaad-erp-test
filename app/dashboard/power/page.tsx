@@ -91,6 +91,7 @@ export default function PowerPage() {
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState("");
 
   const [paymentForm, setPaymentForm] = useState({
     meter_number: "",
@@ -141,13 +142,14 @@ export default function PowerPage() {
     try {
       setLoadingFloats(true);
       const response = await fetch(
-        `/api/float-accounts?branchId=${user.branchId}&type=power`
+        `/api/float-accounts?branchId=${user.branchId}`
       );
-
       if (response.ok) {
         const data = await response.json();
         if (data.success && Array.isArray(data.accounts)) {
-          setFloatAccounts(data.accounts);
+          setFloatAccounts(
+            data.accounts.filter((a: any) => a.account_type === "power")
+          );
         } else {
           setFloatAccounts([]);
         }
@@ -274,20 +276,16 @@ export default function PowerPage() {
 
   const handleDelete = async (transactionId: string) => {
     if (
-      !confirm(
+      !window.confirm(
         "Are you sure you want to delete this transaction? This action cannot be undone."
       )
-    ) {
+    )
       return;
-    }
-
     try {
       const response = await fetch(`/api/power/transactions/${transactionId}`, {
         method: "DELETE",
       });
-
       const result = await response.json();
-
       if (result.success) {
         toast({
           title: "Transaction Deleted",
@@ -303,13 +301,17 @@ export default function PowerPage() {
         });
       }
     } catch (error) {
-      console.error("Error deleting transaction:", error);
       toast({
         title: "Delete Failed",
         description: "Failed to delete transaction",
         variant: "destructive",
       });
     }
+  };
+
+  const handleProviderChange = (provider: string) => {
+    setPaymentForm((prev) => ({ ...prev, provider }));
+    setSelectedProvider(provider);
   };
 
   const getStatusBadge = (status: string) => {
@@ -581,38 +583,15 @@ export default function PowerPage() {
                         <Label htmlFor="provider">Electricity Provider *</Label>
                         <Select
                           value={paymentForm.provider}
-                          onValueChange={(value) =>
-                            setPaymentForm({ ...paymentForm, provider: value })
-                          }
-                          required
+                          onValueChange={handleProviderChange}
                         >
                           <SelectTrigger>
-                            <SelectValue placeholder="Select electricity provider" />
+                            <SelectValue placeholder="Select provider" />
                           </SelectTrigger>
                           <SelectContent>
-                            {floatAccounts
-                              .filter(
-                                (account: any) =>
-                                  account.is_active &&
-                                  account.account_type === "power-float"
-                              )
-                              .map((account: any) => (
-                                <SelectItem key={account.id} value={account.id}>
-                                  <div className="flex items-center justify-between w-full">
-                                    <span>{account.provider}</span>
-                                    <span className="text-sm text-muted-foreground ml-2">
-                                      Balance:{" "}
-                                      {formatCurrency(account.current_balance)}
-                                      {account.current_balance <
-                                        account.min_threshold && (
-                                        <span className="ml-2 text-red-600">
-                                          (Low)
-                                        </span>
-                                      )}
-                                    </span>
-                                  </div>
-                                </SelectItem>
-                              ))}
+                            <SelectItem value="ECG">ECG</SelectItem>
+                            <SelectItem value="NEDCo">NEDCo</SelectItem>
+                            <SelectItem value="Other">Other</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -659,7 +638,7 @@ export default function PowerPage() {
             {/* Float Display - 1 column */}
             <div className="lg:col-span-1">
               <DynamicFloatDisplay
-                selectedProvider=""
+                selectedProvider={selectedProvider}
                 floatAccounts={floatAccounts}
                 serviceType="Power"
                 onRefresh={loadFloatAccounts}

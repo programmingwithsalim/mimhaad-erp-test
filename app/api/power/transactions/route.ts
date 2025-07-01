@@ -113,12 +113,10 @@ export async function POST(request: NextRequest) {
     // Create the transaction record
     await sql`
       INSERT INTO power_transactions (
-        id, meter_number, amount, customer_name, customer_phone,
+        meter_number, amount, customer_name, customer_phone,
         provider, reference, status, date, branch_id, user_id, notes
       ) VALUES (
-        ${transactionId}, ${body.meter_number}, ${body.amount}, ${
-      body.customer_name
-    },
+        ${body.meter_number}, ${body.amount}, ${body.customer_name},
         ${body.customer_phone || null}, ${body.provider}, ${
       body.reference || transactionId
     },

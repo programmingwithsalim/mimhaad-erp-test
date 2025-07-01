@@ -63,50 +63,26 @@ export async function GET(request: NextRequest) {
       // Get card issuances
       if (branchId) {
         cardIssuances = await sql`
-          SELECT 
-            id,
-            'card_issuance' as type,
-            fee as amount,
-            0 as fee,
-            customer_name,
-            card_number,
-            reference,
-            status,
-            created_at,
-            partner_bank
+          SELECT *, fee_charged as amount, 'card_issuance' as type, 0 as fee
           FROM e_zwich_card_issuances
           WHERE branch_id = ${branchId}
-          ORDER BY created_at DESC 
+          ORDER BY created_at DESC
           LIMIT ${limit}
         `;
-
-        console.log("Test", cardIssuances)
       } else {
         cardIssuances = await sql`
-          SELECT 
-            id,
-            'card_issuance' as type,
-            fee as amount,
-            0 as fee,
-            customer_name,
-            card_number,
-            reference,
-            status,
-            created_at,
-            partner_bank
+          SELECT *, fee_charged as amount, 'card_issuance' as type, 0 as fee
           FROM e_zwich_card_issuances
-          ORDER BY created_at DESC 
+          ORDER BY created_at DESC
           LIMIT ${limit}
         `;
-
-        console.log("Test 2", cardIssuances)
       }
     } catch (error) {
       console.log("⚠️ [E-ZWICH] No card issuances table or data");
       cardIssuances = [];
     }
 
-    console.log(cardIssuances)
+    console.log(cardIssuances);
 
     // Combine and sort all transactions
     const allTransactions = [...withdrawalTransactions, ...cardIssuances].sort(

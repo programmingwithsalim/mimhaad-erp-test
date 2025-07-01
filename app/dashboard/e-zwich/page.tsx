@@ -43,7 +43,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useServiceStatistics } from "@/hooks/use-service-statistics";
 import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
-import { EnhancedCardIssuanceForm } from "@/components/e-zwich/enhanced-card-issuance-form";
+import EnhancedCardIssuanceForm from "@/components/e-zwich/enhanced-card-issuance-form";
 import { TransactionEditDialog } from "@/components/shared/transaction-edit-dialog";
 import { TransactionDeleteDialog } from "@/components/shared/transaction-delete-dialog";
 import {
@@ -59,6 +59,7 @@ import {
   Receipt,
   Edit,
   ArrowRightLeft,
+  Eye,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -161,17 +162,13 @@ export default function EZwichPage() {
     try {
       setLoadingFloats(true);
       const response = await fetch(
-        `/api/float-accounts/ezwich-partners?branchId=${user.branchId}`
+        `/api/float-accounts?branchId=${user.branchId}`
       );
 
       if (response.ok) {
         const data = await response.json();
-        const settlement_accounts = data.accounts.filter(
-          (account: any) => account.account_type === "e-zwich"
-        );
-
         if (data.success && Array.isArray(data.accounts)) {
-          setFloatAccounts(settlement_accounts);
+          setFloatAccounts(data.accounts);
         } else {
           setFloatAccounts([]);
         }
@@ -192,6 +189,26 @@ export default function EZwichPage() {
       loadFloatAccounts();
     }
   }, [user?.branchId]);
+
+  useEffect(() => {
+    if (!withdrawalForm.amount) return;
+    fetch(`/api/settings/fee-config/e-zwich?transactionType=withdrawal`)
+      .then((res) => res.json())
+      .then((data) => {
+        let fee = data?.config?.fee_value || 0;
+        if (data?.config?.fee_type === "percentage") {
+          fee =
+            (parseFloat(withdrawalForm.amount) *
+              parseFloat(data.config.fee_value)) /
+            100;
+          if (data.config.minimum_fee)
+            fee = Math.max(fee, parseFloat(data.config.minimum_fee));
+          if (data.config.maximum_fee)
+            fee = Math.min(fee, parseFloat(data.config.maximum_fee));
+        }
+        setWithdrawalForm((f) => ({ ...f, fee: fee.toFixed(2) }));
+      });
+  }, [withdrawalForm.amount]);
 
   const handleWithdrawalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,7 +393,7 @@ export default function EZwichPage() {
       setSubmitting(false);
     }
   };
-  
+
   const handleEdit = (transaction: Transaction) => {
     console.log("🔧 [EZWICH-EDIT] Transaction clicked:", transaction);
     // Map the transaction data to match what the dialog expects (snake_case)
@@ -744,20 +761,13 @@ export default function EZwichPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="fee">Fee (Optional)</Label>
+                        <Label htmlFor="withdrawal_fee">Fee (GHS)</Label>
                         <Input
-                          id="fee"
+                          id="withdrawal_fee"
                           type="number"
-                          step="0.01"
-                          min="0"
-                          value={withdrawalForm.fee}
-                          onChange={(e) =>
-                            setWithdrawalForm({
-                              ...withdrawalForm,
-                              fee: e.target.value,
-                            })
-                          }
-                          placeholder="0.00"
+                          value={withdrawalForm.fee || ""}
+                          // readOnly
+                          // disabled
                         />
                       </div>
                     </div>
@@ -817,8 +827,10 @@ export default function EZwichPage() {
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2">
               <EnhancedCardIssuanceForm
+                allFloatAccounts={
+                  Array.isArray(floatAccounts) ? floatAccounts : []
+                }
                 onSuccess={(data) => {
-                  // Show receipt
                   setCurrentTransaction({
                     ...data,
                     id: data.id || `card-${Date.now()}`,
@@ -827,8 +839,6 @@ export default function EZwichPage() {
                     created_at: new Date().toISOString(),
                   });
                   setShowReceiptDialog(true);
-
-                  // Refresh data
                   loadTransactions();
                   refreshStatistics();
                 }}
@@ -882,55 +892,72 @@ export default function EZwichPage() {
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>Type</TableHead>
+                      <TableHead>Card Number</TableHead>
                       <TableHead>Customer</TableHead>
-                      <TableHead>Card/ID</TableHead>
                       <TableHead>Amount</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow key={transaction.id}>
+                    {transactions.map((tx) => (
+                      <TableRow key={tx.id}>
                         <TableCell>
                           {format(
-                            new Date(transaction.created_at),
+                            new Date(tx.created_at),
                             "MMM dd, yyyy HH:mm"
                           )}
                         </TableCell>
-                        <TableCell className="capitalize">
-                          {transaction.type}
-                        </TableCell>
-                        <TableCell>{transaction.customer_name}</TableCell>
                         <TableCell>
-                          {transaction.card_number || "N/A"}
+                          {tx.type === "withdrawal"
+                            ? "Withdrawal"
+                            : "Card Issuance"}
                         </TableCell>
+                        <TableCell>{tx.card_number}</TableCell>
+                        <TableCell>{tx.customer_name}</TableCell>
                         <TableCell>
-                          {transaction.amount
-                            ? formatCurrency(transaction.amount)
-                            : "N/A"}
+                          {tx.type === "withdrawal"
+                            ? `GHS ${tx.amount}`
+                            : `GHS ${tx.amount}`}
                         </TableCell>
-                        <TableCell>
-                          {getStatusBadge(transaction.status)}
-                        </TableCell>
+                        <TableCell>{getStatusBadge(tx.status)}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Button
+                              size="icon"
                               variant="ghost"
-                              size="sm"
-                              onClick={() => handleEdit(transaction)}
-                              title="Edit Transaction"
+                              onClick={() => {
+                                setCurrentTransaction(tx);
+                                setShowReceiptDialog(true);
+                              }}
+                              title="View"
                             >
-                              <Edit className="h-4 w-4" />
+                              <Eye className="w-5 h-5" />
                             </Button>
                             <Button
+                              size="icon"
                               variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(transaction.id)}
-                              title="Delete Transaction"
+                              onClick={() => handleEdit(tx)}
+                              title="Edit"
+                            >
+                              <Edit className="w-5 h-5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={printReceipt}
+                              title="Print"
+                            >
+                              <Printer className="w-5 h-5" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() => handleDelete(tx.id)}
+                              title="Delete"
                               className="text-red-600 hover:text-red-700"
                             >
-                              <Trash2 className="h-4 w-4" />
+                              <Trash2 className="w-5 h-5" />
                             </Button>
                           </div>
                         </TableCell>
@@ -1137,11 +1164,103 @@ export default function EZwichPage() {
                     <span>{formatCurrency(currentTransaction.amount)}</span>
                   </div>
                 )}
+                {currentTransaction.fee && (
+                  <div className="flex justify-between text-sm">
+                    <span>Fee:</span>
+                    <span>{formatCurrency(currentTransaction.fee)}</span>
+                  </div>
+                )}
+                {currentTransaction.partner_bank && (
+                  <div className="flex justify-between text-sm">
+                    <span>Partner Bank:</span>
+                    <span>{currentTransaction.partner_bank}</span>
+                  </div>
+                )}
+                {currentTransaction.payment_method && (
+                  <div className="flex justify-between text-sm">
+                    <span>Payment Method:</span>
+                    <span>{currentTransaction.payment_method}</span>
+                  </div>
+                )}
+                {currentTransaction.reference && (
+                  <div className="flex justify-between text-sm">
+                    <span>Reference:</span>
+                    <span>{currentTransaction.reference}</span>
+                  </div>
+                )}
+                {currentTransaction.status && (
+                  <div className="flex justify-between text-sm">
+                    <span>Status:</span>
+                    <span>{currentTransaction.status}</span>
+                  </div>
+                )}
+                {currentTransaction.created_at && (
+                  <div className="flex justify-between text-sm">
+                    <span>Date:</span>
+                    <span>
+                      {format(new Date(currentTransaction.created_at), "PPP p")}
+                    </span>
+                  </div>
+                )}
               </div>
-              <div className="text-center text-xs border-t pt-4">
-                <p>Thank you for using our service!</p>
-                <p>For inquiries, please call 0241378880</p>
-              </div>
+              {/* Show images if card issuance and images exist */}
+              {currentTransaction.type === "card_issuance" &&
+                (currentTransaction.customer_photo ||
+                  currentTransaction.id_front_image ||
+                  currentTransaction.id_back_image) && (
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                    {currentTransaction.customer_photo && (
+                      <div className="flex flex-col items-center">
+                        <div className="font-semibold mb-1">Customer Photo</div>
+                        <img
+                          src={
+                            typeof currentTransaction.customer_photo ===
+                            "string"
+                              ? currentTransaction.customer_photo
+                              : URL.createObjectURL(
+                                  currentTransaction.customer_photo
+                                )
+                          }
+                          alt="Customer Photo"
+                          className="w-32 h-32 object-cover rounded border shadow"
+                        />
+                      </div>
+                    )}
+                    {currentTransaction.id_front_image && (
+                      <div className="flex flex-col items-center">
+                        <div className="font-semibold mb-1">ID Front Image</div>
+                        <img
+                          src={
+                            typeof currentTransaction.id_front_image ===
+                            "string"
+                              ? currentTransaction.id_front_image
+                              : URL.createObjectURL(
+                                  currentTransaction.id_front_image
+                                )
+                          }
+                          alt="ID Front"
+                          className="w-32 h-32 object-cover rounded border shadow"
+                        />
+                      </div>
+                    )}
+                    {currentTransaction.id_back_image && (
+                      <div className="flex flex-col items-center">
+                        <div className="font-semibold mb-1">ID Back Image</div>
+                        <img
+                          src={
+                            typeof currentTransaction.id_back_image === "string"
+                              ? currentTransaction.id_back_image
+                              : URL.createObjectURL(
+                                  currentTransaction.id_back_image
+                                )
+                          }
+                          alt="ID Back"
+                          className="w-32 h-32 object-cover rounded border shadow"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
             </div>
           )}
           <div className="flex justify-end gap-2">

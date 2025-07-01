@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, ArrowDownLeft, Building2 } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 const formSchema = z.object({
   cardNumber: z
@@ -66,6 +67,8 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
   >([]);
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [feeConfig, setFeeConfig] = useState<any>(null);
+  const [selectedSettlementAccount, setSelectedSettlementAccount] =
+    useState<any>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -315,54 +318,77 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
               <FormField
                 control={form.control}
                 name="settlementAccount"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Settlement Account</FormLabel>
-                    <Select
-                      onValueChange={field.onChange}
-                      defaultValue={field.value}
-                      disabled={loadingAccounts}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue
-                            placeholder={
-                              loadingAccounts
-                                ? "Loading..."
-                                : "Select settlement account"
-                            }
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {ezwichSettlementAccounts.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            No E-Zwich settlement accounts found
-                          </SelectItem>
-                        ) : (
-                          ezwichSettlementAccounts.map((account) => (
-                            <SelectItem key={account.id} value={account.id}>
-                              <div className="flex items-center gap-2">
-                                <Building2 className="h-4 w-4" />
-                                <span>
-                                  {account.provider || "Unknown Provider"} -{" "}
-                                  {account.account_number ||
-                                    "Settlement Account"}
-                                  (GHS{" "}
-                                  {Number(account.current_balance || 0).toFixed(
-                                    2
-                                  )}
-                                  )
-                                </span>
-                              </div>
+                render={({ field }) => {
+                  // Find selected account
+                  const selectedAccount =
+                    ezwichSettlementAccounts.find(
+                      (a) => a.id === field.value
+                    ) || null;
+                  useEffect(() => {
+                    setSelectedSettlementAccount(selectedAccount);
+                  }, [field.value, ezwichSettlementAccounts]);
+                  return (
+                    <FormItem>
+                      <FormLabel>Settlement Account</FormLabel>
+                      <Select
+                        onValueChange={field.onChange}
+                        defaultValue={field.value}
+                        disabled={loadingAccounts}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={
+                                loadingAccounts
+                                  ? "Loading..."
+                                  : "Select settlement account"
+                              }
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {ezwichSettlementAccounts.length === 0 ? (
+                            <SelectItem value="none" disabled>
+                              No E-Zwich settlement accounts found
                             </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
+                          ) : (
+                            ezwichSettlementAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                <div className="flex items-center gap-2">
+                                  <Building2 className="h-4 w-4" />
+                                  <span>
+                                    {account.provider || "Unknown Provider"} -{" "}
+                                    {account.account_number ||
+                                      "Settlement Account"}
+                                    (GHS{" "}
+                                    {Number(
+                                      account.current_balance || 0
+                                    ).toFixed(2)}
+                                    )
+                                  </span>
+                                </div>
+                              </SelectItem>
+                            ))
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {/* Dynamic balance display */}
+                      {selectedSettlementAccount && (
+                        <Alert className="mt-2 border-blue-200 bg-blue-50">
+                          <AlertDescription>
+                            <span className="font-medium">Balance:</span> GHS{" "}
+                            {Number(
+                              selectedSettlementAccount.current_balance || 0
+                            ).toLocaleString(undefined, {
+                              minimumFractionDigits: 2,
+                            })}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  );
+                }}
               />
             </div>
 

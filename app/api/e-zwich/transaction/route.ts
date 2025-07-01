@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
         reference: reference,
         processedBy: processed_by,
         branchId: branch_id,
-        branchName: account.branch_name || "Unknown Branch",
+        branchName: account.branch_name,
       });
 
       if (!glResult.success) {
