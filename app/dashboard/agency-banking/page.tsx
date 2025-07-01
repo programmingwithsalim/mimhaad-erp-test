@@ -538,10 +538,7 @@ export default function AgencyBankingPage() {
                             <SelectItem value="withdrawal">
                               Withdrawal
                             </SelectItem>
-                            <SelectItem value="transfer">Transfer</SelectItem>
-                            <SelectItem value="balance_inquiry">
-                              Balance Inquiry
-                            </SelectItem>
+                            <SelectItem value="interbank">Inter Bank Transfer</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>

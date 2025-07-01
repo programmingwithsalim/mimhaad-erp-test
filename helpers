@@ -1,0 +1,17 @@
+A. Mobile Money (MoMo) Transactions
+•	Cash-In (Customer deposits cash → MoMo float decreases and cash in till increase)
+•	Cash-Out (Customer withdraws cash → MoMo float increases and cash in till decrease)
+
+
+B. Agency Banking (e.g., CalBank)
+•	Withdrawal (Customer withdraws from bank account → Agency float increases and cash in till decrease)
+•	Deposit (Customer deposits to bank account → Agency float decreases and cash in till increases)
+•	Interbank Transfer (Customer transfers to another bank -> Agency float decrease, cash in till incrase + additional transfer fee)
+
+C. E-Zwich Services
+•	Card Issuance (Customer pays for card → Cash increases, card stock decreases)
+•	Withdrawal (Customer withdraws cash → E-Zwich settlement increases and cash in till decrease)
+
+D. Power Sale
+•	Customer purchase power, power float decrease and cash in till increase
+

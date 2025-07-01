@@ -106,6 +106,7 @@ export default function EZwichPage() {
   const [withdrawalForm, setWithdrawalForm] = useState({
     card_number: "",
     amount: "",
+    fee: "",
     customer_name: "",
     customer_phone: "",
     settlement_account_id: "",
@@ -115,6 +116,7 @@ export default function EZwichPage() {
   const [settleForm, setSettleForm] = useState({
     amount: "",
     settlement_account_id: "",
+    partner_account_id: "",
     notes: "",
   });
 
@@ -136,6 +138,7 @@ export default function EZwichPage() {
 
       if (response.ok) {
         const data = await response.json();
+        console.log("Transactionsssss", data);
         if (data.success && Array.isArray(data.transactions)) {
           setTransactions(data.transactions);
         } else {
@@ -163,8 +166,12 @@ export default function EZwichPage() {
 
       if (response.ok) {
         const data = await response.json();
+        const settlement_accounts = data.accounts.filter(
+          (account: any) => account.account_type === "e-zwich"
+        );
+
         if (data.success && Array.isArray(data.accounts)) {
-          setFloatAccounts(data.accounts);
+          setFloatAccounts(settlement_accounts);
         } else {
           setFloatAccounts([]);
         }
@@ -221,7 +228,7 @@ export default function EZwichPage() {
         customer_name: withdrawalForm.customer_name,
         customer_phone: withdrawalForm.customer_phone,
         amount: Number.parseFloat(withdrawalForm.amount),
-        fee: 0,
+        fee: withdrawalForm.fee ? Number.parseFloat(withdrawalForm.fee) : 0,
         note: withdrawalForm.notes,
         user_id: user.id,
         branch_id: user.branchId,
@@ -252,6 +259,7 @@ export default function EZwichPage() {
         setWithdrawalForm({
           card_number: "",
           amount: "",
+          fee: "",
           customer_name: "",
           customer_phone: "",
           settlement_account_id: "",
@@ -313,6 +321,7 @@ export default function EZwichPage() {
         type: "settlement",
         amount: Number.parseFloat(settleForm.amount),
         settlement_account_id: settleForm.settlement_account_id,
+        partner_account_id: settleForm.partner_account_id,
         notes: settleForm.notes,
         user_id: user.id,
         branch_id: user.branchId,
@@ -341,6 +350,7 @@ export default function EZwichPage() {
         setSettleForm({
           amount: "",
           settlement_account_id: "",
+          partner_account_id: "",
           notes: "",
         });
         setShowSettleDialog(false);
@@ -366,7 +376,7 @@ export default function EZwichPage() {
       setSubmitting(false);
     }
   };
-
+  
   const handleEdit = (transaction: Transaction) => {
     console.log("🔧 [EZWICH-EDIT] Transaction clicked:", transaction);
     // Map the transaction data to match what the dialog expects (snake_case)
@@ -702,14 +712,53 @@ export default function EZwichPage() {
                             <SelectValue placeholder="Select settlement account" />
                           </SelectTrigger>
                           <SelectContent>
-                            {floatAccounts.map((account: any) => (
-                              <SelectItem key={account.id} value={account.id}>
-                                {account.provider} -{" "}
-                                {formatCurrency(account.current_balance)}
-                              </SelectItem>
-                            ))}
+                            {Array.isArray(floatAccounts) &&
+                            floatAccounts.length > 0 ? (
+                              floatAccounts
+                                .filter(
+                                  (account: any) =>
+                                    // account.isezwichpartner === true &&
+                                    account.account_type === "e-zwich" &&
+                                    account.is_active
+                                )
+                                .map((account: any) => (
+                                  <SelectItem
+                                    key={account.id}
+                                    value={account.id}
+                                  >
+                                    {account.provider} -{" "}
+                                    {formatCurrency(account.current_balance)}
+                                    {account.current_balance <
+                                      account.min_threshold && (
+                                      <span className="ml-2 text-red-600">
+                                        (Low)
+                                      </span>
+                                    )}
+                                  </SelectItem>
+                                ))
+                            ) : (
+                              <></>
+                            )}
                           </SelectContent>
                         </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="fee">Fee (Optional)</Label>
+                        <Input
+                          id="fee"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={withdrawalForm.fee}
+                          onChange={(e) =>
+                            setWithdrawalForm({
+                              ...withdrawalForm,
+                              fee: e.target.value,
+                            })
+                          }
+                          placeholder="0.00"
+                        />
                       </div>
                     </div>
 
@@ -756,7 +805,7 @@ export default function EZwichPage() {
               <DynamicFloatDisplay
                 selectedProvider={withdrawalForm.settlement_account_id}
                 floatAccounts={floatAccounts}
-                serviceType="E-Zwich"
+                serviceType="e-zwich"
                 onRefresh={loadFloatAccounts}
                 isLoading={loadingFloats}
               />
@@ -765,23 +814,38 @@ export default function EZwichPage() {
         </TabsContent>
 
         <TabsContent value="card-issuance" className="space-y-6">
-          <EnhancedCardIssuanceForm
-            onSuccess={(data) => {
-              // Show receipt
-              setCurrentTransaction({
-                ...data,
-                id: data.id || `card-${Date.now()}`,
-                type: "card_issuance",
-                status: "completed",
-                created_at: new Date().toISOString(),
-              });
-              setShowReceiptDialog(true);
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2">
+              <EnhancedCardIssuanceForm
+                onSuccess={(data) => {
+                  // Show receipt
+                  setCurrentTransaction({
+                    ...data,
+                    id: data.id || `card-${Date.now()}`,
+                    type: "card_issuance",
+                    status: "completed",
+                    created_at: new Date().toISOString(),
+                  });
+                  setShowReceiptDialog(true);
 
-              // Refresh data
-              loadTransactions();
-              refreshStatistics();
-            }}
-          />
+                  // Refresh data
+                  loadTransactions();
+                  refreshStatistics();
+                }}
+              />
+            </div>
+
+            {/* Float Display - 1 column */}
+            <div className="lg:col-span-1">
+              <DynamicFloatDisplay
+                selectedProvider={withdrawalForm.settlement_account_id}
+                floatAccounts={floatAccounts}
+                serviceType="e-zwich"
+                onRefresh={loadFloatAccounts}
+                isLoading={loadingFloats}
+              />
+            </div>
+          </div>
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">
@@ -910,7 +974,9 @@ export default function EZwichPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="settle_account">Settlement Account *</Label>
+              <Label htmlFor="settle_account">
+                Settlement Account (From) *
+              </Label>
               <Select
                 value={settleForm.settlement_account_id}
                 onValueChange={(value) =>
@@ -922,12 +988,57 @@ export default function EZwichPage() {
                   <SelectValue placeholder="Select settlement account" />
                 </SelectTrigger>
                 <SelectContent>
-                  {floatAccounts.map((account: any) => (
-                    <SelectItem key={account.id} value={account.id}>
-                      {account.provider} -{" "}
-                      {formatCurrency(account.current_balance)}
-                    </SelectItem>
-                  ))}
+                  {Array.isArray(floatAccounts) &&
+                    floatAccounts
+                      .filter(
+                        (account: any) =>
+                          account.isezwichpartner === true &&
+                          account.account_type === "e-zwich" &&
+                          account.is_active
+                      )
+                      .map((account: any) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.provider} -{" "}
+                          {formatCurrency(account.current_balance)}
+                          {account.current_balance < account.min_threshold && (
+                            <span className="ml-2 text-red-600">(Low)</span>
+                          )}
+                        </SelectItem>
+                      ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="partner_account">Partner Account (To) *</Label>
+              <Select
+                value={settleForm.partner_account_id}
+                onValueChange={(value) =>
+                  setSettleForm({ ...settleForm, partner_account_id: value })
+                }
+                required
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select partner account" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.isArray(floatAccounts) &&
+                    floatAccounts
+                      .filter(
+                        (account: any) =>
+                          account.isezwichpartner !== true &&
+                          account.account_type === "partner" &&
+                          account.is_active
+                      )
+                      .map((account: any) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.provider} -{" "}
+                          {formatCurrency(account.current_balance)}
+                          {account.current_balance < account.min_threshold && (
+                            <span className="ml-2 text-red-600">(Low)</span>
+                          )}
+                        </SelectItem>
+                      ))}
                 </SelectContent>
               </Select>
             </div>

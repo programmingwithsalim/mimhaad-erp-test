@@ -112,12 +112,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Calculate new balance
-    const balanceChange =
-      normalizedData.type === "cash-in"
-        ? normalizedData.amount
-        : -normalizedData.amount;
-    const newBalance = Number(account.current_balance) + balanceChange;
+    // Calculate new balances for float and cash in till
+    let newFloatBalance = Number(account.current_balance);
+    let cashTillChange = 0;
+    let floatChange = 0;
+
+    if (normalizedData.type === "cash-in") {
+      // Cash in: Increase cash in till, decrease MoMo float
+      cashTillChange = normalizedData.amount + normalizedData.fee;
+      floatChange = -normalizedData.amount;
+      newFloatBalance = Number(account.current_balance) - normalizedData.amount;
+    } else {
+      // Cash out: Decrease cash in till, increase MoMo float
+      cashTillChange = -(normalizedData.amount - normalizedData.fee);
+      floatChange = normalizedData.amount;
+      newFloatBalance = Number(account.current_balance) + normalizedData.amount;
+    }
 
     // Create the transaction
     const transaction = await sql`
@@ -147,31 +157,22 @@ export async function POST(request: NextRequest) {
         ${normalizedData.provider},
         ${normalizedData.reference || `MOMO-${Date.now()}`},
         'completed',
-        ${
-          normalizedData.type === "cash-in"
-            ? normalizedData.amount + normalizedData.fee
-            : -(normalizedData.amount - normalizedData.fee)
-        },
-        ${-balanceChange}
+        ${cashTillChange},
+        ${floatChange}
       )
       RETURNING *
     `;
 
-    // Update float account balance
+    // Update float account balance (MoMo float)
     await sql`
       UPDATE float_accounts 
       SET 
-        current_balance = ${newBalance},
+        current_balance = ${newFloatBalance},
         updated_at = NOW()
       WHERE id = ${account.id}
     `;
 
     // Update cash in till
-    const cashTillChange =
-      normalizedData.type === "cash-in"
-        ? normalizedData.amount + normalizedData.fee
-        : -(normalizedData.amount - normalizedData.fee);
-
     await sql`
       UPDATE float_accounts 
       SET 

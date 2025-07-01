@@ -1,17 +1,37 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
-import { useToast } from "@/hooks/use-toast"
-import { useCurrentUser } from "@/hooks/use-current-user"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, ArrowDownLeft, Building2 } from "lucide-react"
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Loader2, ArrowDownLeft, Building2 } from "lucide-react";
 
 const formSchema = z.object({
   cardNumber: z
@@ -20,26 +40,32 @@ const formSchema = z.object({
     .max(10, "Card number cannot exceed 10 digits")
     .regex(/^\d+$/, "Card number must contain only digits"),
   settlementAccount: z.string().min(1, "Settlement account is required"),
-  customerName: z.string().min(3, "Customer name must be at least 3 characters"),
-  customerPhone: z.string().min(10, "Phone number must be at least 10 characters"),
+  customerName: z
+    .string()
+    .min(3, "Customer name must be at least 3 characters"),
+  customerPhone: z
+    .string()
+    .min(10, "Phone number must be at least 10 characters"),
   withdrawalAmount: z.coerce.number().min(1, "Amount must be greater than 0"),
   fee: z.coerce.number().min(0, "Fee must be 0 or greater"),
-})
+});
 
-type FormValues = z.infer<typeof formSchema>
+type FormValues = z.infer<typeof formSchema>;
 
 interface WithdrawalFormProps {
-  onSuccess?: (data: any) => void
-  onCancel?: () => void
+  onSuccess?: (data: any) => void;
+  onCancel?: () => void;
 }
 
 export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
-  const { toast } = useToast()
-  const { user } = useCurrentUser()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [ezwichSettlementAccounts, setEzwichSettlementAccounts] = useState<any[]>([])
-  const [loadingAccounts, setLoadingAccounts] = useState(false)
-  const [feeConfig, setFeeConfig] = useState<any>(null)
+  const { toast } = useToast();
+  const { user } = useCurrentUser();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [ezwichSettlementAccounts, setEzwichSettlementAccounts] = useState<
+    any[]
+  >([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(false);
+  const [feeConfig, setFeeConfig] = useState<any>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
@@ -51,121 +77,132 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
       withdrawalAmount: 0,
       fee: 0,
     },
-  })
+  });
 
-  const watchAmount = form.watch("withdrawalAmount")
+  const watchAmount = form.watch("withdrawalAmount");
 
   // Load fee configuration
   useEffect(() => {
     const loadFeeConfig = async () => {
       try {
-        const response = await fetch("/api/settings/fee-config/e-zwich?transactionType=withdrawal")
+        const response = await fetch(
+          "/api/settings/fee-config/e-zwich?transactionType=withdrawal"
+        );
         if (response.ok) {
-          const data = await response.json()
+          const data = await response.json();
           if (data.success && data.config) {
-            setFeeConfig(data.config)
+            setFeeConfig(data.config);
           }
         }
       } catch (error) {
-        console.error("Error loading fee config:", error)
+        console.error("Error loading fee config:", error);
       }
-    }
+    };
 
-    loadFeeConfig()
-  }, [])
+    loadFeeConfig();
+  }, []);
 
   // Calculate fee when amount changes
   useEffect(() => {
     if (feeConfig && watchAmount > 0) {
-      let calculatedFee = 0
+      let calculatedFee = 0;
 
       if (feeConfig.fee_type === "percentage") {
-        calculatedFee = watchAmount * (Number(feeConfig.fee_value) / 100)
+        calculatedFee = watchAmount * (Number(feeConfig.fee_value) / 100);
       } else if (feeConfig.fee_type === "fixed") {
-        calculatedFee = Number(feeConfig.fee_value)
+        calculatedFee = Number(feeConfig.fee_value);
       } else if (feeConfig.fee_type === "tiered") {
-        const tiers = feeConfig.tier_config || []
+        const tiers = feeConfig.tier_config || [];
         for (const tier of tiers) {
-          if (watchAmount >= tier.min_amount && watchAmount <= tier.max_amount) {
-            calculatedFee = Number(tier.fee_value)
-            break
+          if (
+            watchAmount >= tier.min_amount &&
+            watchAmount <= tier.max_amount
+          ) {
+            calculatedFee = Number(tier.fee_value);
+            break;
           }
         }
       }
 
       // Apply min/max limits
-      if (feeConfig.minimum_fee && calculatedFee < Number(feeConfig.minimum_fee)) {
-        calculatedFee = Number(feeConfig.minimum_fee)
+      if (
+        feeConfig.minimum_fee &&
+        calculatedFee < Number(feeConfig.minimum_fee)
+      ) {
+        calculatedFee = Number(feeConfig.minimum_fee);
       }
-      if (feeConfig.maximum_fee && calculatedFee > Number(feeConfig.maximum_fee)) {
-        calculatedFee = Number(feeConfig.maximum_fee)
+      if (
+        feeConfig.maximum_fee &&
+        calculatedFee > Number(feeConfig.maximum_fee)
+      ) {
+        calculatedFee = Number(feeConfig.maximum_fee);
       }
 
-      form.setValue("fee", Number(calculatedFee.toFixed(2)))
+      form.setValue("fee", Number(calculatedFee.toFixed(2)));
     } else if (watchAmount > 0) {
       // Fallback fee calculation
-      const fallbackFee = Math.max(5, watchAmount * 0.01) // 1% with minimum 5 GHS
-      form.setValue("fee", Number(fallbackFee.toFixed(2)))
+      const fallbackFee = Math.max(5, watchAmount * 0.01); // 1% with minimum 5 GHS
+      form.setValue("fee", Number(fallbackFee.toFixed(2)));
     }
-  }, [watchAmount, feeConfig, form])
+  }, [watchAmount, feeConfig, form]);
 
   // Load E-Zwich settlement accounts with proper null safety
   const loadEzwichSettlementAccounts = async () => {
-    if (!user?.branchId) return
+    if (!user?.branchId) return;
 
-    setLoadingAccounts(true)
+    setLoadingAccounts(true);
     try {
-      console.log("🔍 [E-ZWICH] Loading settlement accounts for branch:", user.branchId)
+      console.log(
+        "🔍 [E-ZWICH] Loading settlement accounts for branch:",
+        user.branchId
+      );
 
-      const response = await fetch(`/api/float-accounts?branchId=${user.branchId}`)
+      const response = await fetch(
+        `/api/float-accounts?branchId=${user.branchId}`
+      );
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error("❌ [E-ZWICH] API Error:", errorText)
-        throw new Error(`Failed to load accounts: ${response.status} ${response.statusText}`)
+        const errorText = await response.text();
+        console.error("❌ [E-ZWICH] API Error:", errorText);
+        throw new Error(
+          `Failed to load accounts: ${response.status} ${response.statusText}`
+        );
       }
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (data.success && Array.isArray(data.accounts)) {
-        // Filter for E-Zwich settlement accounts with proper null safety
+        // Strictly filter for E-Zwich settlement accounts with isezwichpartner === true and account_type === 'e-zwich'
         const ezwichAccounts = data.accounts.filter((account: any) => {
-          if (!account) return false
-
-          // Safe access to properties with fallbacks
-          const accountType = account.account_type || ""
-          const provider = account.provider || ""
-          const isEzwichPartner = account.isezwichpartner === true
-
-          // Check for E-Zwich settlement accounts
-          const isEzwichType = accountType.toLowerCase() === "e-zwich"
-          const isEzwichProvider =
-            provider.toLowerCase().includes("e-zwich") || provider.toLowerCase().includes("ezwich")
-
-          return (isEzwichType || isEzwichPartner || isEzwichProvider) && account.is_active
-        })
-
-        console.log("✅ [E-ZWICH] Loaded settlement accounts:", ezwichAccounts)
-        setEzwichSettlementAccounts(ezwichAccounts || [])
+          return (
+            account &&
+            account.isezwichpartner === true &&
+            account.account_type === "e-zwich" &&
+            account.is_active
+          );
+        });
+        setEzwichSettlementAccounts(ezwichAccounts || []);
       } else {
-        throw new Error(data.error || "Failed to load E-Zwich settlement accounts")
+        throw new Error(
+          data.error || "Failed to load E-Zwich settlement accounts"
+        );
       }
     } catch (error) {
-      console.error("❌ [E-ZWICH] Error loading settlement accounts:", error)
-      setEzwichSettlementAccounts([])
+      console.error("❌ [E-ZWICH] Error loading settlement accounts:", error);
+      setEzwichSettlementAccounts([]);
       toast({
         title: "Error",
         description: "Failed to load E-Zwich settlement accounts",
         variant: "destructive",
-      })
+      });
     } finally {
-      setLoadingAccounts(false)
+      setLoadingAccounts(false);
     }
-  }
+  };
 
   useEffect(() => {
-    loadEzwichSettlementAccounts()
-  }, [user?.branchId])
+    loadEzwichSettlementAccounts();
+  }, [user?.branchId]);
 
   const onSubmit = async (values: FormValues) => {
     if (!user) {
@@ -173,12 +210,12 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
         title: "Authentication Error",
         description: "You must be logged in to process withdrawals",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsSubmitting(true)
+      setIsSubmitting(true);
 
       const response = await fetch("/api/e-zwich/transaction", {
         method: "POST",
@@ -195,41 +232,44 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
           fee: values.fee,
           user_id: user.id,
           branch_id: user.branchId,
-          processed_by: user.email || user.username || user.name || "Unknown User",
+          processed_by:
+            user.email || user.username || user.name || "Unknown User",
         }),
-      })
+      });
 
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error("❌ [E-ZWICH] API Error:", errorText)
-        throw new Error(`Transaction failed: ${response.status} ${response.statusText}`)
+        const errorText = await response.text();
+        console.error("❌ [E-ZWICH] API Error:", errorText);
+        throw new Error(
+          `Transaction failed: ${response.status} ${response.statusText}`
+        );
       }
 
-      const result = await response.json()
+      const result = await response.json();
 
       if (result.success) {
         toast({
           title: "Withdrawal Processed",
           description: `GHS ${values.withdrawalAmount} withdrawal processed for card ${values.cardNumber}`,
-        })
-        form.reset()
+        });
+        form.reset();
         if (onSuccess) {
-          onSuccess(result.transaction)
+          onSuccess(result.transaction);
         }
       } else {
-        throw new Error(result.error || "Failed to process withdrawal")
+        throw new Error(result.error || "Failed to process withdrawal");
       }
     } catch (error: any) {
-      console.error("❌ [E-ZWICH] Withdrawal error:", error)
+      console.error("❌ [E-ZWICH] Withdrawal error:", error);
       toast({
         title: "Error",
         description: error?.message || "Something went wrong",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
   return (
     <Card className="w-full">
@@ -238,7 +278,9 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
           <ArrowDownLeft className="h-5 w-5" />
           E-Zwich Withdrawal
         </CardTitle>
-        <CardDescription>Process a cash withdrawal from E-Zwich card</CardDescription>
+        <CardDescription>
+          Process a cash withdrawal from E-Zwich card
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>
@@ -258,8 +300,10 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
                         maxLength={10}
                         className="font-mono"
                         onChange={(e) => {
-                          const value = e.target.value.replace(/\D/g, "").slice(0, 10)
-                          field.onChange(value)
+                          const value = e.target.value
+                            .replace(/\D/g, "")
+                            .slice(0, 10);
+                          field.onChange(value);
                         }}
                       />
                     </FormControl>
@@ -274,10 +318,20 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
                 render={({ field }) => (
                   <FormItem>
                     <FormLabel>Settlement Account</FormLabel>
-                    <Select onValueChange={field.onChange} defaultValue={field.value} disabled={loadingAccounts}>
+                    <Select
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                      disabled={loadingAccounts}
+                    >
                       <FormControl>
                         <SelectTrigger>
-                          <SelectValue placeholder={loadingAccounts ? "Loading..." : "Select settlement account"} />
+                          <SelectValue
+                            placeholder={
+                              loadingAccounts
+                                ? "Loading..."
+                                : "Select settlement account"
+                            }
+                          />
                         </SelectTrigger>
                       </FormControl>
                       <SelectContent>
@@ -292,8 +346,13 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
                                 <Building2 className="h-4 w-4" />
                                 <span>
                                   {account.provider || "Unknown Provider"} -{" "}
-                                  {account.account_number || "Settlement Account"}
-                                  (GHS {Number(account.current_balance || 0).toFixed(2)})
+                                  {account.account_number ||
+                                    "Settlement Account"}
+                                  (GHS{" "}
+                                  {Number(account.current_balance || 0).toFixed(
+                                    2
+                                  )}
+                                  )
                                 </span>
                               </div>
                             </SelectItem>
@@ -316,7 +375,10 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
                   <FormItem>
                     <FormLabel>Customer Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Enter customer's full name" {...field} />
+                      <Input
+                        placeholder="Enter customer's full name"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -382,8 +444,8 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
                         {feeConfig.fee_type === "fixed"
                           ? "Fixed fee"
                           : feeConfig.fee_type === "percentage"
-                            ? `${feeConfig.fee_value}% of amount`
-                            : "Tiered fee"}{" "}
+                          ? `${feeConfig.fee_value}% of amount`
+                          : "Tiered fee"}{" "}
                         from system configuration
                       </FormDescription>
                     )}
@@ -417,5 +479,5 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
         </Form>
       </CardContent>
     </Card>
-  )
+  );
 }

@@ -590,15 +590,29 @@ export default function PowerPage() {
                             <SelectValue placeholder="Select electricity provider" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="ECG">
-                              Electricity Company of Ghana (ECG)
-                            </SelectItem>
-                            <SelectItem value="NEDCo">
-                              Northern Electricity Distribution Company (NEDCo)
-                            </SelectItem>
-                            <SelectItem value="GRIDCO">
-                              Ghana Grid Company (GRIDCO)
-                            </SelectItem>
+                            {floatAccounts
+                              .filter(
+                                (account: any) =>
+                                  account.is_active &&
+                                  account.account_type === "power-float"
+                              )
+                              .map((account: any) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  <div className="flex items-center justify-between w-full">
+                                    <span>{account.provider}</span>
+                                    <span className="text-sm text-muted-foreground ml-2">
+                                      Balance:{" "}
+                                      {formatCurrency(account.current_balance)}
+                                      {account.current_balance <
+                                        account.min_threshold && (
+                                        <span className="ml-2 text-red-600">
+                                          (Low)
+                                        </span>
+                                      )}
+                                    </span>
+                                  </div>
+                                </SelectItem>
+                              ))}
                           </SelectContent>
                         </Select>
                       </div>
