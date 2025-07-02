@@ -10,58 +10,67 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get("type");
     const search = searchParams.get("search");
 
-    let query = `
+    // Build the WHERE clause and parameters
+    let whereParts: string[] = [];
+    let params: any[] = [];
+    let paramIndex = 1;
+    if (active === "true") {
+      whereParts.push(`is_active = true`);
+    }
+    if (type) {
+      whereParts.push(`type = $${paramIndex++}`);
+      params.push(type);
+    }
+    if (search) {
+      whereParts.push(
+        `(code ILIKE $${paramIndex} OR name ILIKE $${paramIndex})`
+      );
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+    let whereClause =
+      whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
+    const query = `
       SELECT 
         id,
         code as account_code,
         name as account_name,
         type as account_type,
         COALESCE(balance, 0) as balance,
-        is_active
+        is_active,
+        branch_id
       FROM gl_accounts
-      WHERE 1=1
+      ${whereClause}
+      ORDER BY code ASC
     `;
-
-    const params: any[] = [];
-
-    if (active === "true") {
-      query += ` AND is_active = true`;
-    }
-
-    if (type) {
-      query += ` AND type = $${params.length + 1}`;
-      params.push(type);
-    }
-
-    if (search) {
-      query += ` AND (code ILIKE $${params.length + 1} OR name ILIKE $${
-        params.length + 1
-      })`;
-      params.push(`%${search}%`);
-    }
-
-    query += ` ORDER BY code ASC`;
-
-    const accounts = await sql.unsafe(query, ...params);
-
+    // Use sql.query for parameterized queries
+    const accountsResult: any = await sql.query(query, params);
+    const accountsArray = Array.isArray(accountsResult)
+      ? accountsResult
+      : accountsResult.rows
+      ? accountsResult.rows
+      : [];
     return NextResponse.json({
       success: true,
-      accounts: accounts.map((account) => ({
+      accounts: accountsArray.map((account: any) => ({
         id: account.id,
         account_code: account.account_code,
         account_name: account.account_name,
         account_type: account.account_type,
         balance: Number(account.balance) || 0,
         is_active: account.is_active,
+        branch_id: account.branch_id,
       })),
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error fetching GL accounts:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to fetch GL accounts",
-        details: error instanceof Error ? error.message : String(error),
+        details: (error as any)?.message
+          ? (error as any).message
+          : String(error),
       },
       { status: 500 }
     );
@@ -78,9 +87,10 @@ export async function POST(request: Request) {
       parent_id,
       description,
       is_active = true,
+      branch_id,
     } = body;
 
-    if (!account_code || !account_name || !account_type) {
+    if (!account_code || !account_name || !account_type || !branch_id) {
       return NextResponse.json(
         { success: false, error: "Missing required fields" },
         { status: 400 }
@@ -109,6 +119,7 @@ export async function POST(request: Request) {
         parent_id, 
         is_active, 
         balance,
+        branch_id,
         created_at,
         updated_at
       )
@@ -120,6 +131,7 @@ export async function POST(request: Request) {
         ${parent_id || null}, 
         ${is_active}, 
         0,
+        ${branch_id},
         NOW(),
         NOW()
       )

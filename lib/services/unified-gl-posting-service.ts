@@ -158,88 +158,26 @@ export class UnifiedGLPostingService {
     transactionType: string,
     branchId: string
   ): Promise<Record<string, any>> {
-    const accounts: Record<string, any> = {};
+    // For MoMo, always use 'momo_float' as the transaction_type for mapping lookup
+    let lookupType = transactionType;
+    if (sourceModule === "momo") {
+      lookupType = "momo_float";
+    }
+    const mappings = await sql`
+      SELECT mapping_type, gl_account_id
+      FROM gl_mappings
+      WHERE transaction_type = ${lookupType}
+        AND branch_id = ${branchId}
+        AND is_active = true
+    `;
 
-    accounts.cashAccount = await this.getOrCreateGLAccount(
-      "1001",
-      "Cash in Till",
-      "Asset"
-    );
-    accounts.feeRevenueAccount = await this.getOrCreateGLAccount(
-      "4001",
-      "Transaction Fee Revenue",
-      "Revenue"
-    );
-
-    switch (sourceModule) {
-      case "momo":
-        accounts.floatAccount = await this.getOrCreateGLAccount(
-          "2101",
-          "MoMo Float Account",
-          "Liability"
-        );
-        accounts.settlementAccount = await this.getOrCreateGLAccount(
-          "2102",
-          "MoMo Settlement Account",
-          "Asset"
-        );
-        break;
-      case "agency_banking":
-        accounts.partnerBankAccount = await this.getOrCreateGLAccount(
-          "2103",
-          "Agency Banking Float",
-          "Liability"
-        );
-        accounts.commissionAccount = await this.getOrCreateGLAccount(
-          "4002",
-          "Agency Banking Commission",
-          "Revenue"
-        );
-        break;
-      case "e_zwich":
-        accounts.ezwichFloatAccount = await this.getOrCreateGLAccount(
-          "2104",
-          "E-Zwich Float Account",
-          "Liability"
-        );
-        accounts.cardInventoryAccount = await this.getOrCreateGLAccount(
-          "1301",
-          "E-Zwich Card Inventory",
-          "Asset"
-        );
-        accounts.cardRevenueAccount = await this.getOrCreateGLAccount(
-          "4003",
-          "E-Zwich Card Revenue",
-          "Revenue"
-        );
-        break;
-      case "power":
-        accounts.powerFloatAccount = await this.getOrCreateGLAccount(
-          "2105",
-          "Power Float Account",
-          "Liability"
-        );
-        accounts.powerRevenueAccount = await this.getOrCreateGLAccount(
-          "4004",
-          "Power Service Revenue",
-          "Revenue"
-        );
-        break;
-      case "jumia":
-        accounts.jumiaLiabilityAccount = await this.getOrCreateGLAccount(
-          "2106",
-          "Jumia Customer Liability",
-          "Liability"
-        );
-        accounts.jumiaRevenueAccount = await this.getOrCreateGLAccount(
-          "4005",
-          "Jumia Commission Revenue",
-          "Revenue"
-        );
-        break;
+    // Build a mapping object: { main_account, fee_account, ... }
+    const result: Record<string, string> = {};
+    for (const row of mappings) {
+      result[row.mapping_type] = row.gl_account_id;
     }
 
-    return accounts;
+    return result;
   }
 
   private static async createGLEntriesForTransaction(
@@ -264,12 +202,37 @@ export class UnifiedGLPostingService {
       metadata?: Record<string, any>;
     }> = [];
 
+    // Check for required mappings before proceeding
+    let requiredMappings: string[] = [];
+    switch (data.sourceModule) {
+      case "momo":
+        requiredMappings = ["main", "fee"]; // Add more as needed (e.g., 'expense', 'commission')
+        break;
+      case "agency_banking":
+        requiredMappings = ["main", "fee"];
+        break;
+      case "e_zwich":
+        requiredMappings = ["main", "fee"];
+        break;
+      case "power":
+        requiredMappings = ["main", "fee"];
+        break;
+      // Add more as needed
+    }
+    for (const key of requiredMappings) {
+      if (!accounts[key]) {
+        throw new Error(
+          `Missing GL mapping for ${key} (module: ${data.sourceModule}, type: ${data.transactionType}, branch: ${data.branchId})`
+        );
+      }
+    }
+
     switch (data.sourceModule) {
       case "momo":
         if (data.transactionType === "cash-in") {
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: data.amount,
             credit: 0,
             description:
@@ -280,8 +243,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.floatAccount.id,
-            accountCode: accounts.floatAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: 0,
             credit: data.amount,
             description:
@@ -293,8 +256,8 @@ export class UnifiedGLPostingService {
           });
         } else if (data.transactionType === "cash-out") {
           entries.push({
-            accountId: accounts.floatAccount.id,
-            accountCode: accounts.floatAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: data.amount,
             credit: 0,
             description:
@@ -305,8 +268,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: 0,
             credit: data.amount,
             description:
@@ -322,8 +285,8 @@ export class UnifiedGLPostingService {
       case "agency_banking":
         if (data.transactionType === "deposit") {
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: data.amount,
             credit: 0,
             description:
@@ -335,8 +298,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.partnerBankAccount.id,
-            accountCode: accounts.partnerBankAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: 0,
             credit: data.amount,
             description:
@@ -349,8 +312,8 @@ export class UnifiedGLPostingService {
           });
         } else if (data.transactionType === "withdrawal") {
           entries.push({
-            accountId: accounts.partnerBankAccount.id,
-            accountCode: accounts.partnerBankAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: data.amount,
             credit: 0,
             description:
@@ -362,8 +325,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: 0,
             credit: data.amount,
             description:
@@ -380,8 +343,8 @@ export class UnifiedGLPostingService {
       case "e_zwich":
         if (data.transactionType === "withdrawal") {
           entries.push({
-            accountId: accounts.ezwichFloatAccount.id,
-            accountCode: accounts.ezwichFloatAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: data.amount,
             credit: 0,
             description:
@@ -392,8 +355,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: 0,
             credit: data.amount,
             description:
@@ -405,8 +368,8 @@ export class UnifiedGLPostingService {
           });
         } else if (data.transactionType === "card_issuance") {
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: data.amount,
             credit: 0,
             description:
@@ -418,8 +381,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.cardRevenueAccount.id,
-            accountCode: accounts.cardRevenueAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: 0,
             credit: data.amount,
             description:
@@ -435,8 +398,8 @@ export class UnifiedGLPostingService {
 
       case "power":
         entries.push({
-          accountId: accounts.cashAccount.id,
-          accountCode: accounts.cashAccount.code,
+          accountId: accounts.main,
+          accountCode: accounts.main,
           debit: data.amount + data.fee,
           credit: 0,
           description:
@@ -447,8 +410,8 @@ export class UnifiedGLPostingService {
           },
         });
         entries.push({
-          accountId: accounts.powerFloatAccount.id,
-          accountCode: accounts.powerFloatAccount.code,
+          accountId: accounts.fee,
+          accountCode: accounts.fee,
           debit: 0,
           credit: data.amount,
           description:
@@ -460,8 +423,8 @@ export class UnifiedGLPostingService {
         });
         if (data.fee > 0) {
           entries.push({
-            accountId: accounts.powerRevenueAccount.id,
-            accountCode: accounts.powerRevenueAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: 0,
             credit: data.fee,
             description:
@@ -477,8 +440,8 @@ export class UnifiedGLPostingService {
       case "jumia":
         if (data.transactionType === "pod_collection") {
           entries.push({
-            accountId: accounts.cashAccount.id,
-            accountCode: accounts.cashAccount.code,
+            accountId: accounts.main,
+            accountCode: accounts.main,
             debit: data.amount,
             credit: 0,
             description:
@@ -489,8 +452,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.jumiaLiabilityAccount.id,
-            accountCode: accounts.jumiaLiabilityAccount.code,
+            accountId: accounts.fee,
+            accountCode: accounts.fee,
             debit: 0,
             credit: data.amount,
             description:
@@ -506,8 +469,8 @@ export class UnifiedGLPostingService {
 
     if (data.fee > 0 && data.transactionType !== "card_issuance") {
       entries.push({
-        accountId: accounts.cashAccount.id,
-        accountCode: accounts.cashAccount.code,
+        accountId: accounts.main,
+        accountCode: accounts.main,
         debit: data.fee,
         credit: 0,
         description:
@@ -518,8 +481,8 @@ export class UnifiedGLPostingService {
         metadata: { transactionId: data.transactionId, feeAmount: data.fee },
       });
       entries.push({
-        accountId: accounts.feeRevenueAccount.id,
-        accountCode: accounts.feeRevenueAccount.code,
+        accountId: accounts.fee,
+        accountCode: accounts.fee,
         debit: 0,
         credit: data.fee,
         description:
@@ -532,29 +495,6 @@ export class UnifiedGLPostingService {
     }
 
     return entries;
-  }
-
-  private static async getOrCreateGLAccount(
-    code: string,
-    name: string,
-    type: "Asset" | "Liability" | "Equity" | "Revenue" | "Expense"
-  ): Promise<{ id: string; code: string; name: string }> {
-    const existingAccount =
-      await sql`SELECT id, code, name FROM gl_accounts WHERE code = ${code}`;
-
-    if (existingAccount.length > 0) {
-      return existingAccount[0];
-    }
-
-    const accountIdResult = await sql`SELECT gen_random_uuid() as id`;
-    const accountId = accountIdResult[0].id;
-
-    await sql`
-      INSERT INTO gl_accounts (id, code, name, type, is_active, created_at, updated_at)
-      VALUES (${accountId}, ${code}, ${name}, ${type}, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-    `;
-
-    return { id: accountId, code, name };
   }
 
   private static async updateAccountBalances(

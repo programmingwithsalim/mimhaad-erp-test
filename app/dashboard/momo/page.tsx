@@ -225,7 +225,7 @@ export default function MoMoPage() {
         notes: formData.notes,
       };
 
-      const response = await fetch("/api/momo/transaction", {
+      const response = await fetch("/api/momo/transactions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -615,11 +615,8 @@ export default function MoMoPage() {
                             <SelectItem value="MTN">
                               MTN Mobile Money
                             </SelectItem>
-                            <SelectItem value="Vodafone">
+                            <SelectItem value="telecel">
                               Vodafone Cash
-                            </SelectItem>
-                            <SelectItem value="AirtelTigo">
-                              AirtelTigo Money
                             </SelectItem>
                           </SelectContent>
                         </Select>

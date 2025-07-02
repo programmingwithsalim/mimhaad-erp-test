@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 // Function to detect GL accounts table schema
 async function detectGLAccountsSchema() {
@@ -10,22 +10,22 @@ async function detectGLAccountsSchema() {
       SELECT table_name FROM information_schema.tables 
       WHERE table_name IN ('gl_accounts', 'gl_account', 'general_ledger_accounts')
       AND table_schema = 'public'
-    `
+    `;
 
     if (tables.length === 0) {
-      return null
+      return null;
     }
 
-    const tableName = tables[0].table_name
+    const tableName = tables[0].table_name;
 
     const columns = await sql`
       SELECT column_name
       FROM information_schema.columns 
       WHERE table_name = ${tableName}
       AND table_schema = 'public'
-    `
+    `;
 
-    const columnNames = columns.map((col) => col.column_name)
+    const columnNames = columns.map((col) => col.column_name);
 
     return {
       tableName,
@@ -34,10 +34,10 @@ async function detectGLAccountsSchema() {
       typeColumn: columnNames.includes("type") ? "type" : null,
       balanceColumn: columnNames.includes("balance") ? "balance" : null,
       isActiveColumn: columnNames.includes("is_active") ? "is_active" : null,
-    }
+    };
   } catch (error) {
-    console.error("Error detecting schema:", error)
-    return null
+    console.error("Error detecting schema:", error);
+    return null;
   }
 }
 
@@ -48,10 +48,10 @@ async function ensureGLAccountsExist() {
     const tables = await sql`
       SELECT table_name FROM information_schema.tables 
       WHERE table_name = 'gl_accounts' AND table_schema = 'public'
-    `
+    `;
 
     if (tables.length === 0) {
-      console.log("Creating GL accounts table...")
+      console.log("Creating GL accounts table...");
       await sql`
         CREATE TABLE gl_accounts (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -64,11 +64,11 @@ async function ensureGLAccountsExist() {
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
-      `
+      `;
     }
 
     // Check if we have basic GL accounts
-    const accountCount = await sql`SELECT COUNT(*) as count FROM gl_accounts`
+    const accountCount = await sql`SELECT COUNT(*) as count FROM gl_accounts`;
 
     if (accountCount[0].count === 0) {
       // Create basic GL accounts for MoMo and other services
@@ -85,46 +85,46 @@ async function ensureGLAccountsExist() {
         { code: "4005", name: "E-Zwich Revenue", type: "Revenue" },
         { code: "2001", name: "Customer Liability", type: "Liability" },
         { code: "2002", name: "Merchant Payable", type: "Liability" },
-      ]
+      ];
 
       for (const account of basicAccounts) {
         await sql`
           INSERT INTO gl_accounts (code, name, type, balance, is_active)
           VALUES (${account.code}, ${account.name}, ${account.type}, 0, true)
           ON CONFLICT (code) DO NOTHING
-        `
+        `;
       }
 
-      console.log("✅ Created basic GL accounts")
+      console.log("✅ Created basic GL accounts");
     }
 
-    // Ensure float_gl_mappings table exists
+    // Ensure gl_mappings table exists
     await sql`
-      CREATE TABLE IF NOT EXISTS float_gl_mappings (
+      CREATE TABLE IF NOT EXISTS gl_mappings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         float_account_id UUID NOT NULL,
         gl_account_id UUID NOT NULL,
-        mapping_type VARCHAR(50) NOT NULL CHECK (mapping_type IN ('main_account', 'fee_account', 'commission_account')),
+        mapping_type VARCHAR(50) NOT NULL,
         is_active BOOLEAN DEFAULT true,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         UNIQUE(float_account_id, mapping_type)
       )
-    `
+    `;
   } catch (error) {
-    console.error("Error ensuring GL accounts exist:", error)
+    console.error("Error ensuring GL accounts exist:", error);
   }
 }
 
 export async function GET() {
   try {
-    console.log("🔄 Fetching GL mapping data...")
+    console.log("🔄 Fetching GL mapping data...");
 
     // Ensure GL accounts exist
-    await ensureGLAccountsExist()
+    await ensureGLAccountsExist();
 
     // Detect the GL accounts schema
-    const schema = await detectGLAccountsSchema()
+    const schema = await detectGLAccountsSchema();
 
     if (!schema || !schema.codeColumn) {
       return NextResponse.json({
@@ -135,13 +135,13 @@ export async function GET() {
         mappings: [],
         schemaIssue: true,
         detectedSchema: schema,
-      })
+      });
     }
 
-    console.log("📋 Detected GL schema:", schema)
+    console.log("📋 Detected GL schema:", schema);
 
     // Fetch float accounts
-    let floatAccountsResult = []
+    let floatAccountsResult = [];
     try {
       const floatQueryResult = await sql`
         SELECT 
@@ -159,17 +159,19 @@ export async function GET() {
         LEFT JOIN branches b ON fa.branch_id = b.id
         WHERE fa.is_active = true
         ORDER BY b.name, fa.account_type, fa.provider
-      `
+      `;
 
-      floatAccountsResult = Array.isArray(floatQueryResult) ? floatQueryResult : []
-      console.log(`📊 Found ${floatAccountsResult.length} float accounts`)
+      floatAccountsResult = Array.isArray(floatQueryResult)
+        ? floatQueryResult
+        : [];
+      console.log(`📊 Found ${floatAccountsResult.length} float accounts`);
     } catch (floatError) {
-      console.error("⚠️ Error fetching float accounts:", floatError)
-      floatAccountsResult = []
+      console.error("⚠️ Error fetching float accounts:", floatError);
+      floatAccountsResult = [];
     }
 
     // Fetch GL accounts
-    let glAccountsResult = []
+    let glAccountsResult = [];
     try {
       const glQueryResult = await sql`
         SELECT 
@@ -182,26 +184,26 @@ export async function GET() {
         FROM gl_accounts
         WHERE COALESCE(is_active, true) = true
         ORDER BY code
-      `
+      `;
 
-      glAccountsResult = Array.isArray(glQueryResult) ? glQueryResult : []
-      console.log(`📊 Found ${glAccountsResult.length} GL accounts`)
+      glAccountsResult = Array.isArray(glQueryResult) ? glQueryResult : [];
+      console.log(`📊 Found ${glAccountsResult.length} GL accounts`);
     } catch (glError) {
-      console.error("⚠️ Error fetching GL accounts:", glError)
-      glAccountsResult = []
+      console.error("⚠️ Error fetching GL accounts:", glError);
+      glAccountsResult = [];
     }
 
     // Fetch mappings
-    let mappingsResult = []
+    let mappingsResult = [];
     try {
       const mappingQuery = await sql`
         SELECT 
-          fgm.id,
-          fgm.float_account_id,
-          fgm.gl_account_id,
-          fgm.mapping_type,
-          fgm.is_active,
-          fgm.created_at,
+          gm.id,
+          gm.float_account_id,
+          gm.gl_account_id,
+          gm.mapping_type,
+          gm.is_active,
+          gm.created_at,
           -- Float account data
           fa.account_type as float_account_type,
           fa.provider as float_provider,
@@ -213,19 +215,19 @@ export async function GET() {
           gl.name as account_name,
           gl.type as gl_account_type,
           COALESCE(gl.balance, 0) as gl_balance
-        FROM float_gl_mappings fgm
-        LEFT JOIN float_accounts fa ON fgm.float_account_id = fa.id
+        FROM gl_mappings gm
+        LEFT JOIN float_accounts fa ON gm.float_account_id = fa.id
         LEFT JOIN branches b ON fa.branch_id = b.id
-        LEFT JOIN gl_accounts gl ON fgm.gl_account_id = gl.id
-        WHERE fgm.is_active = true
-        ORDER BY fgm.created_at DESC
-      `
+        LEFT JOIN gl_accounts gl ON gm.gl_account_id = gl.id
+        WHERE gm.is_active = true
+        ORDER BY gm.created_at DESC
+      `;
 
-      mappingsResult = Array.isArray(mappingQuery) ? mappingQuery : []
-      console.log(`📊 Found ${mappingsResult.length} mappings`)
+      mappingsResult = Array.isArray(mappingQuery) ? mappingQuery : [];
+      console.log(`📊 Found ${mappingsResult.length} mappings`);
     } catch (mappingError) {
-      console.error("⚠️ Error fetching mappings:", mappingError)
-      mappingsResult = []
+      console.error("⚠️ Error fetching mappings:", mappingError);
+      mappingsResult = [];
     }
 
     // Transform data
@@ -240,7 +242,7 @@ export async function GET() {
       min_threshold: Number(account.min_threshold) || 0,
       max_threshold: Number(account.max_threshold) || 0,
       created_at: account.created_at,
-    }))
+    }));
 
     const glAccounts = glAccountsResult.map((account: any) => ({
       id: account.id,
@@ -249,7 +251,7 @@ export async function GET() {
       account_type: account.account_type,
       balance: Number(account.balance) || 0,
       is_active: account.is_active !== false,
-    }))
+    }));
 
     const mappings = mappingsResult.map((mapping: any) => ({
       id: mapping.id,
@@ -273,13 +275,13 @@ export async function GET() {
         account_type: mapping.gl_account_type,
         balance: Number(mapping.gl_balance) || 0,
       },
-    }))
+    }));
 
     console.log("✅ Final data counts:", {
       floatAccounts: floatAccounts.length,
       glAccounts: glAccounts.length,
       mappings: mappings.length,
-    })
+    });
 
     return NextResponse.json({
       success: true,
@@ -292,58 +294,66 @@ export async function GET() {
         glAccountsCount: glAccounts.length,
         mappingsCount: mappings.length,
       },
-    })
+    });
   } catch (error) {
-    console.error("❌ Error fetching GL mapping data:", error)
+    console.error("❌ Error fetching GL mapping data:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to fetch mapping data",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch mapping data",
         floatAccounts: [],
         glAccounts: [],
         mappings: [],
         stack: error instanceof Error ? error.stack : undefined,
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const { float_account_id, gl_account_id, mapping_type } = await request.json()
+    const { float_account_id, gl_account_id, mapping_type } =
+      await request.json();
 
     if (!float_account_id || !gl_account_id || !mapping_type) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields: float_account_id, gl_account_id, mapping_type",
+          error:
+            "Missing required fields: float_account_id, gl_account_id, mapping_type",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Check if mapping already exists
     const existingMapping = await sql`
-      SELECT id FROM float_gl_mappings 
+      SELECT id FROM gl_mappings 
       WHERE float_account_id = ${float_account_id} 
       AND mapping_type = ${mapping_type} 
       AND is_active = true
-    `
+    `;
 
     if (existingMapping.length > 0) {
       return NextResponse.json(
         {
           success: false,
-          error: `A ${mapping_type.replace("_", " ")} mapping already exists for this float account`,
+          error: `A ${mapping_type.replace(
+            "_",
+            " "
+          )} mapping already exists for this float account`,
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Create new mapping
     const result = await sql`
-      INSERT INTO float_gl_mappings (
+      INSERT INTO gl_mappings (
         float_account_id,
         gl_account_id,
         mapping_type,
@@ -359,73 +369,70 @@ export async function POST(request: Request) {
         NOW()
       )
       RETURNING id
-    `
+    `;
 
-    console.log("✅ Created mapping:", result[0])
+    console.log("✅ Created mapping:", result[0]);
 
     return NextResponse.json({
       success: true,
       mapping_id: result[0].id,
       message: "Mapping created successfully",
-    })
+    });
   } catch (error) {
-    console.error("❌ Error creating mapping:", error)
+    console.error("❌ Error creating mapping:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to create mapping",
+        error:
+          error instanceof Error ? error.message : "Failed to create mapping",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    const { mapping_id } = await request.json()
+    const { mapping_id } = await request.json();
 
     if (!mapping_id) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing mapping_id",
+          error: "Missing required field: mapping_id",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
-    // Soft delete the mapping
-    const result = await sql`
-      UPDATE float_gl_mappings 
-      SET is_active = false, updated_at = NOW()
-      WHERE id = ${mapping_id}
-      RETURNING id
-    `
+    // Soft delete the mapping in gl_mappings
+    const deleteResult = await sql`
+      UPDATE gl_mappings SET is_active = false, updated_at = NOW() WHERE id = ${mapping_id}
+    `;
 
-    if (result.length === 0) {
+    if (deleteResult.count === 0 && deleteResult.rowCount === 0) {
       return NextResponse.json(
         {
           success: false,
-          error: "Mapping not found",
+          error: "Mapping not found or already deleted",
         },
-        { status: 404 },
-      )
+        { status: 404 }
+      );
     }
-
-    console.log("✅ Deleted mapping:", result[0])
 
     return NextResponse.json({
       success: true,
       message: "Mapping deleted successfully",
-    })
+    });
   } catch (error) {
-    console.error("❌ Error deleting mapping:", error)
+    console.error("❌ Error deleting mapping:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to delete mapping",
+        error:
+          error instanceof Error ? error.message : "Failed to delete mapping",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

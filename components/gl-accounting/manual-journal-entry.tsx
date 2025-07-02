@@ -1,36 +1,60 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
-import { Plus, Trash2, Save, AlertCircle } from "lucide-react"
-import { useToast } from "@/hooks/use-toast"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, Trash2, Save, AlertCircle } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { useBranches } from "@/hooks/use-branches";
 
 interface JournalEntryLine {
-  id: string
-  accountId: string
-  accountName: string
-  description: string
-  debit: number
-  credit: number
-  type: "debit" | "credit"
+  id: string;
+  accountId: string;
+  accountName: string;
+  description: string;
+  debit: number;
+  credit: number;
+  type: "debit" | "credit";
 }
 
 interface Account {
-  id: string
-  name: string
-  type: string
-  provider?: string
-  current_balance?: number
+  id: string;
+  name: string;
+  type: string;
+  provider?: string;
+  current_balance?: number;
 }
 
 export function ManualJournalEntry() {
+  const { user, loading: userLoading } = useCurrentUser();
+  const { branches, loading: branchesLoading } = useBranches();
+  const [selectedBranchId, setSelectedBranchId] = useState<string>("");
   const [entries, setEntries] = useState<JournalEntryLine[]>([
     {
       id: "1",
@@ -50,35 +74,53 @@ export function ManualJournalEntry() {
       credit: 0,
       type: "credit",
     },
-  ])
+  ]);
 
-  const [journalDescription, setJournalDescription] = useState("")
-  const [journalDate, setJournalDate] = useState(new Date().toISOString().split("T")[0])
-  const [reference, setReference] = useState("")
-  const [transactionSource, setTransactionSource] = useState("manual")
-  const [saving, setSaving] = useState(false)
-  const [accounts, setAccounts] = useState<Account[]>([])
-  const [loadingAccounts, setLoadingAccounts] = useState(true)
+  const [journalDescription, setJournalDescription] = useState("");
+  const [journalDate, setJournalDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+  const [reference, setReference] = useState("");
+  const [transactionSource, setTransactionSource] = useState("manual");
+  const [saving, setSaving] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
 
-  const { toast } = useToast()
+  const { toast } = useToast();
 
   useEffect(() => {
-    fetchAccounts()
-  }, [])
+    if (!userLoading && user) {
+      if (user.role === "Admin") {
+        setSelectedBranchId(selectedBranchId || branches[0]?.id || "");
+      } else {
+        setSelectedBranchId(user.branchId);
+      }
+    }
+  }, [user, userLoading, branches]);
 
-  const fetchAccounts = async () => {
+  useEffect(() => {
+    if (selectedBranchId) {
+      fetchAccounts(selectedBranchId);
+    }
+  }, [selectedBranchId]);
+
+  const fetchAccounts = async (branchId: string) => {
+    setLoadingAccounts(true);
     try {
-      const response = await fetch("/api/gl/manual-journal-entry")
+      const response = await fetch(
+        `/api/gl/manual-journal-entry?branch_id=${branchId}`
+      );
       if (response.ok) {
-        const data = await response.json()
-        setAccounts(data.accounts || [])
+        const data = await response.json();
+        setAccounts(data.accounts || []);
       }
     } catch (error) {
-      console.error("Error fetching accounts:", error)
+      console.error("Error fetching accounts:", error);
+      setAccounts([]);
     } finally {
-      setLoadingAccounts(false)
+      setLoadingAccounts(false);
     }
-  }
+  };
 
   const addEntry = () => {
     const newEntry: JournalEntryLine = {
@@ -89,99 +131,117 @@ export function ManualJournalEntry() {
       debit: 0,
       credit: 0,
       type: "debit",
-    }
-    setEntries([...entries, newEntry])
-  }
+    };
+    setEntries([...entries, newEntry]);
+  };
 
   const removeEntry = (id: string) => {
     if (entries.length > 2) {
-      setEntries(entries.filter((entry) => entry.id !== id))
+      setEntries(entries.filter((entry) => entry.id !== id));
     }
-  }
+  };
 
-  const updateEntry = (id: string, field: keyof JournalEntryLine, value: any) => {
+  const updateEntry = (
+    id: string,
+    field: keyof JournalEntryLine,
+    value: any
+  ) => {
     setEntries(
       entries.map((entry) => {
         if (entry.id === id) {
-          const updatedEntry = { ...entry, [field]: value }
+          const updatedEntry = { ...entry, [field]: value };
 
           // If updating account, also update account name
           if (field === "accountId") {
-            const account = accounts.find((acc) => acc.id === value)
-            updatedEntry.accountName = account ? account.name : ""
+            const account = accounts.find((acc) => acc.id === value);
+            updatedEntry.accountName = account ? account.name : "";
           }
 
           // If updating amount, clear the opposite field and set type
           if (field === "debit" && value > 0) {
-            updatedEntry.credit = 0
-            updatedEntry.type = "debit"
+            updatedEntry.credit = 0;
+            updatedEntry.type = "debit";
           } else if (field === "credit" && value > 0) {
-            updatedEntry.debit = 0
-            updatedEntry.type = "credit"
+            updatedEntry.debit = 0;
+            updatedEntry.type = "credit";
           }
 
-          return updatedEntry
+          return updatedEntry;
         }
-        return entry
-      }),
-    )
-  }
+        return entry;
+      })
+    );
+  };
 
   const calculateTotals = () => {
-    const totalDebits = entries.reduce((sum, entry) => sum + (entry.debit || 0), 0)
-    const totalCredits = entries.reduce((sum, entry) => sum + (entry.credit || 0), 0)
-    return { totalDebits, totalCredits, difference: totalDebits - totalCredits }
-  }
+    const totalDebits = entries.reduce(
+      (sum, entry) => sum + (entry.debit || 0),
+      0
+    );
+    const totalCredits = entries.reduce(
+      (sum, entry) => sum + (entry.credit || 0),
+      0
+    );
+    return {
+      totalDebits,
+      totalCredits,
+      difference: totalDebits - totalCredits,
+    };
+  };
 
-  const { totalDebits, totalCredits, difference } = calculateTotals()
-  const isBalanced = Math.abs(difference) < 0.01
+  const { totalDebits, totalCredits, difference } = calculateTotals();
+  const isBalanced = Math.abs(difference) < 0.01;
 
   const validateEntry = () => {
-    const errors = []
+    const errors = [];
 
     if (!journalDescription.trim()) {
-      errors.push("Description is required")
+      errors.push("Description is required");
     }
 
     if (!journalDate) {
-      errors.push("Date is required")
+      errors.push("Date is required");
     }
 
-    const validEntries = entries.filter((entry) => entry.accountId && (entry.debit > 0 || entry.credit > 0))
+    const validEntries = entries.filter(
+      (entry) => entry.accountId && (entry.debit > 0 || entry.credit > 0)
+    );
 
     if (validEntries.length < 2) {
-      errors.push("At least 2 valid entries are required")
+      errors.push("At least 2 valid entries are required");
     }
 
     if (!isBalanced) {
-      errors.push("Total debits must equal total credits")
+      errors.push("Total debits must equal total credits");
     }
 
-    return errors
-  }
+    return errors;
+  };
 
   const handleSave = async () => {
-    const errors = validateEntry()
+    const errors = validateEntry();
 
     if (errors.length > 0) {
       toast({
         title: "Validation Error",
         description: errors.join(", "),
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    setSaving(true)
+    setSaving(true);
     try {
       const validEntries = entries
-        .filter((entry) => entry.accountId && (entry.debit > 0 || entry.credit > 0))
+        .filter(
+          (entry) => entry.accountId && (entry.debit > 0 || entry.credit > 0)
+        )
         .map((entry) => ({
           accountId: entry.accountId,
           description: entry.description || journalDescription,
           amount: entry.debit > 0 ? entry.debit : entry.credit,
           type: entry.debit > 0 ? "debit" : "credit",
-        }))
+        }));
 
       const response = await fetch("/api/gl/manual-journal-entry", {
         method: "POST",
@@ -194,15 +254,16 @@ export function ManualJournalEntry() {
           reference: reference || `MJE-${Date.now()}`,
           source: transactionSource,
           entries: validEntries,
+          branch_id: selectedBranchId,
         }),
-      })
+      });
 
       if (response.ok) {
-        const result = await response.json()
+        const result = await response.json();
         toast({
           title: "Journal Entry Saved",
           description: `Manual journal entry ${result.journalEntry?.reference_number} has been recorded successfully`,
-        })
+        });
 
         // Reset form
         setEntries([
@@ -224,37 +285,37 @@ export function ManualJournalEntry() {
             credit: 0,
             type: "credit",
           },
-        ])
-        setJournalDescription("")
-        setReference("")
-        setTransactionSource("manual")
+        ]);
+        setJournalDescription("");
+        setReference("");
+        setTransactionSource("manual");
       } else {
-        const error = await response.json()
-        throw new Error(error.error || "Failed to save journal entry")
+        const error = await response.json();
+        throw new Error(error.error || "Failed to save journal entry");
       }
     } catch (error) {
       toast({
         title: "Error",
         description: error.message || "Failed to save journal entry",
         variant: "destructive",
-      })
+      });
     } finally {
-      setSaving(false)
+      setSaving(false);
     }
-  }
+  };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
       style: "currency",
       currency: "GHS",
       minimumFractionDigits: 2,
-    }).format(amount || 0)
-  }
+    }).format(amount || 0);
+  };
 
   const getAccountBalance = (accountId: string) => {
-    const account = accounts.find((acc) => acc.id === accountId)
-    return account?.current_balance || 0
-  }
+    const account = accounts.find((acc) => acc.id === accountId);
+    return account?.current_balance || 0;
+  };
 
   return (
     <div className="space-y-6">
@@ -262,17 +323,47 @@ export function ManualJournalEntry() {
         <CardHeader>
           <CardTitle>Manual Journal Entry</CardTitle>
           <CardDescription>
-            Create manual journal entries for missed transactions, adjustments, or corrections. Perfect for recording
-            MoMo transactions that weren't automatically captured.
+            Create manual journal entries for missed transactions, adjustments,
+            or corrections. Perfect for recording MoMo transactions that weren't
+            automatically captured.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
+          {/* Branch selection (only for admin) */}
+          {user && user.role === "Admin" && (
+            <div>
+              <Label htmlFor="branch_id">Branch</Label>
+              <Select
+                value={selectedBranchId}
+                onValueChange={setSelectedBranchId}
+                disabled={branchesLoading}
+              >
+                <SelectTrigger id="branch_id">
+                  <SelectValue
+                    placeholder={
+                      branchesLoading ? "Loading..." : "Select branch"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {branches.map((branch) => (
+                    <SelectItem key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {/* For non-admins, branch is auto-assigned and hidden */}
+
           {/* Validation Alert */}
           {!isBalanced && totalDebits > 0 && totalCredits > 0 && (
             <Alert>
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Journal entry is not balanced. Difference: {formatCurrency(Math.abs(difference))}
+                Journal entry is not balanced. Difference:{" "}
+                {formatCurrency(Math.abs(difference))}
               </AlertDescription>
             </Alert>
           )}
@@ -281,7 +372,12 @@ export function ManualJournalEntry() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
               <Label htmlFor="date">Transaction Date</Label>
-              <Input id="date" type="date" value={journalDate} onChange={(e) => setJournalDate(e.target.value)} />
+              <Input
+                id="date"
+                type="date"
+                value={journalDate}
+                onChange={(e) => setJournalDate(e.target.value)}
+              />
             </div>
             <div>
               <Label htmlFor="reference">Reference Number</Label>
@@ -294,18 +390,31 @@ export function ManualJournalEntry() {
             </div>
             <div>
               <Label htmlFor="source">Transaction Source</Label>
-              <Select value={transactionSource} onValueChange={setTransactionSource}>
+              <Select
+                value={transactionSource}
+                onValueChange={setTransactionSource}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="manual">Manual Entry</SelectItem>
-                  <SelectItem value="momo_correction">MoMo Correction</SelectItem>
-                  <SelectItem value="agency_correction">Agency Banking Correction</SelectItem>
-                  <SelectItem value="ezwich_correction">E-Zwich Correction</SelectItem>
-                  <SelectItem value="power_correction">Power Correction</SelectItem>
+                  <SelectItem value="momo_correction">
+                    MoMo Correction
+                  </SelectItem>
+                  <SelectItem value="agency_correction">
+                    Agency Banking Correction
+                  </SelectItem>
+                  <SelectItem value="ezwich_correction">
+                    E-Zwich Correction
+                  </SelectItem>
+                  <SelectItem value="power_correction">
+                    Power Correction
+                  </SelectItem>
                   <SelectItem value="adjustment">Account Adjustment</SelectItem>
-                  <SelectItem value="reconciliation">Reconciliation Entry</SelectItem>
+                  <SelectItem value="reconciliation">
+                    Reconciliation Entry
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -349,11 +458,17 @@ export function ManualJournalEntry() {
                     <TableCell>
                       <Select
                         value={entry.accountId}
-                        onValueChange={(value) => updateEntry(entry.id, "accountId", value)}
+                        onValueChange={(value) =>
+                          updateEntry(entry.id, "accountId", value)
+                        }
                         disabled={loadingAccounts}
                       >
                         <SelectTrigger>
-                          <SelectValue placeholder={loadingAccounts ? "Loading..." : "Select account"} />
+                          <SelectValue
+                            placeholder={
+                              loadingAccounts ? "Loading..." : "Select account"
+                            }
+                          />
                         </SelectTrigger>
                         <SelectContent>
                           {accounts.map((account) => (
@@ -361,7 +476,8 @@ export function ManualJournalEntry() {
                               <div className="flex flex-col">
                                 <span>{account.name}</span>
                                 <span className="text-xs text-gray-500">
-                                  {account.type} • {formatCurrency(account.current_balance || 0)}
+                                  {account.type} •{" "}
+                                  {formatCurrency(account.current_balance || 0)}
                                 </span>
                               </div>
                             </SelectItem>
@@ -373,7 +489,9 @@ export function ManualJournalEntry() {
                       <Input
                         placeholder="Line description (optional)"
                         value={entry.description}
-                        onChange={(e) => updateEntry(entry.id, "description", e.target.value)}
+                        onChange={(e) =>
+                          updateEntry(entry.id, "description", e.target.value)
+                        }
                       />
                     </TableCell>
                     <TableCell>
@@ -383,7 +501,13 @@ export function ManualJournalEntry() {
                         min="0"
                         placeholder="0.00"
                         value={entry.debit || ""}
-                        onChange={(e) => updateEntry(entry.id, "debit", Number.parseFloat(e.target.value) || 0)}
+                        onChange={(e) =>
+                          updateEntry(
+                            entry.id,
+                            "debit",
+                            Number.parseFloat(e.target.value) || 0
+                          )
+                        }
                         className="text-right"
                       />
                     </TableCell>
@@ -394,13 +518,21 @@ export function ManualJournalEntry() {
                         min="0"
                         placeholder="0.00"
                         value={entry.credit || ""}
-                        onChange={(e) => updateEntry(entry.id, "credit", Number.parseFloat(e.target.value) || 0)}
+                        onChange={(e) =>
+                          updateEntry(
+                            entry.id,
+                            "credit",
+                            Number.parseFloat(e.target.value) || 0
+                          )
+                        }
                         className="text-right"
                       />
                     </TableCell>
                     <TableCell>
                       <div className="text-sm text-gray-600">
-                        {entry.accountId ? formatCurrency(getAccountBalance(entry.accountId)) : "-"}
+                        {entry.accountId
+                          ? formatCurrency(getAccountBalance(entry.accountId))
+                          : "-"}
                       </div>
                     </TableCell>
                     <TableCell>
@@ -428,11 +560,17 @@ export function ManualJournalEntry() {
               </div>
               <div className="text-right">
                 <div className="text-sm text-gray-500">Total Credits:</div>
-                <div className="font-medium">{formatCurrency(totalCredits)}</div>
+                <div className="font-medium">
+                  {formatCurrency(totalCredits)}
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-sm text-gray-500">Difference:</div>
-                <div className={`font-medium ${isBalanced ? "text-green-600" : "text-red-600"}`}>
+                <div
+                  className={`font-medium ${
+                    isBalanced ? "text-green-600" : "text-red-600"
+                  }`}
+                >
                   {formatCurrency(Math.abs(difference))}
                 </div>
               </div>
@@ -449,5 +587,5 @@ export function ManualJournalEntry() {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

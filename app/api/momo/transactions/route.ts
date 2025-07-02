@@ -1,269 +1,236 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+"use server";
 
-const sql = neon(process.env.DATABASE_URL!)
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
 
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url)
-    const page = Number.parseInt(searchParams.get("page") || "1")
-    const limit = Number.parseInt(searchParams.get("limit") || "50")
-    const branchId = searchParams.get("branchId")
-    const status = searchParams.get("status")
-    const type = searchParams.get("type")
-    const startDate = searchParams.get("startDate")
-    const endDate = searchParams.get("endDate")
-
-    if (!branchId) {
-      return NextResponse.json({ success: false, error: "Branch ID is required" }, { status: 400 })
-    }
-
-    const offset = (page - 1) * limit
-
-    console.log("Fetching MoMo transactions for branch:", branchId)
-
-    // Ensure table exists with correct schema
-    try {
-      await sql`
-        CREATE TABLE IF NOT EXISTS momo_transactions (
-          id VARCHAR(255) PRIMARY KEY,
-          type VARCHAR(50) NOT NULL,
-          amount DECIMAL(10,2) NOT NULL,
-          fee DECIMAL(10,2) DEFAULT 0,
-          customer_name VARCHAR(255) NOT NULL,
-          phone_number VARCHAR(20) NOT NULL,
-          provider VARCHAR(100) NOT NULL,
-          reference VARCHAR(100),
-          status VARCHAR(20) DEFAULT 'completed',
-          branch_id VARCHAR(255) NOT NULL,
-          user_id VARCHAR(255) NOT NULL,
-          gl_entry_id VARCHAR(255),
-          notes TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `
-    } catch (tableError) {
-      console.error("Error creating momo_transactions table:", tableError)
-    }
-
-    // Build WHERE clause
-    let whereClause = "WHERE branch_id = $1"
-    const params: any[] = [branchId]
-
-    if (status) {
-      whereClause += ` AND status = $${params.length + 1}`
-      params.push(status)
-    }
-
-    if (type) {
-      whereClause += ` AND type = $${params.length + 1}`
-      params.push(type)
-    }
-
-    if (startDate) {
-      whereClause += ` AND created_at >= $${params.length + 1}`
-      params.push(startDate)
-    }
-
-    if (endDate) {
-      whereClause += ` AND created_at <= $${params.length + 1}`
-      params.push(endDate)
-    }
-
-    let transactions = []
-    let totalCount = 0
-
-    try {
-      // Get transactions with pagination - using direct SQL query
-      const transactionsResult = await sql`
-        SELECT 
-          id,
-          type,
-          amount,
-          fee,
-          customer_name,
-          phone_number,
-          provider,
-          reference,
-          status,
-          branch_id,
-          user_id,
-          gl_entry_id,
-          notes,
-          created_at,
-          updated_at
-        FROM momo_transactions
-        WHERE branch_id = ${branchId}
-        ORDER BY created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
-      `
-
-      transactions = transactionsResult || []
-
-      // Get total count
-      const countResult = await sql`
-        SELECT COUNT(*) as count
-        FROM momo_transactions
-        WHERE branch_id = ${branchId}
-      `
-
-      totalCount = countResult[0]?.count || 0
-
-      console.log(`Found ${transactions.length} MoMo transactions`)
-
-      return NextResponse.json({
-        success: true,
-        transactions: transactions.map((t) => ({
-          id: t.id,
-          type: t.type,
-          amount: Number.parseFloat(t.amount || 0),
-          fee: Number.parseFloat(t.fee || 0),
-          customer_name: t.customer_name,
-          phone_number: t.phone_number,
-          provider: t.provider,
-          reference: t.reference,
-          status: t.status,
-          branch_id: t.branch_id,
-          user_id: t.user_id,
-          gl_entry_id: t.gl_entry_id,
-          notes: t.notes,
-          created_at: t.created_at,
-          updated_at: t.updated_at,
-        })),
-        pagination: {
-          page,
-          limit,
-          total: Number.parseInt(totalCount),
-          pages: Math.ceil(Number.parseInt(totalCount) / limit),
-        },
-      })
-    } catch (queryError) {
-      console.error("Error querying momo_transactions:", queryError)
-      return NextResponse.json({
-        success: true,
-        transactions: [],
-        pagination: {
-          page,
-          limit,
-          total: 0,
-          pages: 0,
-        },
-      })
-    }
-  } catch (error) {
-    console.error("Error fetching MoMo transactions:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch MoMo transactions",
-        transactions: [],
-      },
-      { status: 500 },
-    )
-  }
-}
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    console.log("Creating MoMo transaction:", body)
+    const body = await request.json();
 
-    const { type, amount, fee, customer_name, phone_number, provider, reference, branchId, userId, notes } = body
+    // Normalize field names (handle both snake_case and camelCase)
+    const normalizedData = {
+      customer_name: body.customer_name || body.customerName,
+      customer_phone:
+        body.customer_phone || body.phoneNumber || body.phone_number,
+      amount: Number(body.amount),
+      fee: Number(body.fee || 0),
+      provider: body.provider,
+      type: body.type || body.transactionType,
+      reference: body.reference,
+      notes: body.notes || "",
+    };
 
     // Validate required fields
-    if (!type || !amount || !customer_name || !phone_number || !provider || !branchId || !userId) {
+    if (!normalizedData.customer_name) {
+      return NextResponse.json(
+        { success: false, error: "Customer name is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!normalizedData.customer_phone) {
+      return NextResponse.json(
+        { success: false, error: "Customer phone number is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!normalizedData.amount || normalizedData.amount <= 0) {
+      return NextResponse.json(
+        { success: false, error: "Valid amount is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!normalizedData.provider) {
+      return NextResponse.json(
+        { success: false, error: "Provider is required" },
+        { status: 400 }
+      );
+    }
+
+    if (
+      !normalizedData.type ||
+      !["cash-in", "cash-out"].includes(normalizedData.type)
+    ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields",
+          error: "Valid transaction type is required (cash-in or cash-out)",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
-    const transactionId = `momo-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+    // Get user info from headers or session
+    const branchId = request.headers.get("x-branch-id") || body.branchId;
+    const userId = request.headers.get("x-user-id") || body.userId;
 
-    // Ensure table exists
-    await sql`
-      CREATE TABLE IF NOT EXISTS momo_transactions (
-        id VARCHAR(255) PRIMARY KEY,
-        type VARCHAR(50) NOT NULL,
-        amount DECIMAL(10,2) NOT NULL,
-        fee DECIMAL(10,2) DEFAULT 0,
-        customer_name VARCHAR(255) NOT NULL,
-        phone_number VARCHAR(20) NOT NULL,
-        provider VARCHAR(100) NOT NULL,
-        reference VARCHAR(100),
-        status VARCHAR(20) DEFAULT 'completed',
-        branch_id VARCHAR(255) NOT NULL,
-        user_id VARCHAR(255) NOT NULL,
-        gl_entry_id VARCHAR(255),
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `
+    if (!branchId) {
+      return NextResponse.json(
+        { success: false, error: "Branch ID is required" },
+        { status: 400 }
+      );
+    }
 
-    // Create the transaction record
-    await sql`
+    // Find the appropriate float account
+    const floatAccount = await sql`
+      SELECT * FROM float_accounts 
+      WHERE branch_id = ${branchId}
+      AND provider = ${normalizedData.provider}
+      AND account_type = 'momo'
+      AND is_active = true
+      LIMIT 1
+    `;
+
+    if (floatAccount.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `No active MoMo float account found for provider: ${normalizedData.provider}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const account = floatAccount[0];
+
+    // Check if sufficient balance for cash-out
+    if (
+      normalizedData.type === "cash-out" &&
+      account.current_balance < normalizedData.amount
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Insufficient float balance for this transaction",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Calculate new balances for float and cash in till
+    let newFloatBalance = Number(account.current_balance);
+    let cashTillChange = 0;
+    let floatChange = 0;
+
+    if (normalizedData.type === "cash-in") {
+      // Cash in: Increase cash in till, decrease MoMo float
+      cashTillChange = normalizedData.amount + normalizedData.fee;
+      floatChange = -normalizedData.amount;
+      newFloatBalance = Number(account.current_balance) - normalizedData.amount;
+    } else {
+      // Cash out: Decrease cash in till, increase MoMo float
+      cashTillChange = -(normalizedData.amount - normalizedData.fee);
+      floatChange = normalizedData.amount;
+      newFloatBalance = Number(account.current_balance) + normalizedData.amount;
+    }
+
+    // Create the transaction
+    const transaction = await sql`
       INSERT INTO momo_transactions (
-        id, type, amount, fee, customer_name, phone_number,
-        provider, reference, status, branch_id, user_id, notes
-      ) VALUES (
-        ${transactionId}, ${type}, ${amount}, ${fee || 0},
-        ${customer_name}, ${phone_number}, ${provider},
-        ${reference || transactionId}, 'completed',
-        ${branchId}, ${userId}, ${notes || null}
-      )
-    `
-
-    // Create GL entries (non-blocking)
-    try {
-      // Import the GL service dynamically to avoid import issues
-      const { GLPostingServiceEnhanced } = await import("@/lib/services/gl-posting-service-enhanced")
-
-      const glResult = await GLPostingServiceEnhanced.createMoMoGLEntries({
-        transactionId,
+        branch_id,
+        user_id,
+        float_account_id,
+        customer_name,
+        phone_number,
+        amount,
+        fee,
         type,
-        amount: Number.parseFloat(amount),
-        fee: Number.parseFloat(fee || 0),
         provider,
-        phoneNumber: phone_number,
-        customerName: customer_name,
-        reference: reference || transactionId,
-        processedBy: userId,
-        branchId,
-      })
+        reference,
+        status,
+        cash_till_affected,
+        float_affected
+      ) VALUES (
+        ${branchId},
+        ${userId || "system"},
+        ${account.id},
+        ${normalizedData.customer_name},
+        ${normalizedData.customer_phone},
+        ${normalizedData.amount},
+        ${normalizedData.fee},
+        ${normalizedData.type},
+        ${normalizedData.provider},
+        ${normalizedData.reference || `MOMO-${Date.now()}`},
+        'completed',
+        ${cashTillChange},
+        ${floatChange}
+      )
+      RETURNING *
+    `;
 
-      if (glResult.success && glResult.glTransactionId) {
-        // Update transaction with GL entry ID
-        await sql`
-          UPDATE momo_transactions 
-          SET gl_entry_id = ${glResult.glTransactionId}
-          WHERE id = ${transactionId}
-        `
-        console.log("GL entries created successfully for MoMo transaction")
-      } else {
-        console.error("Failed to create GL entries:", glResult.error)
-      }
+    // Update float account balance (MoMo float)
+    await sql`
+      UPDATE float_accounts 
+      SET 
+        current_balance = ${newFloatBalance},
+        updated_at = NOW()
+      WHERE id = ${account.id}
+    `;
+
+    // Update cash in till
+    await sql`
+      UPDATE float_accounts 
+      SET 
+        current_balance = current_balance + ${cashTillChange},
+        updated_at = NOW()
+      WHERE branch_id = ${branchId}
+      AND account_type = 'cash-in-till'
+      AND is_active = true
+    `;
+
+    // Create GL entries
+    try {
+      await UnifiedGLPostingService.createGLEntries({
+        transactionId: transaction[0].id,
+        sourceModule: "momo",
+        transactionType: normalizedData.type,
+        amount: normalizedData.amount,
+        fee: normalizedData.fee,
+        provider: normalizedData.provider,
+        customerName: normalizedData.customer_name,
+        reference: transaction[0].reference,
+        processedBy: userId || "system",
+        branchId: branchId,
+        branchName: "Branch",
+        metadata: {},
+      });
     } catch (glError) {
-      console.error("GL posting error (non-critical):", glError)
+      console.error("[GL] Error creating MoMo GL entries:", glError);
     }
 
     return NextResponse.json({
       success: true,
-      message: "MoMo transaction created successfully",
-      transactionId,
-    })
+      transaction: {
+        id: transaction[0].id,
+        customerName: transaction[0].customer_name,
+        phoneNumber: transaction[0].phone_number,
+        amount: transaction[0].amount,
+        fee: transaction[0].fee,
+        type: transaction[0].type,
+        provider: transaction[0].provider,
+        reference: transaction[0].reference,
+        status: transaction[0].status,
+        date: transaction[0].created_at,
+        branchName: "Branch",
+      },
+      message: "MoMo transaction processed successfully",
+    });
   } catch (error) {
-    console.error("Error creating MoMo transaction:", error)
+    console.error("Error processing MoMo transaction:", error);
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to create MoMo transaction",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to process transaction",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

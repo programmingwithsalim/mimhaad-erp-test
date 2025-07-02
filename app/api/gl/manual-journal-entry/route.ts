@@ -1,82 +1,80 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    // Check if float_accounts table exists
-    const tableCheck = await sql`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'float_accounts'
-      );
-    `
+    const url = new URL(request.url);
+    const branchId = url.searchParams.get("branch_id");
 
-    if (!tableCheck[0].exists) {
-      return NextResponse.json({
-        accounts: [],
-        message: "Float accounts table not found. Please initialize the database first.",
-      })
+    let accounts;
+    if (branchId) {
+      accounts = await sql`
+        SELECT id, code, name, type, balance, branch_id
+        FROM gl_accounts
+        WHERE is_active = true AND branch_id = ${branchId}
+        ORDER BY code
+      `;
+    } else {
+      accounts = await sql`
+        SELECT id, code, name, type, balance, branch_id
+        FROM gl_accounts
+        WHERE is_active = true
+        ORDER BY code
+      `;
     }
 
-    // Fetch accounts with correct column names
-    const accounts = await sql`
-      SELECT 
-        id,
-        CONCAT(account_type, COALESCE(' - ' || provider, '')) as name,
-        account_type as type,
-        provider,
-        current_balance
-      FROM float_accounts 
-      WHERE is_active = true
-      ORDER BY account_type, provider
-    `
-
-    return NextResponse.json({
-      accounts: accounts || [],
-    })
+    return NextResponse.json({ accounts: accounts || [] });
   } catch (error) {
-    console.error("Error fetching accounts:", error)
+    console.error("Error fetching accounts:", error);
     return NextResponse.json(
       {
         accounts: [],
-        error: error instanceof Error ? error.message : "Failed to fetch accounts",
+        error:
+          error instanceof Error ? error.message : "Failed to fetch accounts",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
-    const { date, description, reference, source, entries } = body
+    const body = await request.json();
+    const { date, description, reference, source, entries, branch_id } = body;
 
     // Validate required fields
-    if (!date || !description || !entries || entries.length < 2) {
+    if (!date || !description || !entries || entries.length < 2 || !branch_id) {
       return NextResponse.json(
-        { error: "Missing required fields: date, description, and at least 2 entries" },
-        { status: 400 },
-      )
+        {
+          error:
+            "Missing required fields: date, description, branch_id, and at least 2 entries",
+        },
+        { status: 400 }
+      );
     }
 
     // Validate that debits equal credits
     const totalDebits = entries.reduce(
-      (sum: number, entry: any) => sum + (entry.type === "debit" ? entry.amount : 0),
-      0,
-    )
+      (sum: number, entry: any) =>
+        sum + (entry.type === "debit" ? entry.amount : 0),
+      0
+    );
     const totalCredits = entries.reduce(
-      (sum: number, entry: any) => sum + (entry.type === "credit" ? entry.amount : 0),
-      0,
-    )
+      (sum: number, entry: any) =>
+        sum + (entry.type === "credit" ? entry.amount : 0),
+      0
+    );
 
     if (Math.abs(totalDebits - totalCredits) > 0.01) {
-      return NextResponse.json({ error: "Total debits must equal total credits" }, { status: 400 })
+      return NextResponse.json(
+        { error: "Total debits must equal total credits" },
+        { status: 400 }
+      );
     }
 
-    // Check if GL tables exist, create if they don't
+    // Ensure gl_transactions table has branch_id column
     await sql`
       CREATE TABLE IF NOT EXISTS gl_transactions (
         id SERIAL PRIMARY KEY,
@@ -87,11 +85,12 @@ export async function POST(request: Request) {
         source_transaction_type VARCHAR(50),
         source_transaction_id VARCHAR(100),
         status VARCHAR(20) DEFAULT 'posted',
+        branch_id UUID,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         created_by VARCHAR(100),
         posted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `
+    `;
 
     await sql`
       CREATE TABLE IF NOT EXISTS gl_transaction_entries (
@@ -103,40 +102,42 @@ export async function POST(request: Request) {
         credit DECIMAL(15,2) DEFAULT 0,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `
+    `;
 
     // Generate reference number if not provided
-    const refNumber = reference || `MJE-${Date.now()}`
+    const refNumber = reference || `MJE-${Date.now()}`;
 
     // Insert the main transaction
     const transactionResult = await sql`
       INSERT INTO gl_transactions (
         date, description, reference_number, source_module, 
-        source_transaction_type, status
+        source_transaction_type, status, branch_id
       )
       VALUES (
         ${date}, ${description}, ${refNumber}, ${source || "manual"}, 
-        'manual_entry', 'posted'
+        'manual_entry', 'posted', ${branch_id}
       )
       RETURNING id, reference_number
-    `
+    `;
 
-    const transactionId = transactionResult[0].id
+    const transactionId = transactionResult[0].id;
 
     // Insert transaction entries
     for (const entry of entries) {
-      const debit = entry.type === "debit" ? entry.amount : 0
-      const credit = entry.type === "credit" ? entry.amount : 0
+      const debit = entry.type === "debit" ? entry.amount : 0;
+      const credit = entry.type === "credit" ? entry.amount : 0;
 
       await sql`
         INSERT INTO gl_transaction_entries (
           transaction_id, account_id, description, debit, credit
         )
         VALUES (
-          ${transactionId}, ${entry.accountId}, ${entry.description || description}, 
+          ${transactionId}, ${entry.accountId}, ${
+        entry.description || description
+      }, 
           ${debit}, ${credit}
         )
-      `
+      `;
     }
 
     return NextResponse.json({
@@ -146,14 +147,17 @@ export async function POST(request: Request) {
         id: transactionId,
         reference_number: transactionResult[0].reference_number,
       },
-    })
+    });
   } catch (error) {
-    console.error("Error saving journal entry:", error)
+    console.error("Error saving journal entry:", error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Failed to save journal entry",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to save journal entry",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

@@ -18,32 +18,28 @@ export async function GET(request: NextRequest) {
       provider,
     });
 
-    // Build WHERE conditions
-    const conditions = [];
-    const params = [];
-
+    // Build WHERE clause and parameters
+    let whereParts: string[] = [];
+    let params: any[] = [];
+    let paramIndex = 1;
     if (branchId && branchId !== "all") {
-      conditions.push("branch_id = $1");
+      whereParts.push(`branch_id = $${paramIndex++}`);
       params.push(branchId);
     }
-
     if (dateFrom) {
-      conditions.push("date >= $2");
+      whereParts.push(`date >= $${paramIndex++}`);
       params.push(dateFrom);
     }
-
     if (dateTo) {
-      conditions.push("date <= $3");
+      whereParts.push(`date <= $${paramIndex++}`);
       params.push(dateTo);
     }
-
     if (provider && provider !== "all") {
-      conditions.push("provider = $4");
+      whereParts.push(`provider = $${paramIndex++}`);
       params.push(provider);
     }
-
     const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      whereParts.length > 0 ? `WHERE ${whereParts.join(" AND ")}` : "";
 
     // Get transaction statistics
     const statsQuery = `
@@ -60,56 +56,61 @@ export async function GET(request: NextRequest) {
       FROM momo_transactions
       ${whereClause}
     `;
-
-    const statsResult = await sql.unsafe(statsQuery, params);
-    const stats = statsResult[0] || {};
+    const statsResult = await sql.query(statsQuery, params);
+    const stats = statsResult.rows?.[0] || {};
 
     // Get provider breakdown
-    const providerStats = await sql`
+    const providerQuery = `
       SELECT 
         provider,
         COUNT(*) as count,
         COALESCE(SUM(amount), 0) as total_amount,
         COALESCE(SUM(fee), 0) as total_fees
       FROM momo_transactions
-      ${whereClause ? sql.unsafe(whereClause) : sql``}
+      ${whereClause}
       GROUP BY provider
       ORDER BY total_amount DESC
     `;
+    const providerStats = await sql.query(providerQuery, params);
 
     // Get daily breakdown for the last 30 days
-    const dailyStats = await sql`
+    let dailyWhere = `WHERE date >= CURRENT_DATE - INTERVAL '30 days'`;
+    let dailyParams: any[] = [];
+    let dailyParamIndex = 1;
+    if (branchId && branchId !== "all") {
+      dailyWhere += ` AND branch_id = $${dailyParamIndex++}`;
+      dailyParams.push(branchId);
+    }
+    if (provider && provider !== "all") {
+      dailyWhere += ` AND provider = $${dailyParamIndex++}`;
+      dailyParams.push(provider);
+    }
+    const dailyQuery = `
       SELECT 
         DATE(date) as date,
         COUNT(*) as count,
         COALESCE(SUM(amount), 0) as total_amount,
         COALESCE(SUM(fee), 0) as total_fees
       FROM momo_transactions
-      WHERE date >= CURRENT_DATE - INTERVAL '30 days'
-      ${
-        branchId && branchId !== "all"
-          ? sql`AND branch_id = ${branchId}`
-          : sql``
-      }
-      ${
-        provider && provider !== "all" ? sql`AND provider = ${provider}` : sql``
-      }
+      ${dailyWhere}
       GROUP BY DATE(date)
       ORDER BY date DESC
     `;
+    const dailyStats = await sql.query(dailyQuery, dailyParams);
 
     // Get transaction type breakdown
-    const typeStats = await sql`
+    const typeQuery = `
       SELECT 
         type,
         COUNT(*) as count,
         COALESCE(SUM(amount), 0) as total_amount,
         COALESCE(SUM(fee), 0) as total_fees
       FROM momo_transactions
-      ${whereClause ? sql.unsafe(whereClause) : sql``}
+      ${whereClause}
       GROUP BY type
       ORDER BY total_amount DESC
     `;
+    const typeStats = await sql.query(typeQuery, params);
 
     const statistics = {
       summary: {
@@ -123,19 +124,19 @@ export async function GET(request: NextRequest) {
         failedCount: Number(stats.failed_count || 0),
         failedAmount: Number(stats.failed_amount || 0),
       },
-      byProvider: providerStats.map((p: any) => ({
+      byProvider: providerStats.rows.map((p: any) => ({
         provider: p.provider || "Unknown",
         count: Number(p.count || 0),
         amount: Number(p.total_amount || 0),
         fees: Number(p.total_fees || 0),
       })),
-      byType: typeStats.map((t: any) => ({
+      byType: typeStats.rows.map((t: any) => ({
         type: t.type || "Unknown",
         count: Number(t.count || 0),
         amount: Number(t.total_amount || 0),
         fees: Number(t.total_fees || 0),
       })),
-      daily: dailyStats.map((d: any) => ({
+      daily: dailyStats.rows.map((d: any) => ({
         date: d.date,
         count: Number(d.count || 0),
         amount: Number(d.total_amount || 0),
