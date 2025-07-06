@@ -1,6 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getSession } from "@/lib/auth-service";
+import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
+import {
+  updatePowerTransaction,
+  deletePowerTransaction,
+} from "@/lib/power-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -105,95 +110,58 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log("Creating power transaction:", body);
 
-    // Generate a proper UUID-like transaction ID
-    const transactionId = `pwr_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-
-    // Create the transaction record
-    await sql`
+    // Create the transaction record and get the UUID
+    const insertResult = await sql`
       INSERT INTO power_transactions (
         meter_number, amount, customer_name, customer_phone,
         provider, reference, status, date, branch_id, user_id, notes
       ) VALUES (
         ${body.meter_number}, ${body.amount}, ${body.customer_name},
         ${body.customer_phone || null}, ${body.provider}, ${
-      body.reference || transactionId
+      body.reference || null
     },
         'completed', NOW(), ${body.branchId}, ${body.userId}, ${
       body.notes || null
     }
-      )
+      ) RETURNING id, reference
     `;
+    const transactionUUID = insertResult[0]?.id;
+    const transactionReference = insertResult[0]?.reference;
+    if (!transactionUUID)
+      throw new Error("Failed to create power transaction (no UUID returned)");
 
     // Create GL entries for power transaction (non-blocking)
     try {
-      const { GLPostingServiceEnhanced } = await import(
-        "@/lib/services/gl-posting-service-enhanced"
-      );
-      const { GLDatabase } = await import("@/lib/gl-database");
-
-      // Fetch real GL account IDs
-      const cashAccount = await GLDatabase.getGLAccountByCode("1001");
-      const powerPayableAccount = await GLDatabase.getGLAccountByCode("2300");
-      if (!cashAccount || !powerPayableAccount) {
-        throw new Error("Required GL accounts not found");
-      }
-
-      // Create simple GL entries for power transactions
-      const glResult = await GLPostingServiceEnhanced.createAndPostTransaction({
-        date: new Date().toISOString().split("T")[0],
+      const glResult = await UnifiedGLPostingService.createGLEntries({
+        transactionId: transactionUUID,
         sourceModule: "power",
-        sourceTransactionId: transactionId,
-        sourceTransactionType: "bill_payment",
-        description: `Power bill payment - ${body.provider} - ${body.meter_number}`,
-        entries: [
-          {
-            accountId: cashAccount.id,
-            accountCode: "1001",
-            debit: 0,
-            credit: body.amount,
-            description: `Power payment - ${body.provider}`,
-            metadata: {
-              transactionId,
-              provider: body.provider,
-              meterNumber: body.meter_number,
-            },
-          },
-          {
-            accountId: powerPayableAccount.id,
-            accountCode: "2300",
-            debit: body.amount,
-            credit: 0,
-            description: `Power bill payable - ${body.provider}`,
-            metadata: {
-              transactionId,
-              provider: body.provider,
-              meterNumber: body.meter_number,
-            },
-          },
-        ],
-        createdBy: body.userId,
+        transactionType: "power_float",
+        amount: body.amount,
+        fee: 0,
+        customerName: body.customer_name,
+        reference: transactionReference,
+        processedBy: body.userId,
         branchId: body.branchId,
         metadata: {
           provider: body.provider,
           meterNumber: body.meter_number,
           customerName: body.customer_name,
-          amount: body.amount,
         },
       });
-
+      if (!glResult.success) {
+        throw new Error(glResult.error || "Unified GL posting failed");
+      }
       if (glResult.success && glResult.glTransactionId) {
-        // Update transaction with GL entry ID
         await sql`
           UPDATE power_transactions 
           SET gl_entry_id = ${glResult.glTransactionId}
-          WHERE id = ${transactionId}
+          WHERE id = ${transactionUUID}
         `;
         console.log("GL entries created successfully for power transaction");
       }
     } catch (glError) {
       console.error("GL posting error (non-critical):", glError);
+      // Optionally: return error to client or continue
     }
 
     // Update float and cash in till balances
@@ -220,7 +188,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "Power transaction created successfully",
-      transactionId,
+      transactionId: transactionUUID,
     });
   } catch (error) {
     console.error("Error creating power transaction:", error);
@@ -228,6 +196,52 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error: "Failed to create power transaction",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT - Edit transaction
+export async function PUT(request: NextRequest) {
+  try {
+    const { id, updateData } = await request.json();
+    if (!id || !updateData) {
+      return NextResponse.json(
+        { success: false, error: "Missing id or updateData" },
+        { status: 400 }
+      );
+    }
+    const updated = await updatePowerTransaction(id, updateData);
+    return NextResponse.json({ success: true, data: updated });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE - Delete transaction
+export async function DELETE(request: NextRequest) {
+  try {
+    const { id } = await request.json();
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: "Missing id" },
+        { status: 400 }
+      );
+    }
+    const deleted = await deletePowerTransaction(id);
+    return NextResponse.json({ success: true, data: deleted });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );

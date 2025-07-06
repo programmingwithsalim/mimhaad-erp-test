@@ -1,239 +1,293 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { useToast } from "@/hooks/use-toast"
-import { useCurrentUser } from "@/hooks/use-current-user"
+import { useState } from "react";
 import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
   Users,
   Building2,
-  DollarSign,
-  TrendingUp,
+  Activity,
   AlertTriangle,
   CheckCircle,
   Clock,
-  Activity,
   RefreshCw,
-  Settings,
+  Shield,
   BarChart3,
   FileText,
-} from "lucide-react"
-import { format } from "date-fns"
+  CreditCard,
+  Smartphone,
+  Zap,
+  ShoppingCart,
+  Wallet,
+  Target,
+  PieChart,
+  LineChart,
+} from "lucide-react";
+
+interface ServiceStats {
+  service: string;
+  todayTransactions: number;
+  todayVolume: number;
+  todayFees: number;
+  totalBalance: number;
+  weeklyGrowth: number;
+  monthlyGrowth: number;
+}
 
 interface DashboardStats {
-  totalUsers: number
-  activeUsers: number
-  totalBranches: number
-  activeBranches: number
-  totalTransactions: number
-  totalRevenue: number
-  pendingApprovals: number
-  systemAlerts: number
-  floatBalance: number
-  monthlyGrowth: number
+  totalTransactions: number;
+  totalVolume: number;
+  totalCommission: number;
+  activeUsers: number;
+  todayTransactions: number;
+  todayVolume: number;
+  todayCommission: number;
+  serviceBreakdown: Array<{
+    service: string;
+    transactions: number;
+    volume: number;
+    commission: number;
+  }>;
+  recentActivity: Array<{
+    id: string;
+    type: string;
+    service: string;
+    amount: number;
+    timestamp: string;
+    user: string;
+  }>;
+  floatAlerts: Array<{
+    id: string;
+    provider: string;
+    service: string;
+    current_balance: number;
+    threshold: number;
+    severity: "warning" | "critical";
+  }>;
+  chartData: Array<{
+    date: string;
+    transactions: number;
+    volume: number;
+    commission: number;
+  }>;
+  financialMetrics: any;
+  revenueAnalysis: any[];
+  teamPerformance: any[];
+  dailyOperations: any[];
+  serviceMetrics: any[];
+  systemAlerts: number;
+  pendingApprovals: number;
+  users: any;
+  branches: any[];
+  branchMetrics: any[];
+  expenses: any;
+  commissions: any;
+  float: any;
 }
 
-interface RecentActivity {
-  id: string
-  type: string
-  description: string
-  user: string
-  timestamp: string
-  status: "success" | "warning" | "error"
+interface EnhancedAdminDashboardProps {
+  serviceStats: ServiceStats[];
+  branchStats: any[];
+  totalStats: DashboardStats;
+  systemAlerts: number;
+  pendingApprovals: number;
+  userStats: any;
 }
 
-// Safe formatting functions
-const formatNumber = (value: any): string => {
-  const num = Number(value)
-  return isNaN(num) ? "0" : num.toLocaleString()
-}
+export function EnhancedAdminDashboard({
+  serviceStats,
+  branchStats,
+  totalStats,
+  systemAlerts,
+  pendingApprovals,
+  userStats,
+}: EnhancedAdminDashboardProps) {
+  const { toast } = useToast();
+  const { user } = useCurrentUser();
+  const [loading, setLoading] = useState(false);
 
-const formatCurrency = (value: any): string => {
-  const num = Number(value)
-  return isNaN(num) ? "GHS 0.00" : `GHS ${num.toLocaleString("en-GH", { minimumFractionDigits: 2 })}`
-}
+  // Debug logging
+  console.log("EnhancedAdminDashboard props:", {
+    serviceStats,
+    branchStats,
+    totalStats,
+    systemAlerts,
+    pendingApprovals,
+    userStats,
+  });
 
-const formatPercentage = (value: any): string => {
-  const num = Number(value)
-  return isNaN(num) ? "0%" : `${num.toFixed(1)}%`
-}
+  const formatCurrency = (amount: number | null | undefined) => {
+    const safeAmount = Number(amount) || 0;
+    return new Intl.NumberFormat("en-GH", {
+      style: "currency",
+      currency: "GHS",
+      minimumFractionDigits: 2,
+    }).format(safeAmount);
+  };
 
-const formatTimestamp = (timestamp: string): string => {
-  try {
-    return format(new Date(timestamp), "MMM dd, HH:mm")
-  } catch {
-    return "Invalid date"
-  }
-}
+  const formatNumber = (value: any): string => {
+    const num = Number(value);
+    return isNaN(num) ? "0" : num.toLocaleString();
+  };
 
-export function EnhancedAdminDashboard() {
-  const { toast } = useToast()
-  const { user } = useCurrentUser()
-  const [stats, setStats] = useState<DashboardStats>({
-    totalUsers: 0,
-    activeUsers: 0,
-    totalBranches: 0,
-    activeBranches: 0,
-    totalTransactions: 0,
-    totalRevenue: 0,
-    pendingApprovals: 0,
-    systemAlerts: 0,
-    floatBalance: 0,
-    monthlyGrowth: 0,
-  })
-  const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
-  const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const getGrowthIcon = (growth: number | null | undefined) => {
+    const safeGrowth = Number(growth) || 0;
+    if (safeGrowth > 0)
+      return <TrendingUp className="h-4 w-4 text-green-600" />;
+    if (safeGrowth < 0)
+      return <TrendingDown className="h-4 w-4 text-red-600" />;
+    return <div className="h-4 w-4" />;
+  };
 
-  const fetchDashboardData = async (showRefreshToast = false) => {
-    try {
-      if (showRefreshToast) setRefreshing(true)
-      else setLoading(true)
-
-      // Fetch dashboard statistics
-      const [statsResponse, activityResponse] = await Promise.all([
-        fetch("/api/dashboard/statistics").catch(() => ({ ok: false })),
-        fetch("/api/dashboard/recent-activity").catch(() => ({ ok: false })),
-      ])
-
-      // Handle statistics
-      if (statsResponse.ok) {
-        try {
-          const statsData = await statsResponse.json()
-          if (statsData.success) {
-            setStats({
-              totalUsers: Number(statsData.data.totalUsers) || 0,
-              activeUsers: Number(statsData.data.activeUsers) || 0,
-              totalBranches: Number(statsData.data.totalBranches) || 0,
-              activeBranches: Number(statsData.data.activeBranches) || 0,
-              totalTransactions: Number(statsData.data.totalTransactions) || 0,
-              totalRevenue: Number(statsData.data.totalRevenue) || 0,
-              pendingApprovals: Number(statsData.data.pendingApprovals) || 0,
-              systemAlerts: Number(statsData.data.systemAlerts) || 0,
-              floatBalance: Number(statsData.data.floatBalance) || 0,
-              monthlyGrowth: Number(statsData.data.monthlyGrowth) || 0,
-            })
-          }
-        } catch (error) {
-          console.error("Error parsing stats data:", error)
-        }
-      }
-
-      // Handle recent activity
-      if (activityResponse.ok) {
-        try {
-          const activityData = await activityResponse.json()
-          if (activityData.success && Array.isArray(activityData.data)) {
-            setRecentActivity(activityData.data)
-          }
-        } catch (error) {
-          console.error("Error parsing activity data:", error)
-        }
-      }
-
-      if (showRefreshToast) {
-        toast({
-          title: "Dashboard Refreshed",
-          description: "Latest data has been loaded successfully.",
-        })
-      }
-    } catch (error) {
-      console.error("Error fetching dashboard data:", error)
-      toast({
-        title: "Error",
-        description: "Failed to load dashboard data. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setLoading(false)
-      setRefreshing(false)
-    }
-  }
-
-  useEffect(() => {
-    fetchDashboardData()
-  }, [])
-
-  const getActivityIcon = (type: string) => {
-    switch (type) {
-      case "user_login":
-        return <Users className="h-4 w-4" />
-      case "transaction":
-        return <DollarSign className="h-4 w-4" />
-      case "system":
-        return <Settings className="h-4 w-4" />
-      case "approval":
-        return <CheckCircle className="h-4 w-4" />
+  const getServiceIcon = (service: string) => {
+    switch (service.toLowerCase()) {
+      case "momo":
+        return <Smartphone className="h-4 w-4" />;
+      case "power":
+        return <Zap className="h-4 w-4" />;
+      case "e-zwich":
+      case "ezwich":
+        return <CreditCard className="h-4 w-4" />;
+      case "agency-banking":
+      case "agency banking":
+        return <Building2 className="h-4 w-4" />;
+      case "jumia":
+        return <ShoppingCart className="h-4 w-4" />;
       default:
-        return <Activity className="h-4 w-4" />
+        return <Activity className="h-4 w-4" />;
     }
-  }
+  };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "success":
-        return (
-          <Badge variant="default" className="text-green-600">
-            Success
-          </Badge>
-        )
-      case "warning":
-        return (
-          <Badge variant="secondary" className="text-yellow-600">
-            Warning
-          </Badge>
-        )
-      case "error":
-        return <Badge variant="destructive">Error</Badge>
-      default:
-        return <Badge variant="outline">Unknown</Badge>
-    }
-  }
+  const handleRefresh = () => {
+    setLoading(true);
+    // Trigger a page refresh to get new data
+    setTimeout(() => {
+      setLoading(false);
+      window.location.reload();
+    }, 1000);
+  };
 
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">Admin Dashboard</h2>
-            <p className="text-muted-foreground">Loading dashboard data...</p>
-          </div>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[...Array(8)].map((_, i) => (
-            <Card key={i}>
-              <CardContent className="p-6">
-                <div className="animate-pulse">
-                  <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
-                  <div className="h-8 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
-    )
-  }
+  // Mock chart data for demonstration
+  const mockChartData = [
+    { date: "Mon", transactions: 45, volume: 12500, commission: 625 },
+    { date: "Tue", transactions: 52, volume: 15800, commission: 790 },
+    { date: "Wed", transactions: 38, volume: 11200, commission: 560 },
+    { date: "Thu", transactions: 61, volume: 18900, commission: 945 },
+    { date: "Fri", transactions: 48, volume: 14200, commission: 710 },
+    { date: "Sat", transactions: 35, volume: 9800, commission: 490 },
+    { date: "Sun", transactions: 42, volume: 11800, commission: 590 },
+  ];
+
+  const mockServiceBreakdown = [
+    { service: "MoMo", transactions: 120, volume: 45000, commission: 2250 },
+    {
+      service: "Agency Banking",
+      transactions: 85,
+      volume: 32000,
+      commission: 1600,
+    },
+    { service: "E-Zwich", transactions: 65, volume: 28000, commission: 1400 },
+    { service: "Power", transactions: 95, volume: 18000, commission: 900 },
+    { service: "Jumia", transactions: 45, volume: 12000, commission: 600 },
+  ];
 
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-3xl font-bold tracking-tight">Admin Dashboard</h2>
           <p className="text-muted-foreground">
-            Welcome back, {user?.firstName || "Admin"}! Here's what's happening with your business.
+            Welcome back, {user?.firstName || "Admin"}! Here's your
+            comprehensive system overview.
           </p>
         </div>
-        <Button onClick={() => fetchDashboardData(true)} disabled={refreshing}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-          {refreshing ? "Refreshing..." : "Refresh"}
+        <Button onClick={handleRefresh} disabled={loading}>
+          <RefreshCw
+            className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+          />
+          {loading ? "Refreshing..." : "Refresh"}
         </Button>
       </div>
 
-      {/* Key Metrics */}
+      {/* System Alerts */}
+      {(systemAlerts > 0 || pendingApprovals > 0) && (
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold">System Alerts</h3>
+          <div className="grid gap-4 md:grid-cols-2">
+            {systemAlerts > 0 && (
+              <Alert className="border-l-4 border-l-red-500 bg-red-50">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertDescription>
+                  <span className="font-medium">
+                    {systemAlerts} system alerts
+                  </span>{" "}
+                  require attention
+                </AlertDescription>
+              </Alert>
+            )}
+            {pendingApprovals > 0 && (
+              <Alert className="border-l-4 border-l-yellow-500 bg-yellow-50">
+                <Clock className="h-4 w-4 text-yellow-600" />
+                <AlertDescription>
+                  <span className="font-medium">
+                    {pendingApprovals} pending approvals
+                  </span>{" "}
+                  awaiting review
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Float Alerts */}
+      {totalStats.floatAlerts && totalStats.floatAlerts.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-lg font-semibold">Float Alerts</h3>
+          {totalStats.floatAlerts.map((alert) => (
+            <Alert
+              key={alert.id}
+              className={`border-l-4 ${
+                alert.severity === "critical"
+                  ? "border-l-red-500 bg-red-50"
+                  : "border-l-yellow-500 bg-yellow-50"
+              }`}
+            >
+              <AlertTriangle
+                className={`h-4 w-4 ${
+                  alert.severity === "critical"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              />
+              <AlertDescription>
+                <span className="font-medium">
+                  {alert.service} - {alert.provider}
+                </span>{" "}
+                float balance is {alert.severity}:{" "}
+                {formatCurrency(alert.current_balance)}
+              </AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      )}
+
+      {/* Key Metrics Overview */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -241,19 +295,33 @@ export function EnhancedAdminDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(stats.totalUsers)}</div>
-            <p className="text-xs text-muted-foreground">{formatNumber(stats.activeUsers)} active users</p>
+            <div className="text-2xl font-bold">
+              {formatNumber(userStats?.totalUsers || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatNumber(userStats?.activeUsers || 0)} active users
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Branches</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Branches
+            </CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(stats.totalBranches)}</div>
-            <p className="text-xs text-muted-foreground">{formatNumber(stats.activeBranches)} active branches</p>
+            <div className="text-2xl font-bold">
+              {formatNumber(branchStats?.length || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatNumber(
+                branchStats?.filter((b: any) => b.status === "active")
+                  ?.length || 0
+              )}{" "}
+              active branches
+            </p>
           </CardContent>
         </Card>
 
@@ -263,138 +331,354 @@ export function EnhancedAdminDashboard() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(stats.totalRevenue)}</div>
-            <p className="text-xs text-muted-foreground">{formatPercentage(stats.monthlyGrowth)} from last month</p>
+            <div className="text-2xl font-bold">
+              {formatCurrency(totalStats?.totalVolume || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatCurrency(totalStats?.todayVolume || 0)} today
+            </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Transactions</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatNumber(stats.totalTransactions)}</div>
-            <p className="text-xs text-muted-foreground">This month</p>
+            <div className="text-2xl font-bold">
+              {formatNumber(totalStats?.totalTransactions || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {formatNumber(totalStats?.todayTransactions || 0)} today
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Alert Cards */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Approvals</CardTitle>
-            <Clock className="h-4 w-4 text-yellow-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{formatNumber(stats.pendingApprovals)}</div>
-            <p className="text-xs text-muted-foreground">Require attention</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">System Alerts</CardTitle>
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-600">{formatNumber(stats.systemAlerts)}</div>
-            <p className="text-xs text-muted-foreground">Active alerts</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Float Balance</CardTitle>
-            <DollarSign className="h-4 w-4 text-green-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(stats.floatBalance)}</div>
-            <p className="text-xs text-muted-foreground">Total across all accounts</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Tabs for detailed views */}
-      <Tabs defaultValue="activity" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="activity">Recent Activity</TabsTrigger>
+      {/* Detailed Dashboard Tabs */}
+      <Tabs defaultValue="overview" className="space-y-4">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview">System Overview</TabsTrigger>
+          <TabsTrigger value="financial">Financial</TabsTrigger>
+          <TabsTrigger value="operations">Operations</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
-          <TabsTrigger value="reports">Reports</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="activity" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>Latest system activities and user actions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {recentActivity.length > 0 ? (
-                  recentActivity.map((activity) => (
-                    <div key={activity.id} className="flex items-center space-x-4">
-                      <div className="flex-shrink-0">{getActivityIcon(activity.type)}</div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900">{activity.description}</p>
-                        <p className="text-sm text-gray-500">by {activity.user}</p>
+        {/* System Overview Tab */}
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Service Performance */}
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <BarChart3 className="h-5 w-5" />
+                  Service Performance
+                </CardTitle>
+                <CardDescription>
+                  Today's performance across all services
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {mockServiceBreakdown.map((service) => (
+                    <div
+                      key={service.service}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        {getServiceIcon(service.service)}
+                        <span className="font-medium">{service.service}</span>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        {getStatusBadge(activity.status)}
-                        <span className="text-xs text-gray-500">{formatTimestamp(activity.timestamp)}</span>
+                      <div className="text-right">
+                        <div className="font-medium">
+                          {formatNumber(service.transactions)}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {formatCurrency(service.volume)}
+                        </div>
                       </div>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <Activity className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                    <p>No recent activity to display</p>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Target className="h-5 w-5" />
+                  Quick Actions
+                </CardTitle>
+                <CardDescription>Common administrative tasks</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button variant="outline" className="w-full justify-start">
+                  <Users className="mr-2 h-4 w-4" />
+                  Manage Users
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <Building2 className="mr-2 h-4 w-4" />
+                  Manage Branches
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <Shield className="mr-2 h-4 w-4" />
+                  System Settings
+                </Button>
+                <Button variant="outline" className="w-full justify-start">
+                  <FileText className="mr-2 h-4 w-4" />
+                  View Reports
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
+        {/* Financial Tab */}
+        <TabsContent value="financial" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Revenue Overview */}
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5" />
+                  Revenue Overview
+                </CardTitle>
+                <CardDescription>
+                  Financial performance this week
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {mockChartData.slice(-7).map((day) => (
+                    <div
+                      key={day.date}
+                      className="flex items-center justify-between"
+                    >
+                      <span className="font-medium">{day.date}</span>
+                      <div className="text-right">
+                        <div className="font-medium">
+                          {formatNumber(day.transactions)}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {formatCurrency(day.volume)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Financial Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Financial Summary
+                </CardTitle>
+                <CardDescription>Key financial metrics</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between">
+                  <span>Total Revenue</span>
+                  <span className="font-medium">
+                    {formatCurrency(totalStats?.totalVolume || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Total Commission</span>
+                  <span className="font-medium">
+                    {formatCurrency(totalStats?.totalCommission || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Today's Revenue</span>
+                  <span className="font-medium">
+                    {formatCurrency(totalStats?.todayVolume || 0)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Today's Commission</span>
+                  <span className="font-medium">
+                    {formatCurrency(totalStats?.todayCommission || 0)}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Operations Tab */}
+        <TabsContent value="operations" className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {/* Recent Activity */}
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Recent System Activity
+                </CardTitle>
+                <CardDescription>
+                  Latest transactions and system events
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {totalStats.recentActivity?.slice(0, 5).map((activity) => (
+                    <div
+                      key={activity.id}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        {getServiceIcon(activity.service)}
+                        <div>
+                          <div className="font-medium">{activity.service}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {activity.user} • {activity.timestamp}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-medium">
+                          {formatCurrency(activity.amount)}
+                        </div>
+                        <Badge variant="outline">{activity.type}</Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* System Status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <CheckCircle className="h-5 w-5" />
+                  System Status
+                </CardTitle>
+                <CardDescription>Current system health</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex justify-between">
+                  <span>Database</span>
+                  <Badge
+                    variant="default"
+                    className="bg-green-100 text-green-800"
+                  >
+                    Online
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span>API Services</span>
+                  <Badge
+                    variant="default"
+                    className="bg-green-100 text-green-800"
+                  >
+                    Online
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span>File Storage</span>
+                  <Badge
+                    variant="default"
+                    className="bg-green-100 text-green-800"
+                  >
+                    Online
+                  </Badge>
+                </div>
+                <div className="flex justify-between">
+                  <span>Backup System</span>
+                  <Badge
+                    variant="default"
+                    className="bg-green-100 text-green-800"
+                  >
+                    Online
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Analytics Overview
-              </CardTitle>
-              <CardDescription>Business performance metrics and trends</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-gray-500">
-                <BarChart3 className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p>Analytics charts will be displayed here</p>
-                <p className="text-sm">Connect your data sources to see detailed analytics</p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+          <div className="grid gap-4 md:grid-cols-2">
+            {/* Weekly Trend Chart */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <LineChart className="h-5 w-5" />
+                  Weekly Transaction Trend
+                </CardTitle>
+                <CardDescription>
+                  Transaction volume over the past week
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="h-64 flex items-end justify-between gap-2">
+                  {mockChartData.map((day, index) => (
+                    <div key={day.date} className="flex flex-col items-center">
+                      <div
+                        className="w-8 bg-primary rounded-t"
+                        style={{
+                          height: `${(day.transactions / 70) * 200}px`,
+                          minHeight: "20px",
+                        }}
+                      ></div>
+                      <span className="text-xs mt-2">{day.date}</span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
 
-        <TabsContent value="reports" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                System Reports
-              </CardTitle>
-              <CardDescription>Generate and download system reports</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8 text-gray-500">
-                <FileText className="h-12 w-12 mx-auto mb-4 text-gray-300" />
-                <p>Report generation tools will be available here</p>
-                <p className="text-sm">Create custom reports for your business needs</p>
-              </div>
-            </CardContent>
-          </Card>
+            {/* Service Distribution */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PieChart className="h-5 w-5" />
+                  Service Distribution
+                </CardTitle>
+                <CardDescription>Revenue breakdown by service</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {mockServiceBreakdown.map((service) => (
+                    <div
+                      key={service.service}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex items-center gap-3">
+                        {getServiceIcon(service.service)}
+                        <span className="font-medium">{service.service}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-medium">
+                          {formatCurrency(service.volume)}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          {(
+                            (service.volume /
+                              mockServiceBreakdown.reduce(
+                                (sum, s) => sum + s.volume,
+                                0
+                              )) *
+                            100
+                          ).toFixed(1)}
+                          %
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }

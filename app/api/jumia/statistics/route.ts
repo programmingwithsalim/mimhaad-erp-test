@@ -17,34 +17,41 @@ export async function GET(request: NextRequest) {
     });
 
     // Build WHERE conditions as template literals
-    const conditions = [];
+    let whereClause = sql``;
     if (branchId && branchId !== "all") {
-      conditions.push(sql`branch_id = ${branchId}`);
-    }
-    if (dateFrom) {
-      conditions.push(sql`created_at >= ${dateFrom}`);
-    }
-    if (dateTo) {
-      conditions.push(sql`created_at <= ${dateTo}`);
-    }
-    let whereSql = sql``;
-    if (conditions.length > 0) {
-      whereSql = sql`WHERE ${sql.join(conditions, sql` AND `)}`;
+      whereClause = sql`WHERE branch_id = ${branchId} AND (is_reversal IS NULL OR is_reversal = false)`;
+      if (dateFrom) {
+        whereClause = sql`${whereClause} AND created_at >= ${dateFrom}`;
+      }
+      if (dateTo) {
+        whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
+      }
+    } else if (dateFrom || dateTo) {
+      whereClause = sql`WHERE (is_reversal IS NULL OR is_reversal = false)`;
+      if (dateFrom) {
+        whereClause = sql`${whereClause} AND created_at >= ${dateFrom}`;
+        if (dateTo) {
+          whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
+        }
+      } else if (dateTo) {
+        whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
+      }
+    } else {
+      whereClause = sql`WHERE (is_reversal IS NULL OR is_reversal = false)`;
     }
 
-    // Get transaction statistics
+    // Get transaction statistics - focus on transaction types and amounts
     const statsResult = await sql`
       SELECT 
         COUNT(*) as total_count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
-        COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as completed_amount,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
-        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count,
-        COALESCE(SUM(CASE WHEN status = 'failed' THEN amount ELSE 0 END), 0) as failed_amount
+        COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount,
+        COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as package_count,
+        COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as pod_count,
+        COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as pod_amount,
+        COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as settlement_count,
+        COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as settlement_amount
       FROM jumia_transactions
-      ${whereSql}
+      ${whereClause}
     `;
     const stats = statsResult[0] || {};
 
@@ -53,7 +60,7 @@ export async function GET(request: NextRequest) {
       SELECT 
         DATE(created_at) as date,
         COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total_amount
+        COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
       FROM jumia_transactions
       WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
       ${
@@ -70,9 +77,9 @@ export async function GET(request: NextRequest) {
       SELECT 
         transaction_type,
         COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total_amount
+        COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
       FROM jumia_transactions
-      ${whereSql}
+      ${whereClause}
       GROUP BY transaction_type
       ORDER BY total_amount DESC
     `;
@@ -81,12 +88,11 @@ export async function GET(request: NextRequest) {
       summary: {
         totalCount: Number(stats.total_count || 0),
         totalAmount: Number(stats.total_amount || 0),
-        completedCount: Number(stats.completed_count || 0),
-        completedAmount: Number(stats.completed_amount || 0),
-        pendingCount: Number(stats.pending_count || 0),
-        pendingAmount: Number(stats.pending_amount || 0),
-        failedCount: Number(stats.failed_count || 0),
-        failedAmount: Number(stats.failed_amount || 0),
+        packageCount: Number(stats.package_count || 0),
+        podCount: Number(stats.pod_count || 0),
+        podAmount: Number(stats.pod_amount || 0),
+        settlementCount: Number(stats.settlement_count || 0),
+        settlementAmount: Number(stats.settlement_amount || 0),
       },
       byType: typeStats.map((t: any) => ({
         type: t.transaction_type || "Unknown",

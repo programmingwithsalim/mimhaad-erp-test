@@ -1,20 +1,40 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { z } from "zod"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useCurrentUser } from "@/hooks/use-current-user-fixed"
-import { useToast } from "@/components/ui/use-toast"
-import { Calculator, Building2 } from "lucide-react"
-import { format } from "date-fns"
-import { Button } from "@/components/ui/button"
+import type React from "react";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useCurrentUser } from "@/hooks/use-current-user-fixed";
+import { useToast } from "@/components/ui/use-toast";
+import {
+  Calculator,
+  Building2,
+  Upload,
+  X,
+  FileText,
+  Image,
+} from "lucide-react";
+import { format } from "date-fns";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 const commissionSchema = z.object({
   source: z.string().min(1, "Partner is required"),
@@ -26,34 +46,33 @@ const commissionSchema = z.object({
   commissionRate: z.number().min(0.01, "Commission rate is required"),
   description: z.string().optional(),
   notes: z.string().optional(),
-  status: z.string().default("paid"), // Default to paid
-})
+  status: z.string().default("paid"),
+});
 
-type CommissionFormData = z.infer<typeof commissionSchema>
+type CommissionFormData = z.infer<typeof commissionSchema>;
 
 interface CommissionFormProps {
-  onSuccess?: () => void
+  onSuccess?: () => void;
 }
 
-const COMMISSION_PARTNERS = [
-  { value: "mtn", label: "MTN Mobile Money", code: "MTN" },
-  { value: "vodafone", label: "Vodafone Cash", code: "VOD" },
-  { value: "airteltigo", label: "AirtelTigo Money", code: "ATL" },
-  { value: "jumia", label: "Jumia Pay", code: "JUM" },
-  { value: "vra", label: "VRA (Electricity)", code: "VRA" },
-  { value: "ecg", label: "ECG (Electricity)", code: "ECG" },
-  { value: "gwcl", label: "Ghana Water Company", code: "GWC" },
-  { value: "gcb", label: "GCB Bank", code: "GCB" },
-  { value: "ecobank", label: "Ecobank Ghana", code: "ECO" },
-]
+interface FloatAccount {
+  id: string;
+  account_type: string;
+  provider: string;
+  account_number: string | null;
+  current_balance: string;
+  is_active: boolean;
+}
 
 export default function CommissionForm({ onSuccess }: CommissionFormProps) {
-  const { user } = useCurrentUser()
-  const { toast } = useToast()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
-  const [uploadedFile, setUploadedFile] = useState<File | null>(null)
-  const [filePreview, setFilePreview] = useState<string | null>(null)
+  const { user } = useCurrentUser();
+  const { toast } = useToast();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [floatAccounts, setFloatAccounts] = useState<FloatAccount[]>([]);
+  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
 
   const {
     register,
@@ -68,33 +87,116 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
       transactionVolume: 0,
       commissionRate: 0,
       month: format(new Date(), "yyyy-MM"),
-      status: "paid", // Default to paid
+      status: "paid",
     },
-  })
+  });
 
-  const watchedSource = watch("source")
-  const watchedVolume = watch("transactionVolume")
-  const watchedRate = watch("commissionRate")
+  const watchedSource = watch("source");
+  const watchedVolume = watch("transactionVolume");
+  const watchedRate = watch("commissionRate");
 
   // Auto-calculate amount when volume or rate changes
-  const calculatedAmount = watchedVolume && watchedRate ? watchedVolume * watchedRate : 0
+  const calculatedAmount =
+    watchedVolume && watchedRate ? watchedVolume * watchedRate : 0;
+
+  // Fetch float accounts on component mount
+  useEffect(() => {
+    const fetchFloatAccounts = async () => {
+      try {
+        const response = await fetch("/api/float-accounts");
+        if (response.ok) {
+          const data = await response.json();
+          // Handle the nested structure from the API
+          const accounts = data.accounts || data;
+
+          // Filter for active accounts that can be commission partners
+          const activeAccounts = accounts.filter(
+            (account: FloatAccount) =>
+              account.is_active &&
+              ["agency-banking", "power", "momo", "e-zwich"].includes(
+                account.account_type
+              )
+          );
+
+          console.log(
+            "📊 [COMMISSION] Loaded float accounts:",
+            activeAccounts.length
+          );
+          setFloatAccounts(activeAccounts);
+        } else {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+      } catch (error) {
+        console.error("Error fetching float accounts:", error);
+
+        // Fallback to default accounts if API fails
+        const fallbackAccounts: FloatAccount[] = [
+          {
+            id: "fallback-mtn",
+            account_type: "momo",
+            provider: "MTN Mobile Money",
+            account_number: "0549514617",
+            current_balance: "1000.00",
+            is_active: true,
+          },
+          {
+            id: "fallback-gcb",
+            account_type: "agency-banking",
+            provider: "GCB Bank",
+            account_number: "2464402761018",
+            current_balance: "118394.00",
+            is_active: true,
+          },
+          {
+            id: "fallback-ecg",
+            account_type: "power",
+            provider: "ECG",
+            account_number: "POWER-ECG-001",
+            current_balance: "6800.00",
+            is_active: true,
+          },
+        ];
+
+        console.log(
+          "📊 [COMMISSION] Using fallback accounts:",
+          fallbackAccounts.length
+        );
+        setFloatAccounts(fallbackAccounts);
+
+        toast({
+          variant: "destructive",
+          title: "Warning",
+          description:
+            "Using fallback partner accounts. Some features may be limited.",
+        });
+      } finally {
+        setIsLoadingAccounts(false);
+      }
+    };
+
+    fetchFloatAccounts();
+  }, [toast]);
 
   const handlePartnerChange = (value: string) => {
-    const partner = COMMISSION_PARTNERS.find((p) => p.value === value)
-    if (partner) {
-      setValue("source", value)
-      setValue("sourceName", partner.label)
+    const account = floatAccounts.find((acc) => acc.id === value);
+    if (account) {
+      setValue("source", value);
+      setValue("sourceName", `${account.provider} (${account.account_type})`);
 
-      // Generate reference number with properly formatted month
-      const monthStr = watch("month") || format(new Date(), "yyyy-MM")
-      const formattedMonthStr = monthStr.replace("-", "")
-      const reference = `${partner.code}-${formattedMonthStr}-${Math.random().toString(36).substr(2, 4).toUpperCase()}`
-      setValue("reference", reference)
+      // Generate reference number
+      const monthStr = watch("month") || format(new Date(), "yyyy-MM");
+      const formattedMonthStr = monthStr.replace("-", "");
+      const accountType = account.account_type.toUpperCase().substring(0, 3);
+      const reference = `${accountType}-${formattedMonthStr}-${Math.random()
+        .toString(36)
+        .substr(2, 4)
+        .toUpperCase()}`;
+      setValue("reference", reference);
     }
-  }
+  };
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const file = event.target.files?.[0];
     if (file) {
       // Validate file size (5MB limit)
       if (file.size > 5 * 1024 * 1024) {
@@ -102,8 +204,8 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
           variant: "destructive",
           title: "File too large",
           description: "Please select a file smaller than 5MB",
-        })
-        return
+        });
+        return;
       }
 
       // Validate file type
@@ -115,133 +217,162 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
         "application/pdf",
         "application/msword",
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      ]
+      ];
 
       if (!allowedTypes.includes(file.type)) {
         toast({
           variant: "destructive",
           title: "Invalid file type",
           description: "Please select an image, PDF, or Word document",
-        })
-        return
+        });
+        return;
       }
 
-      setUploadedFile(file)
+      setUploadedFile(file);
 
       // Create preview for images
       if (file.type.startsWith("image/")) {
-        const reader = new FileReader()
+        const reader = new FileReader();
         reader.onload = (e) => {
-          setFilePreview(e.target?.result as string)
-        }
-        reader.readAsDataURL(file)
+          setFilePreview(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
       } else {
-        setFilePreview(null)
+        setFilePreview(null);
       }
     }
-  }
+  };
 
   const removeFile = () => {
-    setUploadedFile(null)
-    setFilePreview(null)
+    setUploadedFile(null);
+    setFilePreview(null);
     // Reset the file input
-    const fileInput = document.getElementById("receipt-upload") as HTMLInputElement
+    const fileInput = document.getElementById(
+      "receipt-upload"
+    ) as HTMLInputElement;
     if (fileInput) {
-      fileInput.value = ""
+      fileInput.value = "";
     }
-  }
+  };
 
   const onSubmit = async (data: CommissionFormData) => {
-    setIsSubmitting(true)
-    setFormError(null)
+    setIsSubmitting(true);
+    setFormError(null);
 
     try {
       // Ensure we have a calculated amount
       if (calculatedAmount <= 0) {
-        throw new Error("Please enter valid transaction volume and commission rate")
+        throw new Error(
+          "Please enter valid transaction volume and commission rate"
+        );
       }
 
       // Convert month from "YYYY-MM" to "YYYY-MM-01" for PostgreSQL date format
-      const formattedMonth = data.month.includes("-") ? `${data.month}-01` : data.month
+      const formattedMonth = data.month.includes("-")
+        ? `${data.month}-01`
+        : data.month;
 
       // Use real user data if available, otherwise use meaningful defaults
       const userData = user || {
         id: `user-${Date.now()}`,
         username: "System User",
         name: "System User",
-        branchId: `branch-${Date.now()}`,
-        branchName: "Default Branch",
+        branchId: "635844ab-029a-43f8-8523-d7882915266a", // Use real branch ID
+        branchName: "Main Branch",
         role: "manager",
+      };
+
+      // Ensure we have valid branch data
+      if (!userData.branchId || userData.branchId.startsWith("branch-")) {
+        userData.branchId = "635844ab-029a-43f8-8523-d7882915266a"; // Fallback to real branch ID
+        userData.branchName = "Main Branch";
       }
 
-      console.log("📝 [COMMISSION] Submitting with user data:", userData)
+      console.log("📝 [COMMISSION] Submitting with user data:", userData);
 
-      // Create JSON payload instead of FormData to avoid parsing issues
-      const payload = {
-        source: data.source,
-        sourceName: data.sourceName,
-        reference: data.reference,
-        month: formattedMonth,
-        amount: calculatedAmount,
-        transactionVolume: data.transactionVolume,
-        commissionRate: data.commissionRate,
-        description: data.description || "",
-        notes: data.notes || "",
-        status: "paid",
-        createdBy: userData.id,
-        createdByName: userData.username || userData.name,
-        branchId: userData.branchId,
-        branchName: userData.branchName,
-        userRole: userData.role,
+      // Create FormData to handle file upload
+      const formData = new FormData();
+
+      // Add commission data
+      formData.append("source", data.source);
+      formData.append("sourceName", data.sourceName);
+      formData.append("reference", data.reference);
+      formData.append("month", formattedMonth);
+      formData.append("amount", calculatedAmount.toString());
+      formData.append("transactionVolume", data.transactionVolume.toString());
+      formData.append("commissionRate", data.commissionRate.toString());
+      formData.append("description", data.description || "");
+      formData.append("notes", data.notes || "");
+      formData.append("status", "paid");
+      formData.append("createdBy", userData.id);
+      formData.append("createdByName", userData.username || userData.name);
+      formData.append("branchId", userData.branchId);
+      formData.append("branchName", userData.branchName);
+      formData.append("userRole", userData.role);
+
+      // Add receipt file if uploaded
+      if (uploadedFile) {
+        formData.append("receipt", uploadedFile);
       }
 
-      console.log("📝 [COMMISSION] Payload:", JSON.stringify(payload, null, 2))
+      console.log(
+        "📝 [COMMISSION] Submitting form data with file:",
+        uploadedFile?.name
+      );
 
       const response = await fetch("/api/commissions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-user-id": userData.id,
-          "x-user-name": userData.username || userData.name,
-          "x-user-role": userData.role || "manager",
-          "x-branch-id": userData.branchId,
-          "x-branch-name": userData.branchName || "Unknown Branch",
-        },
-        body: JSON.stringify(payload),
-      })
+        body: formData,
+      });
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || `Failed to create commission: ${response.status}`)
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to create commission");
       }
 
-      const result = await response.json()
-      console.log("✅ [COMMISSION] Created successfully:", result)
+      const result = await response.json();
+      console.log("✅ [COMMISSION] Success:", result);
 
       toast({
         title: "Commission Created",
-        description: `Commission ${data.reference} has been created successfully.`,
-      })
+        description: `Commission for ${data.sourceName} has been created successfully`,
+      });
 
-      reset()
-      setUploadedFile(null)
-      setFilePreview(null)
+      // Reset form
+      reset();
+      setUploadedFile(null);
+      setFilePreview(null);
 
       if (onSuccess) {
-        console.log("📝 [COMMISSION] Calling onSuccess callback")
-        onSuccess()
+        onSuccess();
       }
     } catch (error) {
-      console.error("❌ [COMMISSION] Error creating commission:", error)
-      setFormError(error instanceof Error ? error.message : "Failed to create commission")
+      console.error("❌ [COMMISSION] Error:", error);
+      setFormError(
+        error instanceof Error ? error.message : "An unexpected error occurred"
+      );
       toast({
         variant: "destructive",
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create commission",
-      })
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to create commission",
+      });
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
+  };
+
+  if (isLoadingAccounts) {
+    return (
+      <div className="flex items-center justify-center p-8">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading partner accounts...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -252,115 +383,215 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
         </Alert>
       )}
 
-      {/* Partner Selection */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Partner Selection */}
+        <div className="space-y-2">
+          <Label htmlFor="source">Partner Account *</Label>
+          <Select onValueChange={handlePartnerChange} value={watchedSource}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select partner account" />
+            </SelectTrigger>
+            <SelectContent>
+              {floatAccounts.map((account) => (
+                <SelectItem key={account.id} value={account.id}>
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    <span>{account.provider}</span>
+                    <span className="text-muted-foreground">
+                      ({account.account_type})
+                    </span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {errors.source && (
+            <p className="text-sm text-destructive">{errors.source.message}</p>
+          )}
+        </div>
+
+        {/* Reference */}
+        <div className="space-y-2">
+          <Label htmlFor="reference">Reference *</Label>
+          <Input
+            {...register("reference")}
+            placeholder="Auto-generated reference"
+            readOnly
+          />
+          {errors.reference && (
+            <p className="text-sm text-destructive">
+              {errors.reference.message}
+            </p>
+          )}
+        </div>
+
+        {/* Month */}
+        <div className="space-y-2">
+          <Label htmlFor="month">Month *</Label>
+          <Input {...register("month")} type="month" required />
+          {errors.month && (
+            <p className="text-sm text-destructive">{errors.month.message}</p>
+          )}
+        </div>
+
+        {/* Transaction Volume */}
+        <div className="space-y-2">
+          <Label htmlFor="transactionVolume">Transaction Volume (GHS) *</Label>
+          <Input
+            {...register("transactionVolume", { valueAsNumber: true })}
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="0.00"
+            required
+          />
+          {errors.transactionVolume && (
+            <p className="text-sm text-destructive">
+              {errors.transactionVolume.message}
+            </p>
+          )}
+        </div>
+
+        {/* Commission Rate */}
+        <div className="space-y-2">
+          <Label htmlFor="commissionRate">Commission Rate (%) *</Label>
+          <Input
+            {...register("commissionRate", { valueAsNumber: true })}
+            type="number"
+            step="0.01"
+            min="0"
+            placeholder="0.00"
+            required
+          />
+          {errors.commissionRate && (
+            <p className="text-sm text-destructive">
+              {errors.commissionRate.message}
+            </p>
+          )}
+        </div>
+
+        {/* Calculated Amount */}
+        <div className="space-y-2">
+          <Label>Commission Amount (GHS)</Label>
+          <div className="flex items-center gap-2 p-3 border rounded-md bg-muted">
+            <Calculator className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">
+              {calculatedAmount.toLocaleString("en-GH", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Description */}
+      <div className="space-y-2">
+        <Label htmlFor="description">Description</Label>
+        <Textarea
+          {...register("description")}
+          placeholder="Brief description of the commission"
+          rows={2}
+        />
+        {errors.description && (
+          <p className="text-sm text-destructive">
+            {errors.description.message}
+          </p>
+        )}
+      </div>
+
+      {/* Receipt Upload */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Building2 className="h-5 w-5" />
-            Partner Information
+            <Upload className="h-5 w-5" />
+            Receipt Upload
           </CardTitle>
-          <CardDescription>Select the service partner and commission details</CardDescription>
+          <CardDescription>
+            Upload a receipt or supporting document for this commission
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="source">Service Partner *</Label>
-              <Select onValueChange={handlePartnerChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select partner" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COMMISSION_PARTNERS.map((partner) => (
-                    <SelectItem key={partner.value} value={partner.value}>
-                      {partner.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.source && <p className="text-sm text-red-500">{errors.source.message}</p>}
-              <input type="hidden" {...register("source")} />
+          {!uploadedFile ? (
+            <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
+              <input
+                id="receipt-upload"
+                type="file"
+                accept="image/*,.pdf,.doc,.docx"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              <label
+                htmlFor="receipt-upload"
+                className="cursor-pointer flex flex-col items-center gap-2"
+              >
+                <Upload className="h-8 w-8 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Click to upload receipt</p>
+                  <p className="text-xs text-muted-foreground">
+                    PNG, JPG, PDF, DOC up to 5MB
+                  </p>
+                </div>
+              </label>
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="sourceName">Partner Name *</Label>
-              <Input {...register("sourceName")} placeholder="Auto-filled when partner selected" readOnly />
-              {errors.sourceName && <p className="text-sm text-red-500">{errors.sourceName.message}</p>}
+          ) : (
+            <div className="border rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  {filePreview ? (
+                    <Image className="h-8 w-8 text-blue-500" />
+                  ) : (
+                    <FileText className="h-8 w-8 text-gray-500" />
+                  )}
+                  <div>
+                    <p className="font-medium">{uploadedFile.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {(uploadedFile.size / 1024 / 1024).toFixed(2)} MB
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={removeFile}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              {filePreview && (
+                <div className="mt-3">
+                  <img
+                    src={filePreview}
+                    alt="Receipt preview"
+                    className="max-w-full h-32 object-contain rounded border"
+                  />
+                </div>
+              )}
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="reference">Reference Number *</Label>
-              <Input {...register("reference")} placeholder="Auto-generated" />
-              {errors.reference && <p className="text-sm text-red-500">{errors.reference.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="month">Commission Month *</Label>
-              <Input type="month" {...register("month")} placeholder="YYYY-MM" />
-              {errors.month && <p className="text-sm text-red-500">{errors.month.message}</p>}
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      {/* Transaction Details */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Calculator className="h-5 w-5" />
-            Transaction Details
-          </CardTitle>
-          <CardDescription>Enter transaction volume and commission calculation</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="transactionVolume">Transaction Volume *</Label>
-              <Input
-                type="number"
-                {...register("transactionVolume", { valueAsNumber: true })}
-                placeholder="Enter volume"
-              />
-              {errors.transactionVolume && <p className="text-sm text-red-500">{errors.transactionVolume.message}</p>}
-            </div>
+      {/* Notes */}
+      <div className="space-y-2">
+        <Label htmlFor="notes">Additional Notes</Label>
+        <Textarea
+          {...register("notes")}
+          placeholder="Any additional notes or comments"
+          rows={3}
+        />
+        {errors.notes && (
+          <p className="text-sm text-destructive">{errors.notes.message}</p>
+        )}
+      </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="commissionRate">Commission Rate *</Label>
-              <Input
-                type="number"
-                {...register("commissionRate", { valueAsNumber: true })}
-                placeholder="Enter rate"
-                step="0.01"
-              />
-              {errors.commissionRate && <p className="text-sm text-red-500">{errors.commissionRate.message}</p>}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="amount">Calculated Amount</Label>
-              <Input type="number" value={calculatedAmount.toFixed(2)} readOnly />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="description">Description</Label>
-              <Input {...register("description")} placeholder="Enter description" />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
-              <Input {...register("notes")} placeholder="Enter any notes" />
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? "Submitting..." : "Create Commission"}
-      </Button>
+      {/* Submit Button */}
+      <div className="flex justify-end gap-4">
+        <Button type="submit" disabled={isSubmitting} className="min-w-[120px]">
+          {isSubmitting ? "Creating..." : "Create Commission"}
+        </Button>
+      </div>
     </form>
-  )
+  );
 }

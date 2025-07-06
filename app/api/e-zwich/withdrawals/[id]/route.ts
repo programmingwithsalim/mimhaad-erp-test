@@ -1,78 +1,104 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
   try {
-    const withdrawalId = params.id
+    const { id } = params;
+    const body = await request.json();
+    const {
+      card_number,
+      amount,
+      transaction_type,
+      status,
+      processed_by,
+      branch_id,
+    } = body;
+
+    if (!card_number || !amount || !processed_by || !branch_id) {
+      return NextResponse.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
 
     // Check if withdrawal exists
-    const existing = await sql`
-      SELECT * FROM e_zwich_withdrawals WHERE id = ${withdrawalId}
-    `
+    const existingWithdrawal = await sql`
+      SELECT * FROM ezwich_withdrawals WHERE id = ${id}
+    `;
 
-    if (existing.length === 0) {
-      return NextResponse.json({ success: false, error: "Withdrawal not found" }, { status: 404 })
+    if (existingWithdrawal.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Withdrawal not found" },
+        { status: 404 }
+      );
+    }
+
+    // Update the withdrawal
+    const result = await sql`
+      UPDATE ezwich_withdrawals 
+      SET 
+        card_number = ${card_number},
+        amount = ${amount},
+        transaction_type = ${transaction_type || "withdrawal"},
+        status = ${status || "completed"},
+        processed_by = ${processed_by},
+        branch_id = ${branch_id}
+      WHERE id = ${id}
+      RETURNING *
+    `;
+
+    return NextResponse.json({
+      success: true,
+      data: result[0],
+      message: "Withdrawal updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating withdrawal:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update withdrawal" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+
+    // Check if withdrawal exists
+    const existingWithdrawal = await sql`
+      SELECT * FROM ezwich_withdrawals WHERE id = ${id}
+    `;
+
+    if (existingWithdrawal.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Withdrawal not found" },
+        { status: 404 }
+      );
     }
 
     // Delete the withdrawal
     await sql`
-      DELETE FROM e_zwich_withdrawals WHERE id = ${withdrawalId}
-    `
+      DELETE FROM ezwich_withdrawals WHERE id = ${id}
+    `;
 
     return NextResponse.json({
       success: true,
-      message: "E-Zwich withdrawal deleted successfully",
-    })
+      message: "Withdrawal deleted successfully",
+    });
   } catch (error) {
-    console.error("❌ Error deleting E-Zwich withdrawal:", error)
+    console.error("Error deleting withdrawal:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to delete E-Zwich withdrawal",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
-  }
-}
-
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
-  try {
-    const withdrawalId = params.id
-    const body = await request.json()
-
-    // Update the withdrawal
-    const updated = await sql`
-      UPDATE e_zwich_withdrawals 
-      SET 
-        amount = ${body.amount},
-        fee = ${body.fee},
-        status = ${body.status},
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${withdrawalId}
-      RETURNING *
-    `
-
-    if (updated.length === 0) {
-      return NextResponse.json({ success: false, error: "Withdrawal not found" }, { status: 404 })
-    }
-
-    return NextResponse.json({
-      success: true,
-      data: updated[0],
-      message: "E-Zwich withdrawal updated successfully",
-    })
-  } catch (error) {
-    console.error("❌ Error updating E-Zwich withdrawal:", error)
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to update E-Zwich withdrawal",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
+      { success: false, error: "Failed to delete withdrawal" },
+      { status: 500 }
+    );
   }
 }

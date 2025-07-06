@@ -1,40 +1,41 @@
-import { neon } from "@neondatabase/serverless"
+import { neon } from "@neondatabase/serverless";
+import { UnifiedGLPostingService } from "./services/unified-gl-posting-service";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export interface JumiaTransaction {
-  id?: number
-  transaction_id: string
-  branch_id: string
-  user_id: string
-  transaction_type: "package_receipt" | "pod_collection" | "settlement"
-  tracking_id?: string
-  customer_name?: string
-  customer_phone?: string
-  amount: number
-  settlement_reference?: string
-  settlement_from_date?: string
-  settlement_to_date?: string
-  status: string
-  delivery_status?: string
-  notes?: string
-  float_account_id?: string // For settlements - which account was used to pay
-  created_at?: string
-  updated_at?: string
+  id?: number;
+  transaction_id: string;
+  branch_id: string;
+  user_id: string;
+  transaction_type: "package_receipt" | "pod_collection" | "settlement";
+  tracking_id?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  amount: number;
+  settlement_reference?: string;
+  settlement_from_date?: string;
+  settlement_to_date?: string;
+  status: string;
+  delivery_status?: string;
+  notes?: string;
+  float_account_id?: string; // For settlements - which account was used to pay
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface JumiaLiability {
-  branch_id: string
-  amount: number
-  last_updated?: string
+  branch_id: string;
+  amount: number;
+  last_updated?: string;
 }
 
 export interface JumiaStatistics {
-  total_packages: number
-  packages_collected: number
-  total_pod_amount: number
-  unsettled_amount: number
-  total_settlements: number
+  total_packages: number;
+  packages_collected: number;
+  total_pod_amount: number;
+  unsettled_amount: number;
+  total_settlements: number;
 }
 
 // Check if tables exist
@@ -45,11 +46,11 @@ async function tablesExist(): Promise<boolean> {
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
       AND table_name IN ('jumia_transactions', 'jumia_liability')
-    `
-    return Array.isArray(result) && result.length >= 2
+    `;
+    return Array.isArray(result) && result.length >= 2;
   } catch (error) {
-    console.error("Error checking Jumia tables:", error)
-    return false
+    console.error("Error checking Jumia tables:", error);
+    return false;
   }
 }
 
@@ -62,11 +63,11 @@ async function floatAccountsTableExists(): Promise<boolean> {
         WHERE table_schema = 'public' 
         AND table_name = 'float_accounts'
       ) as table_exists
-    `
-    return result[0]?.table_exists || false
+    `;
+    return result[0]?.table_exists || false;
   } catch (error) {
-    console.error("Error checking float_accounts table:", error)
-    return false
+    console.error("Error checking float_accounts table:", error);
+    return false;
   }
 }
 
@@ -75,42 +76,48 @@ async function updateFloatAccountBalance(
   accountId: string,
   amount: number,
   transactionType: string,
-  description: string,
+  description: string
 ): Promise<void> {
   try {
-    const tableExists = await floatAccountsTableExists()
+    const tableExists = await floatAccountsTableExists();
     if (!tableExists) {
-      console.log("Float accounts table does not exist, skipping balance update")
-      return
+      console.log(
+        "Float accounts table does not exist, skipping balance update"
+      );
+      return;
     }
 
     // Get current balance
     const accountResult = await sql`
       SELECT current_balance FROM float_accounts 
       WHERE id = ${accountId}
-    `
+    `;
 
     if (!Array.isArray(accountResult) || accountResult.length === 0) {
-      console.log(`Float account ${accountId} not found`)
-      return
+      console.log(`Float account ${accountId} not found`);
+      return;
     }
 
     // Ensure we get a proper number
-    const currentBalanceRaw = accountResult[0].current_balance
-    const currentBalance = Number.parseFloat(String(currentBalanceRaw || "0"))
+    const currentBalanceRaw = accountResult[0].current_balance;
+    const currentBalance = Number.parseFloat(String(currentBalanceRaw || "0"));
 
     // Ensure amount is also a proper number
-    const adjustmentAmount = Number.parseFloat(String(amount || "0"))
-    const newBalance = currentBalance + adjustmentAmount
+    const adjustmentAmount = Number.parseFloat(String(amount || "0"));
+    const newBalance = currentBalance + adjustmentAmount;
 
     // Check for negative balance (only for debits)
     if (amount < 0 && newBalance < 0) {
       console.log(
-        `Insufficient balance in account ${accountId}. Current: ${currentBalance}, Requested: ${Math.abs(amount)}`,
-      )
+        `Insufficient balance in account ${accountId}. Current: ${currentBalance}, Requested: ${Math.abs(
+          amount
+        )}`
+      );
       throw new Error(
-        `Insufficient balance. Current: GHS ${currentBalance.toFixed(2)}, Required: GHS ${Math.abs(amount).toFixed(2)}`,
-      )
+        `Insufficient balance. Current: GHS ${currentBalance.toFixed(
+          2
+        )}, Required: GHS ${Math.abs(amount).toFixed(2)}`
+      );
     }
 
     // Update the account balance
@@ -120,16 +127,25 @@ async function updateFloatAccountBalance(
         current_balance = ${newBalance}::numeric,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${accountId}
-    `
+    `;
 
     // Keep only essential logging:
-    console.log(`Updated float account ${accountId}: ${currentBalance} -> ${newBalance}`)
+    console.log(
+      `Updated float account ${accountId}: ${currentBalance} -> ${newBalance}`
+    );
 
     // Log transaction if float_transactions table exists
-    await logFloatTransaction(accountId, transactionType, adjustmentAmount, currentBalance, newBalance, description)
+    await logFloatTransaction(
+      accountId,
+      transactionType,
+      adjustmentAmount,
+      currentBalance,
+      newBalance,
+      description
+    );
   } catch (error) {
-    console.error("Error updating float account balance:", error)
-    throw error // Throw error for settlements to prevent processing with insufficient funds
+    console.error("Error updating float account balance:", error);
+    throw error; // Throw error for settlements to prevent processing with insufficient funds
   }
 }
 
@@ -140,7 +156,7 @@ async function logFloatTransaction(
   amount: number,
   balanceBefore: number,
   balanceAfter: number,
-  description: string,
+  description: string
 ): Promise<void> {
   try {
     // Check if float_transactions table exists
@@ -150,11 +166,13 @@ async function logFloatTransaction(
         WHERE table_schema = 'public' 
         AND table_name = 'float_transactions'
       ) as table_exists
-    `
+    `;
 
     if (!tableCheck[0]?.table_exists) {
-      console.log("float_transactions table doesn't exist, skipping transaction log")
-      return
+      console.log(
+        "float_transactions table doesn't exist, skipping transaction log"
+      );
+      return;
     }
 
     // Check which columns exist
@@ -163,10 +181,12 @@ async function logFloatTransaction(
       FROM information_schema.columns 
       WHERE table_name = 'float_transactions' 
       AND table_schema = 'public'
-    `
+    `;
 
-    const columnNames = columns.map((col) => col.column_name)
-    const hasBalanceColumns = columnNames.includes("balance_before") && columnNames.includes("balance_after")
+    const columnNames = columns.map((col) => col.column_name);
+    const hasBalanceColumns =
+      columnNames.includes("balance_before") &&
+      columnNames.includes("balance_after");
 
     if (hasBalanceColumns) {
       // Use full schema with balance columns
@@ -190,7 +210,7 @@ async function logFloatTransaction(
           ${`JUMIA-${Date.now()}`},
           CURRENT_TIMESTAMP
         )
-      `
+      `;
     } else {
       // Use basic schema without balance columns
       await sql`
@@ -209,24 +229,26 @@ async function logFloatTransaction(
           ${`JUMIA-${Date.now()}`},
           CURRENT_TIMESTAMP
         )
-      `
+      `;
     }
 
-    console.log("Float transaction logged successfully")
+    console.log("Float transaction logged successfully");
   } catch (error) {
-    console.error("Error logging float transaction (non-critical):", error)
+    console.error("Error logging float transaction (non-critical):", error);
     // Don't throw error - transaction logging is optional
   }
 }
 
 // Create a new Jumia transaction
 export async function createJumiaTransaction(
-  transaction: Omit<JumiaTransaction, "id" | "created_at" | "updated_at">,
+  transaction: Omit<JumiaTransaction, "id" | "created_at" | "updated_at">
 ): Promise<JumiaTransaction> {
-  const useDatabase = await tablesExist()
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
@@ -237,16 +259,57 @@ export async function createJumiaTransaction(
         settlement_reference, settlement_from_date, settlement_to_date,
         status, delivery_status, notes, float_account_id
       ) VALUES (
-        ${transaction.transaction_id}, ${transaction.branch_id}, ${transaction.user_id}, ${transaction.transaction_type},
-        ${transaction.tracking_id || null}, ${transaction.customer_name || null}, ${transaction.customer_phone || null}, ${transaction.amount},
-        ${transaction.settlement_reference || null}, ${transaction.settlement_from_date || null}, ${transaction.settlement_to_date || null},
-        ${transaction.status}, ${transaction.delivery_status || null}, ${transaction.notes || null}, ${transaction.float_account_id || null}
+        ${transaction.transaction_id}, ${transaction.branch_id}, ${
+      transaction.user_id
+    }, ${transaction.transaction_type},
+        ${transaction.tracking_id || null}, ${
+      transaction.customer_name || null
+    }, ${transaction.customer_phone || null}, ${transaction.amount},
+        ${transaction.settlement_reference || null}, ${
+      transaction.settlement_from_date || null
+    }, ${transaction.settlement_to_date || null},
+        ${transaction.status}, ${transaction.delivery_status || null}, ${
+      transaction.notes || null
+    }, ${transaction.float_account_id || null}
       )
       RETURNING *
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      const createdTransaction = result[0] as JumiaTransaction
+      const createdTransaction = result[0] as JumiaTransaction;
+
+      // Unified GL Posting for pod_collection and settlement only
+      if (
+        ["pod_collection", "settlement"].includes(
+          createdTransaction.transaction_type
+        )
+      ) {
+        try {
+          const glResult = await UnifiedGLPostingService.createGLEntries({
+            transactionId: createdTransaction.transaction_id,
+            sourceModule: "jumia",
+            transactionType: "jumia_float",
+            amount: Number(createdTransaction.amount),
+            fee: 0,
+            customerName: createdTransaction.customer_name,
+            reference:
+              createdTransaction.tracking_id ||
+              createdTransaction.settlement_reference ||
+              createdTransaction.transaction_id,
+            processedBy: createdTransaction.user_id,
+            branchId: createdTransaction.branch_id,
+            metadata: { delivery_status: createdTransaction.delivery_status },
+          });
+          if (!glResult.success) {
+            throw new Error(glResult.error || "Unified GL posting failed");
+          }
+        } catch (glError) {
+          console.error(
+            "[GL] Failed to post Jumia transaction to GL:",
+            glError
+          );
+        }
+      }
 
       // If this is a settlement, mark POD collections as settled
       if (createdTransaction.transaction_type === "settlement") {
@@ -256,78 +319,95 @@ export async function createJumiaTransaction(
           WHERE branch_id = ${createdTransaction.branch_id} 
           AND transaction_type = 'pod_collection' 
           AND status = 'active'
-        `
+        `;
       }
 
       // Handle float account updates based on transaction type
-      await handleFloatAccountUpdates(createdTransaction, "create")
+      await handleFloatAccountUpdates(createdTransaction, "create");
 
-      return createdTransaction
+      return createdTransaction;
     }
 
-    throw new Error("Failed to create transaction")
+    throw new Error("Failed to create transaction");
   } catch (error) {
-    console.error("Error creating Jumia transaction in database:", error)
-    throw error
+    console.error("Error creating Jumia transaction in database:", error);
+    throw error;
   }
 }
 
 // Handle float account updates for transactions
-async function handleFloatAccountUpdates(transaction: JumiaTransaction, operation: "create" | "delete"): Promise<void> {
+async function handleFloatAccountUpdates(
+  transaction: JumiaTransaction,
+  operation: "create" | "delete"
+): Promise<void> {
   try {
-    if (transaction.transaction_type === "pod_collection" && transaction.amount > 0) {
-      // POD Collection: Increase cash-in-till, increase Jumia liability
-      const cashAccountId = await findCashInTillAccount(transaction.branch_id)
-      if (cashAccountId) {
-        const amount = operation === "create" ? transaction.amount : -transaction.amount
+    if (
+      transaction.transaction_type === "pod_collection" &&
+      transaction.amount > 0
+    ) {
+      // POD Collection: Credit the selected payment method (float account)
+      const accountId =
+        transaction.float_account_id ||
+        (await findCashInTillAccount(transaction.branch_id));
+      if (accountId) {
+        const amount =
+          operation === "create" ? transaction.amount : -transaction.amount;
         await updateFloatAccountBalance(
-          cashAccountId,
+          accountId,
           amount,
           "jumia_pod_collection",
-          `Jumia POD collection - ${transaction.transaction_id}`,
-        )
+          `Jumia POD collection - ${transaction.transaction_id}`
+        );
       }
 
-      const liabilityAmount = operation === "create" ? transaction.amount : -transaction.amount
+      const liabilityAmount =
+        operation === "create" ? transaction.amount : -transaction.amount;
       await updateJumiaLiability(
         transaction.branch_id,
         liabilityAmount,
-        operation === "create" ? "increase" : "decrease",
-      )
-    } else if (transaction.transaction_type === "settlement" && transaction.amount > 0) {
+        operation === "create" ? "increase" : "decrease"
+      );
+    } else if (
+      transaction.transaction_type === "settlement" &&
+      transaction.amount > 0
+    ) {
       // Settlement: Use specified float account or default to cash-in-till
-      const accountId = transaction.float_account_id || (await findCashInTillAccount(transaction.branch_id))
+      const accountId =
+        transaction.float_account_id ||
+        (await findCashInTillAccount(transaction.branch_id));
 
       if (accountId) {
-        const amount = operation === "create" ? -transaction.amount : transaction.amount
+        const amount =
+          operation === "create" ? -transaction.amount : transaction.amount;
         await updateFloatAccountBalance(
           accountId,
           amount,
           "jumia_settlement",
-          `Jumia settlement - ${transaction.transaction_id}`,
-        )
+          `Jumia settlement - ${transaction.transaction_id}`
+        );
       }
 
-      const liabilityAmount = operation === "create" ? transaction.amount : -transaction.amount
+      const liabilityAmount =
+        operation === "create" ? transaction.amount : -transaction.amount;
       await updateJumiaLiability(
         transaction.branch_id,
         liabilityAmount,
-        operation === "create" ? "decrease" : "increase",
-      )
+        operation === "create" ? "decrease" : "increase"
+      );
     }
   } catch (error) {
-    console.error("Error handling float account updates:", error)
-    throw error // Throw error to prevent transaction completion if float updates fail
+    console.error("Error handling float account updates:", error);
+    throw error; // Throw error to prevent transaction completion if float updates fail
   }
 }
 
 // Find cash-in-till account for a branch
 async function findCashInTillAccount(branchId: string): Promise<string | null> {
   try {
-    const tableExists = await floatAccountsTableExists()
+    const tableExists = await floatAccountsTableExists();
     if (!tableExists) {
-      console.log("Float accounts table does not exist")
-      return null
+      console.log("Float accounts table does not exist");
+      return null;
     }
 
     const result = await sql`
@@ -336,26 +416,31 @@ async function findCashInTillAccount(branchId: string): Promise<string | null> {
       AND account_type = 'cash-in-till'
       AND is_active = true
       LIMIT 1
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      return result[0].id
+      return result[0].id;
     }
 
-    console.log(`No active cash-in-till account found for branch ${branchId}`)
-    return null
+    console.log(`No active cash-in-till account found for branch ${branchId}`);
+    return null;
   } catch (error) {
-    console.error("Error finding cash-in-till account:", error)
-    return null
+    console.error("Error finding cash-in-till account:", error);
+    return null;
   }
 }
 
 // Get Jumia transactions
-export async function getJumiaTransactions(branchId: string, limit = 50): Promise<JumiaTransaction[]> {
-  const useDatabase = await tablesExist()
+export async function getJumiaTransactions(
+  branchId: string,
+  limit = 50
+): Promise<JumiaTransaction[]> {
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
@@ -364,25 +449,29 @@ export async function getJumiaTransactions(branchId: string, limit = 50): Promis
       WHERE branch_id = ${branchId}
       ORDER BY created_at DESC 
       LIMIT ${limit}
-    `
+    `;
 
     if (Array.isArray(result)) {
-      return result as JumiaTransaction[]
+      return result as JumiaTransaction[];
     }
 
-    return []
+    return [];
   } catch (error) {
-    console.error("Error getting Jumia transactions from database:", error)
-    throw error
+    console.error("Error getting Jumia transactions from database:", error);
+    throw error;
   }
 }
 
 // Get all Jumia transactions (for admin purposes)
-export async function getAllJumiaTransactions(limit = 100): Promise<JumiaTransaction[]> {
-  const useDatabase = await tablesExist()
+export async function getAllJumiaTransactions(
+  limit = 100
+): Promise<JumiaTransaction[]> {
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
@@ -390,81 +479,102 @@ export async function getAllJumiaTransactions(limit = 100): Promise<JumiaTransac
       SELECT * FROM jumia_transactions 
       ORDER BY created_at DESC 
       LIMIT ${limit}
-    `
+    `;
 
     if (Array.isArray(result)) {
-      return result as JumiaTransaction[]
+      return result as JumiaTransaction[];
     }
 
-    return []
+    return [];
   } catch (error) {
-    console.error("Error getting all Jumia transactions from database:", error)
-    throw error
+    console.error("Error getting all Jumia transactions from database:", error);
+    throw error;
   }
 }
 
 // Get single transaction by ID
-export async function getJumiaTransactionById(transactionId: string): Promise<JumiaTransaction | null> {
-  const useDatabase = await tablesExist()
+export async function getJumiaTransactionById(
+  transactionId: string
+): Promise<JumiaTransaction | null> {
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
     const result = await sql`
       SELECT * FROM jumia_transactions 
       WHERE transaction_id = ${transactionId}
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      return result[0] as JumiaTransaction
+      return result[0] as JumiaTransaction;
     }
 
-    return null
+    return null;
   } catch (error) {
-    console.error("Error getting Jumia transaction by ID:", error)
-    throw error
+    console.error("Error getting Jumia transaction by ID:", error);
+    throw error;
   }
 }
 
 // Update transaction
 export async function updateJumiaTransaction(
   transactionId: string,
-  updateData: Partial<JumiaTransaction>,
+  updateData: Partial<JumiaTransaction>
 ): Promise<JumiaTransaction> {
-  const useDatabase = await tablesExist()
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
     // Get current transaction for comparison
-    const currentTransaction = await getJumiaTransactionById(transactionId)
+    const currentTransaction = await getJumiaTransactionById(transactionId);
     if (!currentTransaction) {
-      throw new Error("Transaction not found")
+      throw new Error("Transaction not found");
     }
 
-    console.log("Updating transaction:", transactionId, "with data:", updateData)
+    console.log(
+      "Updating transaction:",
+      transactionId,
+      "with data:",
+      updateData
+    );
 
     // Build update object with current values as defaults
     const updatedTransaction = {
       branch_id: updateData.branch_id ?? currentTransaction.branch_id,
       user_id: updateData.user_id ?? currentTransaction.user_id,
-      transaction_type: updateData.transaction_type ?? currentTransaction.transaction_type,
+      transaction_type:
+        updateData.transaction_type ?? currentTransaction.transaction_type,
       tracking_id: updateData.tracking_id ?? currentTransaction.tracking_id,
-      customer_name: updateData.customer_name ?? currentTransaction.customer_name,
-      customer_phone: updateData.customer_phone ?? currentTransaction.customer_phone,
+      customer_name:
+        updateData.customer_name ?? currentTransaction.customer_name,
+      customer_phone:
+        updateData.customer_phone ?? currentTransaction.customer_phone,
       amount: updateData.amount ?? currentTransaction.amount,
-      settlement_reference: updateData.settlement_reference ?? currentTransaction.settlement_reference,
-      settlement_from_date: updateData.settlement_from_date ?? currentTransaction.settlement_from_date,
-      settlement_to_date: updateData.settlement_to_date ?? currentTransaction.settlement_to_date,
+      settlement_reference:
+        updateData.settlement_reference ??
+        currentTransaction.settlement_reference,
+      settlement_from_date:
+        updateData.settlement_from_date ??
+        currentTransaction.settlement_from_date,
+      settlement_to_date:
+        updateData.settlement_to_date ?? currentTransaction.settlement_to_date,
       status: updateData.status ?? currentTransaction.status,
-      delivery_status: updateData.delivery_status ?? currentTransaction.delivery_status,
+      delivery_status:
+        updateData.delivery_status ?? currentTransaction.delivery_status,
       notes: updateData.notes ?? currentTransaction.notes,
-      float_account_id: updateData.float_account_id ?? currentTransaction.float_account_id,
-    }
+      float_account_id:
+        updateData.float_account_id ?? currentTransaction.float_account_id,
+    };
 
     const result = await sql`
       UPDATE jumia_transactions 
@@ -486,26 +596,30 @@ export async function updateJumiaTransaction(
         updated_at = CURRENT_TIMESTAMP
       WHERE transaction_id = ${transactionId}
       RETURNING *
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      console.log("Transaction updated successfully:", result[0])
-      return result[0] as JumiaTransaction
+      console.log("Transaction updated successfully:", result[0]);
+      return result[0] as JumiaTransaction;
     }
 
-    throw new Error("Transaction not found or update failed")
+    throw new Error("Transaction not found or update failed");
   } catch (error) {
-    console.error("Error updating Jumia transaction:", error)
-    throw error
+    console.error("Error updating Jumia transaction:", error);
+    throw error;
   }
 }
 
 // Delete transaction
-export async function deleteJumiaTransaction(transactionId: string): Promise<JumiaTransaction> {
-  const useDatabase = await tablesExist()
+export async function deleteJumiaTransaction(
+  transactionId: string
+): Promise<JumiaTransaction> {
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
@@ -513,45 +627,54 @@ export async function deleteJumiaTransaction(transactionId: string): Promise<Jum
       DELETE FROM jumia_transactions 
       WHERE transaction_id = ${transactionId}
       RETURNING *
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      const deletedTransaction = result[0] as JumiaTransaction
+      const deletedTransaction = result[0] as JumiaTransaction;
 
       // Reverse float account updates
-      await handleFloatAccountUpdates(deletedTransaction, "delete")
+      await handleFloatAccountUpdates(deletedTransaction, "delete");
 
-      return deletedTransaction
+      return deletedTransaction;
     }
 
-    throw new Error("Transaction not found")
+    throw new Error("Transaction not found");
   } catch (error) {
-    console.error("Error deleting Jumia transaction:", error)
-    throw error
+    console.error("Error deleting Jumia transaction:", error);
+    throw error;
   }
 }
 
 // Get Jumia statistics - Fixed to handle proper UUID format
-export async function getJumiaStatistics(branchId: string): Promise<JumiaStatistics> {
-  const useDatabase = await tablesExist()
+export async function getJumiaStatistics(
+  branchId: string
+): Promise<JumiaStatistics> {
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
     // Validate branchId format - if it's not a UUID, try to find the actual branch ID
-    let actualBranchId = branchId
+    let actualBranchId = branchId;
 
     // If branchId looks like "branch-1", try to find the actual UUID
-    if (branchId && !branchId.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
+    if (
+      branchId &&
+      !branchId.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+      )
+    ) {
       const branchResult = await sql`
         SELECT id FROM branches WHERE name ILIKE ${`%${branchId}%`} OR id = ${branchId} LIMIT 1
-      `
+      `;
       if (branchResult.length > 0) {
-        actualBranchId = branchResult[0].id
+        actualBranchId = branchResult[0].id;
       } else {
-        console.warn("Could not find branch, using original branchId")
+        console.warn("Could not find branch, using original branchId");
       }
     }
 
@@ -564,17 +687,17 @@ export async function getJumiaStatistics(branchId: string): Promise<JumiaStatist
         COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as total_settlements
       FROM jumia_transactions 
       WHERE branch_id = ${actualBranchId}
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      const stats = result[0] as any
+      const stats = result[0] as any;
       return {
         total_packages: Number.parseInt(stats.total_packages) || 0,
         packages_collected: Number.parseInt(stats.packages_collected) || 0,
         total_pod_amount: Number.parseFloat(stats.total_pod_amount) || 0,
         unsettled_amount: Number.parseFloat(stats.unsettled_amount) || 0,
         total_settlements: Number.parseInt(stats.total_settlements) || 0,
-      }
+      };
     }
 
     return {
@@ -583,10 +706,10 @@ export async function getJumiaStatistics(branchId: string): Promise<JumiaStatist
       total_pod_amount: 0,
       unsettled_amount: 0,
       total_settlements: 0,
-    }
+    };
   } catch (error) {
-    console.error("Error getting Jumia statistics from database:", error)
-    throw error
+    console.error("Error getting Jumia statistics from database:", error);
+    throw error;
   }
 }
 
@@ -594,13 +717,13 @@ export async function getJumiaStatistics(branchId: string): Promise<JumiaStatist
 async function updateJumiaLiability(
   branchId: string,
   amount: number,
-  operation: "increase" | "decrease",
+  operation: "increase" | "decrease"
 ): Promise<void> {
-  const useDatabase = await tablesExist()
+  const useDatabase = await tablesExist();
 
   if (useDatabase) {
     try {
-      const adjustedAmount = operation === "increase" ? amount : -amount
+      const adjustedAmount = operation === "increase" ? amount : -amount;
 
       await sql`
         INSERT INTO jumia_liability (branch_id, amount, last_updated)
@@ -609,33 +732,35 @@ async function updateJumiaLiability(
         DO UPDATE SET 
           amount = jumia_liability.amount + ${adjustedAmount},
           last_updated = CURRENT_TIMESTAMP
-      `
+      `;
     } catch (error) {
-      console.error("Error updating Jumia liability:", error)
+      console.error("Error updating Jumia liability:", error);
     }
   }
 }
 
 // Get Jumia liability
 export async function getJumiaLiability(branchId: string): Promise<number> {
-  const useDatabase = await tablesExist()
+  const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error("Jumia database tables not found. Please initialize the database first.")
+    throw new Error(
+      "Jumia database tables not found. Please initialize the database first."
+    );
   }
 
   try {
     const result = await sql`
       SELECT amount FROM jumia_liability WHERE branch_id = ${branchId}
-    `
+    `;
 
     if (Array.isArray(result) && result.length > 0) {
-      return Number.parseFloat(result[0].amount) || 0
+      return Number.parseFloat(result[0].amount) || 0;
     }
 
-    return 0
+    return 0;
   } catch (error) {
-    console.error("Error getting Jumia liability:", error)
-    throw error
+    console.error("Error getting Jumia liability:", error);
+    throw error;
   }
 }

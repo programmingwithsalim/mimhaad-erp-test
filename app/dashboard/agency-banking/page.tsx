@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useServiceStatistics } from "@/hooks/use-service-statistics";
+import { useDynamicFee } from "@/hooks/use-dynamic-fee";
 import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
 import { TransactionEditDialog } from "@/components/shared/transaction-edit-dialog";
 import { TransactionDeleteDialog } from "@/components/shared/transaction-delete-dialog";
@@ -48,8 +49,12 @@ import {
   AlertTriangle,
   Edit,
   Trash2,
+  Printer,
 } from "lucide-react";
 import { format } from "date-fns";
+import { EditAgencyBankingTransactionDialog } from "@/components/transactions/edit-agency-banking-transaction-dialog";
+import { TransactionReceipt } from "@/components/shared/transaction-receipt";
+import { TransactionActions } from "@/components/transactions/transaction-actions";
 
 export default function AgencyBankingPage() {
   const { toast } = useToast();
@@ -63,7 +68,7 @@ export default function AgencyBankingPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [transactions, setTransactions] = useState([]);
-  const [floatAccounts, setFloatAccounts] = useState([]);
+  const [floatAccounts, setFloatAccounts] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
   const [loadingFloats, setLoadingFloats] = useState(false);
 
@@ -71,6 +76,8 @@ export default function AgencyBankingPage() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [receiptDialogOpen, setReceiptDialogOpen] = useState(false);
+  const [receiptData, setReceiptData] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     type: "",
@@ -78,9 +85,45 @@ export default function AgencyBankingPage() {
     fee: "",
     customer_name: "",
     account_number: "",
-    partner_bank: "",
+    partner_bank_id: "",
     notes: "",
   });
+  const [feeLoading, setFeeLoading] = useState(false);
+
+  // Helper to get selected partner bank object
+  const selectedPartnerBank = floatAccounts.find(
+    (fa: any) => fa.id === formData.partner_bank_id
+  );
+
+  // Use dynamic fee calculation
+  const { calculateFee } = useDynamicFee();
+
+  // Fetch fee when type, amount, or partner bank changes
+  useEffect(() => {
+    const fetchFee = async () => {
+      if (!formData.type || !formData.amount || !formData.partner_bank_id) {
+        setFormData((prev) => ({ ...prev, fee: "" }));
+        return;
+      }
+      setFeeLoading(true);
+      try {
+        const feeResult = await calculateFee(
+          "agency_banking",
+          formData.type,
+          Number(formData.amount)
+        );
+        setFormData((prev) => ({
+          ...prev,
+          fee: feeResult.fee.toString(),
+        }));
+      } catch (err) {
+        setFormData((prev) => ({ ...prev, fee: "0" }));
+      } finally {
+        setFeeLoading(false);
+      }
+    };
+    fetchFee();
+  }, [formData.type, formData.amount, formData.partner_bank_id, calculateFee]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -170,20 +213,42 @@ export default function AgencyBankingPage() {
       return;
     }
 
-    try {
-      setSubmitting(true);
+    if (
+      !formData.type ||
+      !formData.amount ||
+      !formData.customer_name ||
+      !formData.account_number ||
+      !formData.partner_bank_id
+    ) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      const response = await fetch("/api/agency-banking/transaction", {
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/transactions/unified", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          ...formData,
-          amount: Number.parseFloat(formData.amount),
-          fee: Number.parseFloat(formData.fee || "0"),
+          serviceType: "agency_banking",
+          transactionType: formData.type,
+          amount: Number(formData.amount),
+          fee: Number(formData.fee) || 0,
+          customerName: formData.customer_name,
+          accountNumber: formData.account_number,
+          provider: selectedPartnerBank?.provider || "Unknown Bank",
+          reference: `AGENCY-${Date.now()}`,
+          notes: formData.notes,
           branchId: user.branchId,
           userId: user.id,
+          processedBy: user.name || user.username,
         }),
       });
 
@@ -192,33 +257,34 @@ export default function AgencyBankingPage() {
       if (result.success) {
         toast({
           title: "Transaction Successful",
-          description: "Agency banking transaction created successfully",
+          description:
+            result.message ||
+            "Agency banking transaction processed successfully",
         });
+
+        // Reset form
         setFormData({
           type: "",
           amount: "",
           fee: "",
           customer_name: "",
           account_number: "",
-          partner_bank: "",
+          partner_bank_id: "",
           notes: "",
         });
+
         // Refresh data
         loadTransactions();
         loadFloatAccounts();
         refreshStatistics();
       } else {
-        toast({
-          title: "Transaction Failed",
-          description: result.error || "Failed to create transaction",
-          variant: "destructive",
-        });
+        throw new Error(result.error || "Failed to process transaction");
       }
     } catch (error) {
-      console.error("Error creating transaction:", error);
       toast({
         title: "Transaction Failed",
-        description: "Failed to create transaction",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     } finally {
@@ -279,77 +345,74 @@ export default function AgencyBankingPage() {
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "completed":
-        return <Badge variant="default">Completed</Badge>;
+        return (
+          <Badge variant="outline" className="bg-green-50 text-green-700">
+            Completed
+          </Badge>
+        );
       case "pending":
-        return <Badge variant="secondary">Pending</Badge>;
+        return (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+            Pending
+          </Badge>
+        );
       case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
+      case "error":
+        return (
+          <Badge variant="outline" className="bg-red-50 text-red-700">
+            Failed
+          </Badge>
+        );
+      case "reversed":
+        return (
+          <Badge variant="outline" className="bg-red-100 text-red-800">
+            Reversed
+          </Badge>
+        );
+      case "deleted":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-200 text-gray-700 line-through"
+          >
+            Deleted
+          </Badge>
+        );
       default:
-        return <Badge variant="outline">Unknown</Badge>;
+        return <Badge variant="outline">{status || "Unknown"}</Badge>;
     }
   };
 
   // Handle edit transaction
   const handleEditTransaction = (transaction: any) => {
-    console.log("🔧 [AGENCY-EDIT] Transaction clicked:", transaction);
-    console.log(
-      "🔧 [AGENCY-EDIT] Current state - editDialogOpen:",
-      editDialogOpen
-    );
-    console.log(
-      "🔧 [AGENCY-EDIT] Current state - selectedTransaction:",
-      selectedTransaction
-    );
-
-    // Map the transaction data to match what the dialog expects (snake_case)
-    const mappedTransaction = {
-      ...transaction,
-      customer_name: transaction.customer_name || transaction.customerName,
-      created_at: transaction.created_at || transaction.date,
-      transaction_type: transaction.type,
-    };
-    console.log("🔧 [AGENCY-EDIT] Mapped transaction:", mappedTransaction);
-
-    setSelectedTransaction(mappedTransaction);
-    console.log("🔧 [AGENCY-EDIT] Set selectedTransaction");
-
+    setSelectedTransaction(transaction);
     setEditDialogOpen(true);
-    console.log("🔧 [AGENCY-EDIT] Set editDialogOpen to true");
   };
 
   // Handle delete transaction
   const handleDeleteTransaction = (transaction: any) => {
-    console.log("🗑️ [AGENCY-DELETE] Transaction clicked:", transaction);
-    console.log(
-      "🗑️ [AGENCY-DELETE] Current state - deleteDialogOpen:",
-      deleteDialogOpen
-    );
-    console.log(
-      "🗑️ [AGENCY-DELETE] Current state - selectedTransaction:",
-      selectedTransaction
-    );
-
-    // Map the transaction data to match what the dialog expects (snake_case)
-    const mappedTransaction = {
-      ...transaction,
-      customer_name: transaction.customer_name || transaction.customerName,
-      created_at: transaction.created_at || transaction.date,
-      transaction_type: transaction.type,
-    };
-    console.log("🗑️ [AGENCY-DELETE] Mapped transaction:", mappedTransaction);
-
-    setSelectedTransaction(mappedTransaction);
-    console.log("🗑️ [AGENCY-DELETE] Set selectedTransaction");
-
+    setSelectedTransaction(transaction);
     setDeleteDialogOpen(true);
-    console.log("🗑️ [AGENCY-DELETE] Set deleteDialogOpen to true");
   };
 
-  // Handle successful edit/delete
-  const handleTransactionSuccess = () => {
-    loadTransactions();
-    loadFloatAccounts();
-    refreshStatistics();
+  // Handle print transaction
+  const handlePrintTransaction = (transaction: any) => {
+    setReceiptData({
+      transactionId: transaction.id,
+      sourceModule: "agency_banking",
+      transactionType: transaction.type,
+      amount: Number(transaction.amount),
+      fee: Number(transaction.fee),
+      customerName: transaction.customer_name,
+      reference: transaction.reference,
+      branchName: user?.branchName || "",
+      date: transaction.created_at,
+      additionalData: {
+        partnerBank: transaction.partner_bank,
+        accountNumber: transaction.account_number,
+      },
+    });
+    setReceiptDialogOpen(true);
   };
 
   return (
@@ -538,38 +601,63 @@ export default function AgencyBankingPage() {
                             <SelectItem value="withdrawal">
                               Withdrawal
                             </SelectItem>
-                            <SelectItem value="interbank">Inter Bank Transfer</SelectItem>
+                            <SelectItem value="interbank_transfer">
+                              Inter Bank Transfer
+                            </SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="partner_bank">Partner Bank</Label>
+                        <Label htmlFor="partner_bank_id">Partner Bank</Label>
                         <Select
-                          value={formData.partner_bank}
+                          value={formData.partner_bank_id}
                           onValueChange={(value) =>
-                            setFormData({ ...formData, partner_bank: value })
+                            setFormData({ ...formData, partner_bank_id: value })
                           }
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Select partner bank" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="GCB">GCB Bank</SelectItem>
-                            <SelectItem value="Ecobank">
-                              Ecobank Ghana
-                            </SelectItem>
-                            <SelectItem value="Standard Chartered">
-                              Standard Chartered
-                            </SelectItem>
-                            <SelectItem value="Absa">
-                              Absa Bank Ghana
-                            </SelectItem>
-                            <SelectItem value="Fidelity">
-                              Fidelity Bank
-                            </SelectItem>
+                            {(floatAccounts as any[]).map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.account_name ||
+                                  account.provider ||
+                                  account.account_number}
+                                {account.current_balance !== undefined &&
+                                  ` (Bal: ${formatCurrency(
+                                    account.current_balance
+                                  )})`}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
+                        {floatAccounts.length === 0 && (
+                          <div className="text-xs text-destructive mt-1">
+                            No partner banks available for this branch.
+                          </div>
+                        )}
+                        {selectedPartnerBank && (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            <span>
+                              Provider: {selectedPartnerBank.provider || "-"}
+                            </span>
+                            {" | "}
+                            <span>
+                              Account:{" "}
+                              {selectedPartnerBank.account_number ||
+                                selectedPartnerBank.account_name}
+                            </span>
+                            {" | "}
+                            <span>
+                              Balance:{" "}
+                              {formatCurrency(
+                                selectedPartnerBank.current_balance
+                              )}
+                            </span>
+                          </div>
+                        )}
                       </div>
 
                       <div className="space-y-2">
@@ -628,10 +716,9 @@ export default function AgencyBankingPage() {
                           step="0.01"
                           min="0"
                           value={formData.fee}
-                          onChange={(e) =>
-                            setFormData({ ...formData, fee: e.target.value })
-                          }
-                          placeholder="0.00"
+                          readOnly
+                          disabled={feeLoading}
+                          placeholder={feeLoading ? "Calculating..." : "0.00"}
                         />
                       </div>
                     </div>
@@ -674,7 +761,7 @@ export default function AgencyBankingPage() {
             {/* Float Display - 1 column */}
             <div className="lg:col-span-1">
               <DynamicFloatDisplay
-                selectedProvider={formData.partner_bank}
+                selectedProvider={selectedPartnerBank?.provider}
                 floatAccounts={floatAccounts}
                 serviceType="Agency Banking"
                 onRefresh={loadFloatAccounts}
@@ -764,29 +851,16 @@ export default function AgencyBankingPage() {
                           {getStatusBadge(transaction.status)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                handleEditTransaction(transaction);
-                              }}
-                              title="Edit Transaction"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                handleDeleteTransaction(transaction);
-                              }}
-                              title="Delete Transaction"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <TransactionActions
+                            transaction={transaction}
+                            userRole={user?.role || "Operation"}
+                            sourceModule="agency_banking"
+                            onSuccess={() => {
+                              loadTransactions();
+                              loadFloatAccounts();
+                              refreshStatistics();
+                            }}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -800,12 +874,17 @@ export default function AgencyBankingPage() {
 
       {/* Edit Dialog */}
       {editDialogOpen && selectedTransaction && (
-        <TransactionEditDialog
+        <EditAgencyBankingTransactionDialog
           open={editDialogOpen}
           onOpenChange={setEditDialogOpen}
           transaction={selectedTransaction}
-          sourceModule="agency_banking"
-          onSuccess={handleTransactionSuccess}
+          onSuccess={() => {
+            setEditDialogOpen(false);
+            setSelectedTransaction(null);
+            loadTransactions();
+            loadFloatAccounts();
+            refreshStatistics();
+          }}
         />
       )}
 
@@ -816,7 +895,58 @@ export default function AgencyBankingPage() {
           onOpenChange={setDeleteDialogOpen}
           transaction={selectedTransaction}
           sourceModule="agency_banking"
-          onSuccess={handleTransactionSuccess}
+          onSuccess={async () => {
+            if (!selectedTransaction) return;
+            try {
+              const response = await fetch(
+                `/api/transactions/${selectedTransaction.id}`,
+                {
+                  method: "DELETE",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    sourceModule: "agency_banking",
+                    processedBy: user?.id,
+                    branchId: user?.branchId,
+                    reason: "User requested deletion",
+                  }),
+                }
+              );
+              const result = await response.json();
+              if (result.success) {
+                toast({
+                  title: "Transaction Deleted",
+                  description: "Transaction has been deleted successfully.",
+                });
+                loadTransactions();
+                loadFloatAccounts();
+                refreshStatistics();
+              } else {
+                toast({
+                  title: "Delete Failed",
+                  description: result.error || "Failed to delete transaction",
+                  variant: "destructive",
+                });
+              }
+            } catch (error) {
+              toast({
+                title: "Delete Failed",
+                description: "Failed to delete transaction",
+                variant: "destructive",
+              });
+            } finally {
+              setDeleteDialogOpen(false);
+              setSelectedTransaction(null);
+            }
+          }}
+        />
+      )}
+
+      {/* Receipt Dialog */}
+      {receiptDialogOpen && receiptData && (
+        <TransactionReceipt
+          open={receiptDialogOpen}
+          onOpenChange={setReceiptDialogOpen}
+          data={receiptData}
         />
       )}
     </div>

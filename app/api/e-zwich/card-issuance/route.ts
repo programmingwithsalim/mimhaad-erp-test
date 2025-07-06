@@ -1,306 +1,356 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import { GLPostingService } from "@/lib/services/gl-posting-service-universal";
-import { auditLogger } from "@/lib/services/audit-logger-service";
+import { AuditLoggerService } from "@/lib/services/audit-logger-service";
+import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
+export async function GET(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const branchId = searchParams.get("branchId");
+    const limit = searchParams.get("limit") || "50";
+
+    if (!branchId) {
+      return NextResponse.json(
+        { success: false, error: "Branch ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Ensure card issuance table exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS ezwich_card_issuance (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        card_number VARCHAR(20) UNIQUE NOT NULL,
+        batch_id UUID,
+        customer_name VARCHAR(255) NOT NULL,
+        customer_phone VARCHAR(20) NOT NULL,
+        customer_email VARCHAR(255),
+        date_of_birth DATE,
+        gender VARCHAR(10),
+        id_type VARCHAR(50),
+        id_number VARCHAR(50),
+        id_expiry_date DATE,
+        address_line1 VARCHAR(255),
+        address_line2 VARCHAR(255),
+        city VARCHAR(100),
+        region VARCHAR(100),
+        postal_code VARCHAR(20),
+        country VARCHAR(100) DEFAULT 'Ghana',
+        card_status VARCHAR(20) DEFAULT 'active',
+        issue_date DATE DEFAULT CURRENT_DATE,
+        expiry_date DATE,
+        branch_id VARCHAR(100) NOT NULL,
+        issued_by VARCHAR(100) NOT NULL,
+        fee_charged DECIMAL(10,2) DEFAULT 15.00,
+        customer_photo TEXT,
+        id_front_image TEXT,
+        id_back_image TEXT,
+        payment_method VARCHAR(50),
+        partner_bank VARCHAR(100),
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
+    const issuances = await sql`
+      SELECT 
+        ci.*,
+        cb.batch_code,
+        cb.card_type as batch_card_type
+      FROM ezwich_card_issuance ci
+      LEFT JOIN ezwich_card_batches cb ON ci.batch_id = cb.id
+      WHERE ci.branch_id = ${branchId}
+      ORDER BY ci.created_at DESC
+      LIMIT ${Number.parseInt(limit)}
+    `;
+
+    return NextResponse.json({
+      success: true,
+      data: issuances,
+    });
+  } catch (error) {
+    console.error("Error fetching card issuances:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch card issuances" },
+      { status: 500 }
+    );
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const form = await request.formData();
-    const get = (key) => form.get(key);
-    // Extract all fields from form data
-    const cardNumber = get("card_number");
-    const partnerBank = get("partner_bank");
-    const customerName = get("customer_name");
-    const phoneNumber = get("customer_phone");
-    const email = get("customer_email");
-    const dateOfBirth = get("date_of_birth");
-    const gender = get("gender");
-    const addressLine1 = get("address");
-    const addressLine2 = get("address_line2");
-    const city = get("city");
-    const region = get("region");
-    const postalCode = get("postal_code");
-    const idType = get("id_type");
-    const idNumber = get("id_number");
-    const idExpiryDate = get("id_expiry_date");
-    const fee = get("fee");
-    const paymentMethod = get("payment_method");
-    const reference = get("reference");
-    const customerPhoto = get("customer_photo");
-    const idPhoto = get("id_photo");
-    const user_id = get("user_id");
-    const branch_id = get("branch_id");
-    const processed_by = get("processed_by");
+    const formData = await request.formData();
 
-    console.log("🔄 [E-ZWICH] Processing card issuance:", {
-      cardNumber,
-      partnerBank,
-      customerName,
-      phoneNumber,
-      email,
-      dateOfBirth,
-      gender,
-      addressLine1,
-      addressLine2,
-      city,
-      region,
-      postalCode,
-      idType,
-      idNumber,
-      idExpiryDate,
-      fee,
-      paymentMethod,
-      reference,
-      customerPhoto,
-      idPhoto,
-      user_id,
-      branch_id,
-      processed_by,
-    });
+    // Extract form data
+    const card_number = formData.get("card_number") as string;
+    const customer_name = formData.get("customer_name") as string;
+    const customer_phone = formData.get("customer_phone") as string;
+    const customer_email = formData.get("customer_email") as string;
+    const date_of_birth = formData.get("date_of_birth") as string;
+    const gender = formData.get("gender") as string;
+    const id_type = formData.get("id_type") as string;
+    const id_number = formData.get("id_number") as string;
+    const id_expiry_date = formData.get("id_expiry_date") as string;
+    const address_line1 = formData.get("address_line1") as string;
+    const city = formData.get("city") as string;
+    const region = formData.get("region") as string;
+    const card_type = formData.get("card_type") as string;
+    const partner_bank = formData.get("partner_bank") as string;
+    const partner_account_id = formData.get("partner_account_id") as string;
+    const payment_method = formData.get("payment_method") as string;
+    const fee = formData.get("fee") as string;
+    const notes = formData.get("notes") as string;
+    const user_id = formData.get("user_id") as string;
+    const branch_id = formData.get("branch_id") as string;
+    const processed_by = formData.get("processed_by") as string;
 
-    // Validate required fields
-    const requiredFields = {
-      cardNumber: !!cardNumber,
-      partnerBank: !!partnerBank,
-      customerName: !!customerName,
-      phoneNumber: !!phoneNumber,
-      dateOfBirth: !!dateOfBirth,
-      gender: !!gender,
-      addressLine1: !!addressLine1,
-      city: !!city,
-      region: !!region,
-      idType: !!idType,
-      idNumber: !!idNumber,
-      fee: fee !== undefined && fee >= 0,
-      paymentMethod: !!paymentMethod,
-      branch_id: !!branch_id,
-      processed_by: !!processed_by,
-    };
-
-    const missingFields = Object.entries(requiredFields)
-      .filter(([_, isValid]) => !isValid)
-      .map(([field]) => field);
-
-    if (missingFields.length > 0) {
-      console.error("❌ [E-ZWICH] Missing required fields:", missingFields);
-      return NextResponse.json(
-        {
-          success: false,
-          error: "Missing required fields",
-          details: `${missingFields.join(", ")} are required`,
-          missingFields,
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate age (must be at least 18 years old)
-    const birthDate = new Date(dateOfBirth);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
+    // Handle file uploads
+    const customer_photo = formData.get("customer_photo") as File | null;
+    const id_front_image = formData.get("id_front_image") as File | null;
+    const id_back_image = formData.get("id_back_image") as File | null;
 
     if (
-      monthDiff < 0 ||
-      (monthDiff === 0 && today.getDate() < birthDate.getDate())
+      !card_number ||
+      !customer_name ||
+      !customer_phone ||
+      !branch_id ||
+      !processed_by
     ) {
-      age--;
-    }
-
-    if (age < 18) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Age validation failed",
-          details: "Customer must be at least 18 years old",
-        },
+        { success: false, error: "Missing required fields" },
         { status: 400 }
       );
     }
+
+    // Ensure table exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS ezwich_card_issuance (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        card_number VARCHAR(20) UNIQUE NOT NULL,
+        batch_id UUID,
+        customer_name VARCHAR(255) NOT NULL,
+        customer_phone VARCHAR(20) NOT NULL,
+        customer_email VARCHAR(255),
+        date_of_birth DATE,
+        gender VARCHAR(10),
+        id_type VARCHAR(50),
+        id_number VARCHAR(50),
+        id_expiry_date DATE,
+        address_line1 VARCHAR(255),
+        address_line2 VARCHAR(255),
+        city VARCHAR(100),
+        region VARCHAR(100),
+        postal_code VARCHAR(20),
+        country VARCHAR(100) DEFAULT 'Ghana',
+        card_status VARCHAR(20) DEFAULT 'active',
+        issue_date DATE DEFAULT CURRENT_DATE,
+        expiry_date DATE,
+        branch_id VARCHAR(100) NOT NULL,
+        issued_by VARCHAR(100) NOT NULL,
+        fee_charged DECIMAL(10,2) DEFAULT 15.00,
+        customer_photo TEXT,
+        id_front_image TEXT,
+        id_back_image TEXT,
+        payment_method VARCHAR(50),
+        partner_bank VARCHAR(100),
+        notes TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
 
     // Check if card number already exists
     const existingCard = await sql`
-      SELECT id FROM e_zwich_card_issuances 
-      WHERE card_number = ${cardNumber}
+      SELECT id FROM ezwich_card_issuance WHERE card_number = ${card_number}
     `;
 
     if (existingCard.length > 0) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Card number already exists",
-          details: `Card number ${cardNumber} has already been issued`,
-        },
+        { success: false, error: "Card number already exists" },
         { status: 400 }
       );
     }
 
-    // Find available card batch for this branch
+    // Find an available batch for the card type
     const availableBatch = await sql`
-      SELECT id, batch_code, quantity_available 
-      FROM ezwich_card_batches 
+      SELECT id, batch_code FROM ezwich_card_batches 
       WHERE branch_id = ${branch_id} 
-      AND quantity_available > 0 
-      AND status = 'received'
+      AND card_type = ${card_type || "standard"}
+      AND quantity_available > 0
       ORDER BY created_at ASC
       LIMIT 1
     `;
 
     if (availableBatch.length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "No card inventory available",
-          details: "No card batches with available cards found for this branch",
-        },
+        { success: false, error: "No available batches for this card type" },
         { status: 400 }
       );
     }
 
-    const batch = availableBatch[0];
-    const finalReference = reference || `CARD-${cardNumber}-${Date.now()}`;
+    const batch_id = availableBatch[0].id;
 
-    // Get user details if user_id is provided and is a valid UUID
-    let actualUserId = null;
-    let issuedBy = processed_by;
+    // Convert files to base64 if provided
+    let customer_photo_base64 = null;
+    let id_front_image_base64 = null;
+    let id_back_image_base64 = null;
 
-    if (user_id) {
-      // Check if user_id is a valid UUID format
-      const uuidRegex =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      if (uuidRegex.test(user_id)) {
-        actualUserId = user_id;
-        // Get user details for issued_by field
-        const userDetails = await sql`
-          SELECT id, email FROM users WHERE id = ${user_id}
-        `;
-        if (userDetails.length > 0) {
-          issuedBy = userDetails[0].id;
-        }
-      } else {
-        // If user_id is not a UUID (like an email), use it as processed_by
-        issuedBy = user_id;
-      }
+    if (customer_photo) {
+      const buffer = await customer_photo.arrayBuffer();
+      customer_photo_base64 = Buffer.from(buffer).toString("base64");
     }
 
-    // Start transaction
-    try {
-      // Insert card issuance record using fee_charged column
-      const issuanceResult = await sql`
-        INSERT INTO e_zwich_card_issuances (
-          card_number, partner_bank, customer_name, customer_phone, customer_email,
-          date_of_birth, gender, address_line1, address_line2, city, region,
-          postal_code, id_type, id_number, id_expiry_date, fee_charged, payment_method,
-          reference, customer_photo, id_photo, status, issued_by, branch_id,
-          created_at
-        ) VALUES (
-          ${cardNumber}, ${partnerBank}, ${customerName}, ${phoneNumber},
-          ${email || null}, ${dateOfBirth}, ${gender}, ${addressLine1}, ${
-        addressLine2 || null
-      },
-          ${city}, ${region}, ${postalCode || null}, ${idType}, ${idNumber}, 
-          ${idExpiryDate || null}, ${fee}, ${paymentMethod}, ${finalReference},
-          ${customerPhoto || null}, ${
-        idPhoto || null
-      }, 'completed', ${issuedBy},
-          ${branch_id}, CURRENT_TIMESTAMP
-        )
-        RETURNING *
-      `;
+    if (id_front_image) {
+      const buffer = await id_front_image.arrayBuffer();
+      id_front_image_base64 = Buffer.from(buffer).toString("base64");
+    }
 
-      const issuance = issuanceResult[0];
+    if (id_back_image) {
+      const buffer = await id_back_image.arrayBuffer();
+      id_back_image_base64 = Buffer.from(buffer).toString("base64");
+    }
 
-      // Update card batch inventory - handle the constraint properly
-      const currentQuantity = Number(batch.quantity_available);
-      const newQuantityAvailable = Math.max(0, currentQuantity - 1);
-      const newQuantityIssued = Number(batch.quantity_issued || 0) + 1;
-
-      await sql`
-        UPDATE ezwich_card_batches 
-        SET quantity_available = ${newQuantityAvailable},
-            quantity_issued = ${newQuantityIssued},
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = ${batch.id}
-      `;
-
-      console.log(
-        `✅ [E-ZWICH] Updated batch ${batch.batch_code}: ${newQuantityAvailable} cards remaining`
-      );
-
-      // Create GL entries for card issuance
-      try {
-        const glResult = await GLPostingService.createEZwichGLEntries({
-          transactionId: issuance.id,
-          type: "card_issuance",
-          amount: Number(fee),
-          fee: 0, // Fee is the main amount for card issuance
-          provider: partnerBank,
-          cardNumber: cardNumber,
-          customerName: customerName,
-          reference: finalReference,
-          processedBy: issuedBy,
-          branchId: branch_id,
-          branchName: "Unknown Branch",
-        });
-
-        if (!glResult.success) {
-          console.warn("⚠️ [E-ZWICH] GL posting failed:", glResult.error);
-        } else {
-          console.log("✅ [E-ZWICH] GL entries created successfully");
-        }
-      } catch (glError) {
-        console.error("❌ [E-ZWICH] GL posting error:", glError);
-        // Don't fail the transaction if GL posting fails
-      }
-
-      // Log audit trail
-      if (actualUserId) {
-        await auditLogger.log({
-          action: "ezwich_card_issuance",
-          entity_type: "ezwich_card_issuance",
-          entity_id: issuance.id,
-          user_id: actualUserId,
-          branch_id: branch_id,
-          details: {
-            card_number: cardNumber,
-            customer_name: customerName,
-            partner_bank: partnerBank,
-            fee: Number(fee),
-            payment_method: paymentMethod,
-            batch_code: batch.batch_code,
-          },
-          severity: "low",
-        });
-      }
-
-      console.log(
-        "✅ [E-ZWICH] Card issuance processed successfully:",
-        issuance.id
-      );
-
-      return NextResponse.json({
-        success: true,
-        issuance: issuance,
-        batch_info: {
-          batch_code: batch.batch_code,
-          remaining_cards: newQuantityAvailable,
+    // Create the card issuance
+    const result = await sql`
+      INSERT INTO ezwich_card_issuance (
+        card_number,
+        batch_id,
+        customer_name,
+        customer_phone,
+        customer_email,
+        date_of_birth,
+        gender,
+        id_type,
+        id_number,
+        id_expiry_date,
+        address_line1,
+        city,
+        region,
+        card_status,
+        issue_date,
+        expiry_date,
+        branch_id,
+        issued_by,
+        fee_charged,
+        customer_photo,
+        id_front_image,
+        id_back_image,
+        payment_method,
+        partner_bank,
+        notes
+      ) VALUES (
+        ${card_number},
+        ${batch_id},
+        ${customer_name},
+        ${customer_phone},
+        ${customer_email || null},
+        ${date_of_birth ? new Date(date_of_birth) : null},
+        ${gender || null},
+        ${id_type || null},
+        ${id_number || null},
+        ${id_expiry_date ? new Date(id_expiry_date) : null},
+        ${address_line1 || null},
+        ${city || null},
+        ${region || null},
+        'active',
+        CURRENT_DATE,
+        ${
+          new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split("T")[0]
         },
-        message: "E-Zwich card issued successfully",
-      });
-    } catch (error) {
-      console.error("❌ [E-ZWICH] Transaction failed:", error);
-      throw error;
+        ${branch_id},
+        ${processed_by},
+        ${Number.parseFloat(fee || "15.00")},
+        ${customer_photo_base64},
+        ${id_front_image_base64},
+        ${id_back_image_base64},
+        ${payment_method || null},
+        ${partner_bank || null},
+        ${notes || null}
+      )
+      RETURNING *
+    `;
+
+    const newIssuance = result[0];
+
+    // Update batch quantity
+    await sql`
+      UPDATE ezwich_card_batches 
+      SET quantity_issued = quantity_issued + 1
+      WHERE id = ${batch_id}
+    `;
+
+    // Create GL entries for card issuance
+    try {
+      await UnifiedGLPostingService.createCardIssuanceGLEntries(
+        {
+          id: newIssuance.id,
+          card_number: newIssuance.card_number,
+          fee_charged: Number(newIssuance.fee_charged),
+          payment_method: payment_method || "cash",
+          partner_bank: partner_bank || null,
+        },
+        processed_by,
+        branch_id
+      );
+    } catch (glError) {
+      console.error("GL posting failed for card issuance:", glError);
+      // Continue with issuance even if GL posting fails
     }
-  } catch (error) {
-    console.error("❌ [E-ZWICH] Card issuance error:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to issue E-Zwich card",
-        details: error instanceof Error ? error.message : "Unknown error",
+
+    // Update float account balance if partner account is specified
+    if (partner_account_id && fee) {
+      try {
+        const feeAmount = Number.parseFloat(fee);
+        await sql`
+          UPDATE float_accounts 
+          SET current_balance = current_balance + ${feeAmount},
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${partner_account_id}
+        `;
+        console.log(
+          `🔄 [CARD ISSUANCE] Updated float account ${partner_account_id} balance by ${feeAmount}`
+        );
+      } catch (floatError) {
+        console.error("Failed to update float account balance:", floatError);
+        // Continue with issuance even if float update fails
+      }
+    }
+
+    // Log audit
+    await AuditLoggerService.log({
+      userId: processed_by,
+      username: "System User",
+      actionType: "card_issuance",
+      entityType: "ezwich_card",
+      entityId: newIssuance.id,
+      description: "E-Zwich card issued successfully",
+      details: {
+        card_number: newIssuance.card_number,
+        customer_name: newIssuance.customer_name,
+        customer_phone: newIssuance.customer_phone,
+        fee_charged: newIssuance.fee_charged,
+        payment_method: payment_method,
+        partner_bank: partner_bank,
       },
+      severity: "medium",
+      branchId: branch_id,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: newIssuance,
+      cardId: newIssuance.id,
+      message: "Card issued successfully",
+    });
+  } catch (error) {
+    console.error("Error creating card issuance:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to create card issuance" },
       { status: 500 }
     );
   }

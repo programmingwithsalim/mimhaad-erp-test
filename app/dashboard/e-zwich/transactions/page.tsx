@@ -1,18 +1,48 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,44 +52,55 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { useToast } from "@/hooks/use-toast"
-import { useCurrentUser } from "@/hooks/use-current-user"
-import { Search, Filter, MoreHorizontal, Edit, Trash2, RefreshCw, Download, Loader2 } from "lucide-react"
-import { format } from "date-fns"
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import {
+  Search,
+  Filter,
+  MoreHorizontal,
+  Edit,
+  Trash2,
+  RefreshCw,
+  Download,
+  Loader2,
+} from "lucide-react";
+import { format } from "date-fns";
 
 interface Transaction {
-  id: string
-  type: "withdrawal" | "card_issuance"
-  card_number?: string
-  customer_name?: string
-  customer_phone?: string
-  phone_number?: string
-  amount: number
-  fee: number
-  partner_bank?: string
-  status: string
-  reference?: string
-  created_at: string
-  processed_by?: string
-  issued_by?: string
-  payment_method?: string
+  id: string;
+  type: "withdrawal" | "card_issuance";
+  card_number?: string;
+  customer_name?: string;
+  customer_phone?: string;
+  phone_number?: string;
+  amount: number;
+  fee: number;
+  partner_bank?: string;
+  status: string;
+  reference?: string;
+  created_at: string;
+  processed_by?: string;
+  issued_by?: string;
+  payment_method?: string;
 }
 
 export default function EZwichTransactionsPage() {
-  const { user } = useCurrentUser()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [typeFilter, setTypeFilter] = useState("all")
-  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
-  const [deletingTransaction, setDeletingTransaction] = useState<Transaction | null>(null)
-  const [showEditDialog, setShowEditDialog] = useState(false)
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false)
-  const [isUpdating, setIsUpdating] = useState(false)
-  const [isDeleting, setIsDeleting] = useState(false)
-  const { toast } = useToast()
+  const { user } = useCurrentUser();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [editingTransaction, setEditingTransaction] =
+    useState<Transaction | null>(null);
+  const [deletingTransaction, setDeletingTransaction] =
+    useState<Transaction | null>(null);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const { toast } = useToast();
 
   const [editForm, setEditForm] = useState({
     customer_name: "",
@@ -67,25 +108,27 @@ export default function EZwichTransactionsPage() {
     amount: "",
     status: "",
     notes: "",
-  })
+  });
 
   useEffect(() => {
     if (user?.branchId) {
-      fetchTransactions()
+      fetchTransactions();
     }
-  }, [user?.branchId])
+  }, [user?.branchId]);
 
   const fetchTransactions = async () => {
-    if (!user?.branchId) return
+    if (!user?.branchId) return;
 
     try {
-      setLoading(true)
-      const allTransactions: Transaction[] = []
+      setLoading(true);
+      const allTransactions: Transaction[] = [];
 
       // Fetch withdrawals
-      const withdrawalsResponse = await fetch(`/api/e-zwich/withdrawals?branchId=${user.branchId}`)
+      const withdrawalsResponse = await fetch(
+        `/api/e-zwich/withdrawals?branchId=${user.branchId}`
+      );
       if (withdrawalsResponse.ok) {
-        const withdrawalsData = await withdrawalsResponse.json()
+        const withdrawalsData = await withdrawalsResponse.json();
         if (withdrawalsData.success && withdrawalsData.withdrawals) {
           withdrawalsData.withdrawals.forEach((withdrawal: any) => {
             allTransactions.push({
@@ -99,18 +142,21 @@ export default function EZwichTransactionsPage() {
               fee: Number(withdrawal.fee || 0),
               partner_bank: withdrawal.partner_bank,
               status: withdrawal.status,
-              reference: withdrawal.reference || withdrawal.transaction_reference,
+              reference:
+                withdrawal.reference || withdrawal.transaction_reference,
               created_at: withdrawal.created_at || withdrawal.transaction_date,
               processed_by: withdrawal.processed_by,
-            })
-          })
+            });
+          });
         }
       }
 
       // Fetch card issuances
-      const issuancesResponse = await fetch(`/api/e-zwich/card-issuances?branchId=${user.branchId}`)
+      const issuancesResponse = await fetch(
+        `/api/e-zwich/card-issuances?branchId=${user.branchId}`
+      );
       if (issuancesResponse.ok) {
-        const issuancesData = await issuancesResponse.json()
+        const issuancesData = await issuancesResponse.json();
         if (issuancesData.success && issuancesData.data) {
           issuancesData.data.forEach((issuance: any) => {
             allTransactions.push({
@@ -128,73 +174,77 @@ export default function EZwichTransactionsPage() {
               created_at: issuance.created_at,
               issued_by: issuance.issued_by,
               payment_method: issuance.payment_method,
-            })
-          })
+            });
+          });
         }
       }
 
       // Sort by created_at descending
-      allTransactions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      allTransactions.sort(
+        (a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
 
-      setTransactions(allTransactions)
+      setTransactions(allTransactions);
     } catch (error) {
-      console.error("Error fetching transactions:", error)
+      console.error("Error fetching transactions:", error);
       toast({
         title: "Error",
         description: "Failed to fetch transactions",
         variant: "destructive",
-      })
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleEdit = (transaction: Transaction) => {
-    setEditingTransaction(transaction)
+    setEditingTransaction(transaction);
     setEditForm({
       customer_name: transaction.customer_name || "",
-      phone_number: transaction.phone_number || transaction.customer_phone || "",
+      phone_number:
+        transaction.phone_number || transaction.customer_phone || "",
       amount: transaction.amount.toString(),
       status: transaction.status,
       notes: "",
-    })
-    setShowEditDialog(true)
-  }
+    });
+    setShowEditDialog(true);
+  };
 
   const handleDelete = (transaction: Transaction) => {
-    setDeletingTransaction(transaction)
-    setShowDeleteDialog(true)
-  }
+    setDeletingTransaction(transaction);
+    setShowDeleteDialog(true);
+  };
 
   const handleUpdateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!editingTransaction) return
+    e.preventDefault();
+    if (!editingTransaction) return;
 
-    setIsUpdating(true)
+    setIsUpdating(true);
     try {
       const endpoint =
         editingTransaction.type === "withdrawal"
           ? `/api/e-zwich/withdrawals/${editingTransaction.id}`
-          : `/api/e-zwich/card-issuances/${editingTransaction.id}`
+          : `/api/e-zwich/card-issuances/${editingTransaction.id}`;
 
       const updateData: any = {
         customer_name: editForm.customer_name,
         status: editForm.status,
         notes: editForm.notes,
-      }
+      };
 
       // Add phone number field based on transaction type
       if (editingTransaction.type === "withdrawal") {
-        updateData.customer_phone = editForm.phone_number
+        updateData.customer_phone = editForm.phone_number;
       } else {
-        updateData.customer_phone = editForm.phone_number
+        updateData.customer_phone = editForm.phone_number;
       }
 
       // Add amount field based on transaction type
       if (editingTransaction.type === "withdrawal") {
-        updateData.amount = Number(editForm.amount)
+        updateData.amount = Number(editForm.amount);
       } else {
-        updateData.fee_charged = Number(editForm.amount)
+        updateData.fee_charged = Number(editForm.amount);
       }
 
       const response = await fetch(endpoint, {
@@ -203,118 +253,136 @@ export default function EZwichTransactionsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(updateData),
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (data.success) {
         toast({
           title: "Success",
           description: "Transaction updated successfully",
-        })
-        setShowEditDialog(false)
-        setEditingTransaction(null)
-        fetchTransactions()
+        });
+        setShowEditDialog(false);
+        setEditingTransaction(null);
+        fetchTransactions();
       } else {
         toast({
           title: "Error",
           description: data.error || "Failed to update transaction",
           variant: "destructive",
-        })
+        });
       }
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to update transaction",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsUpdating(false)
+      setIsUpdating(false);
     }
-  }
+  };
 
   const handleDeleteConfirm = async () => {
-    if (!deletingTransaction) return
+    if (!deletingTransaction) return;
 
-    setIsDeleting(true)
+    setIsDeleting(true);
     try {
       const endpoint =
         deletingTransaction.type === "withdrawal"
           ? `/api/e-zwich/withdrawals/${deletingTransaction.id}`
-          : `/api/e-zwich/card-issuances/${deletingTransaction.id}`
+          : `/api/e-zwich/card-issuances/${deletingTransaction.id}`;
 
       const response = await fetch(endpoint, {
         method: "DELETE",
-      })
+      });
 
-      const data = await response.json()
+      const data = await response.json();
 
       if (data.success) {
         toast({
           title: "Success",
           description: "Transaction deleted successfully",
-        })
-        setShowDeleteDialog(false)
-        setDeletingTransaction(null)
-        fetchTransactions()
+        });
+        setShowDeleteDialog(false);
+        setDeletingTransaction(null);
+        fetchTransactions();
       } else {
         toast({
           title: "Error",
           description: data.error || "Failed to delete transaction",
           variant: "destructive",
-        })
+        });
       }
     } catch (error) {
       toast({
         title: "Error",
         description: "Failed to delete transaction",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsDeleting(false)
+      setIsDeleting(false);
     }
-  }
+  };
 
   const filteredTransactions = transactions.filter((transaction) => {
     const matchesSearch =
       !searchTerm ||
-      transaction.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transaction.card_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase())
+      transaction.customer_name
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      transaction.card_number
+        ?.toLowerCase()
+        .includes(searchTerm.toLowerCase()) ||
+      transaction.reference?.toLowerCase().includes(searchTerm.toLowerCase());
 
-    const matchesStatus = statusFilter === "all" || transaction.status === statusFilter
-    const matchesType = typeFilter === "all" || transaction.type === typeFilter
+    const matchesStatus =
+      statusFilter === "all" || transaction.status === statusFilter;
+    const matchesType = typeFilter === "all" || transaction.type === typeFilter;
 
-    return matchesSearch && matchesStatus && matchesType
-  })
+    return matchesSearch && matchesStatus && matchesType;
+  });
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "completed":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       case "pending":
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-yellow-100 text-yellow-800";
       case "failed":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
+      case "reversed":
+        return "bg-red-100 text-red-800";
+      case "deleted":
+        return "bg-gray-200 text-gray-700 line-through";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const getTypeColor = (type: string) => {
     switch (type) {
       case "withdrawal":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "card_issuance":
-        return "bg-purple-100 text-purple-800"
+        return "bg-purple-100 text-purple-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const exportTransactions = () => {
     const csvContent = [
-      ["Type", "Card Number", "Customer Name", "Amount", "Fee", "Status", "Date", "Reference"].join(","),
+      [
+        "Type",
+        "Card Number",
+        "Customer Name",
+        "Amount",
+        "Fee",
+        "Status",
+        "Date",
+        "Reference",
+      ].join(","),
       ...filteredTransactions.map((tx) =>
         [
           tx.type,
@@ -325,20 +393,20 @@ export default function EZwichTransactionsPage() {
           tx.status,
           format(new Date(tx.created_at), "yyyy-MM-dd HH:mm:ss"),
           tx.reference || "",
-        ].join(","),
+        ].join(",")
       ),
-    ].join("\n")
+    ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" })
-    const url = window.URL.createObjectURL(blob)
-    const a = document.createElement("a")
-    a.href = url
-    a.download = `ezwich-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`
-    document.body.appendChild(a)
-    a.click()
-    window.URL.revokeObjectURL(url)
-    document.body.removeChild(a)
-  }
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ezwich-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  };
 
   if (loading) {
     return (
@@ -348,7 +416,7 @@ export default function EZwichTransactionsPage() {
           <p>Loading transactions...</p>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -356,7 +424,9 @@ export default function EZwichTransactionsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">E-Zwich Transaction History</h1>
-          <p className="text-muted-foreground">View and manage all E-Zwich transactions</p>
+          <p className="text-muted-foreground">
+            View and manage all E-Zwich transactions
+          </p>
         </div>
         <div className="flex gap-2">
           <Button onClick={fetchTransactions} variant="outline">
@@ -413,9 +483,9 @@ export default function EZwichTransactionsPage() {
             <Button
               variant="outline"
               onClick={() => {
-                setSearchTerm("")
-                setStatusFilter("all")
-                setTypeFilter("all")
+                setSearchTerm("");
+                setStatusFilter("all");
+                setTypeFilter("all");
               }}
             >
               Clear Filters
@@ -452,7 +522,9 @@ export default function EZwichTransactionsPage() {
                 {filteredTransactions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-8">
-                      <div className="text-muted-foreground">No transactions found</div>
+                      <div className="text-muted-foreground">
+                        No transactions found
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -460,32 +532,53 @@ export default function EZwichTransactionsPage() {
                     <TableRow key={transaction.id}>
                       <TableCell>
                         <Badge className={getTypeColor(transaction.type)}>
-                          {transaction.type === "withdrawal" ? "Withdrawal" : "Card Issuance"}
+                          {transaction.type === "withdrawal"
+                            ? "Withdrawal"
+                            : "Card Issuance"}
                         </Badge>
                       </TableCell>
-                      <TableCell className="font-medium">{transaction.card_number || "N/A"}</TableCell>
+                      <TableCell className="font-medium">
+                        {transaction.card_number || "N/A"}
+                      </TableCell>
                       <TableCell>
                         <div>
-                          <div className="font-medium">{transaction.customer_name || "N/A"}</div>
+                          <div className="font-medium">
+                            {transaction.customer_name || "N/A"}
+                          </div>
                           <div className="text-sm text-muted-foreground">
-                            {transaction.phone_number || transaction.customer_phone || ""}
+                            {transaction.phone_number ||
+                              transaction.customer_phone ||
+                              ""}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
                         <div>
-                          <div className="font-medium">GHS {transaction.amount?.toFixed(2) || "0.00"}</div>
+                          <div className="font-medium">
+                            GHS {transaction.amount?.toFixed(2) || "0.00"}
+                          </div>
                           {transaction.fee > 0 && (
-                            <div className="text-sm text-muted-foreground">Fee: GHS {transaction.fee.toFixed(2)}</div>
+                            <div className="text-sm text-muted-foreground">
+                              Fee: GHS {transaction.fee.toFixed(2)}
+                            </div>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>{transaction.partner_bank || "N/A"}</TableCell>
                       <TableCell>
-                        <Badge className={getStatusColor(transaction.status)}>{transaction.status}</Badge>
+                        <Badge className={getStatusColor(transaction.status)}>
+                          {transaction.status}
+                        </Badge>
                       </TableCell>
-                      <TableCell>{format(new Date(transaction.created_at), "MMM d, yyyy HH:mm")}</TableCell>
-                      <TableCell className="font-mono text-sm">{transaction.reference || "N/A"}</TableCell>
+                      <TableCell>
+                        {format(
+                          new Date(transaction.created_at),
+                          "MMM d, yyyy HH:mm"
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-sm">
+                        {transaction.reference || "N/A"}
+                      </TableCell>
                       <TableCell>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
@@ -494,11 +587,16 @@ export default function EZwichTransactionsPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => handleEdit(transaction)}>
+                            <DropdownMenuItem
+                              onClick={() => handleEdit(transaction)}
+                            >
                               <Edit className="h-4 w-4 mr-2" />
                               Edit
                             </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleDelete(transaction)} className="text-red-600">
+                            <DropdownMenuItem
+                              onClick={() => handleDelete(transaction)}
+                              className="text-red-600"
+                            >
                               <Trash2 className="h-4 w-4 mr-2" />
                               Delete
                             </DropdownMenuItem>
@@ -528,7 +626,9 @@ export default function EZwichTransactionsPage() {
               <Input
                 id="customer_name"
                 value={editForm.customer_name}
-                onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, customer_name: e.target.value })
+                }
                 required
               />
             </div>
@@ -538,7 +638,9 @@ export default function EZwichTransactionsPage() {
               <Input
                 id="phone_number"
                 value={editForm.phone_number}
-                onChange={(e) => setEditForm({ ...editForm, phone_number: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, phone_number: e.target.value })
+                }
                 required
               />
             </div>
@@ -550,14 +652,21 @@ export default function EZwichTransactionsPage() {
                 type="number"
                 step="0.01"
                 value={editForm.amount}
-                onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, amount: e.target.value })
+                }
                 required
               />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
-              <Select value={editForm.status} onValueChange={(value) => setEditForm({ ...editForm, status: value })}>
+              <Select
+                value={editForm.status}
+                onValueChange={(value) =>
+                  setEditForm({ ...editForm, status: value })
+                }
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -574,13 +683,19 @@ export default function EZwichTransactionsPage() {
               <Textarea
                 id="notes"
                 value={editForm.notes}
-                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, notes: e.target.value })
+                }
                 placeholder="Add any notes about this update..."
               />
             </div>
 
             <div className="flex justify-end space-x-2">
-              <Button type="button" variant="outline" onClick={() => setShowEditDialog(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowEditDialog(false)}
+              >
                 Cancel
               </Button>
               <Button type="submit" disabled={isUpdating}>
@@ -604,13 +719,15 @@ export default function EZwichTransactionsPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Transaction</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete this transaction? This action cannot be undone.
+              Are you sure you want to delete this transaction? This action
+              cannot be undone.
               <br />
               <strong>Type:</strong> {deletingTransaction?.type}
               <br />
               <strong>Customer:</strong> {deletingTransaction?.customer_name}
               <br />
-              <strong>Amount:</strong> GHS {deletingTransaction?.amount?.toFixed(2)}
+              <strong>Amount:</strong> GHS{" "}
+              {deletingTransaction?.amount?.toFixed(2)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -633,5 +750,5 @@ export default function EZwichTransactionsPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-  )
+  );
 }

@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { TransactionManagementService } from "@/lib/services/transaction-management-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { id, sourceModule, processedBy, branchId, reason } = body;
+
+    // Get current user
+    const currentUser = getCurrentUser(request);
+
+    // Check if user is admin
+    if (currentUser.role !== "admin" && currentUser.role !== "Admin") {
+      return NextResponse.json(
+        { success: false, error: "Only admin users can delete transactions" },
+        { status: 403 }
+      );
+    }
 
     // Validate required fields
     if (!id || !sourceModule || !processedBy || !branchId) {

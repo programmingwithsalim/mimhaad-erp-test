@@ -9,21 +9,10 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import {
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Area,
-  AreaChart,
-} from "recharts";
 import {
   TrendingUp,
   DollarSign,
@@ -36,12 +25,15 @@ import {
   CreditCard,
   Building2,
   Package,
+  BarChart3,
+  LineChart,
+  PieChart,
+  Target,
 } from "lucide-react";
 import { format } from "date-fns";
-import { AdminDashboard } from "@/components/dashboard/admin-dashboard";
-import { FinanceDashboard } from "@/components/dashboard/finance-dashboard";
-import { ManagerDashboard } from "@/components/dashboard/manager-dashboard";
 import { EnhancedAdminDashboard } from "@/components/dashboard/enhanced-admin-dashboard";
+import { EnhancedFinanceDashboard } from "@/components/dashboard/enhanced-finance-dashboard";
+import { EnhancedManagerDashboard } from "@/components/dashboard/enhanced-manager-dashboard";
 
 interface DashboardStats {
   totalTransactions: number;
@@ -79,6 +71,19 @@ interface DashboardStats {
     volume: number;
     commission: number;
   }>;
+  financialMetrics: any;
+  revenueAnalysis: any[];
+  teamPerformance: any[];
+  dailyOperations: any[];
+  serviceMetrics: any[];
+  systemAlerts: number;
+  pendingApprovals: number;
+  users: any;
+  branches: any[];
+  branchMetrics: any[];
+  expenses: any;
+  commissions: any;
+  float: any;
 }
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
@@ -95,6 +100,19 @@ const defaultStats: DashboardStats = {
   recentActivity: [],
   floatAlerts: [],
   chartData: [],
+  financialMetrics: {},
+  revenueAnalysis: [],
+  teamPerformance: [],
+  dailyOperations: [],
+  serviceMetrics: [],
+  systemAlerts: 0,
+  pendingApprovals: 0,
+  users: {},
+  branches: [],
+  branchMetrics: [],
+  expenses: {},
+  commissions: {},
+  float: {},
 };
 
 export default function DashboardPage() {
@@ -121,29 +139,22 @@ export default function DashboardPage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `/api/dashboard/enhanced?branchId=${user.branchId}`
-      );
+      const params = new URLSearchParams({
+        branchId: user.branchId,
+        userRole: user.role || "",
+        userBranchId: user.branchId,
+      });
+
+      const response = await fetch(`/api/dashboard/statistics?${params}`, {
+        credentials: "include",
+      });
 
       if (response.ok) {
         const data = await response.json();
         if (data.success && data.data) {
-          setStats({
-            ...defaultStats,
-            ...data.data,
-            serviceBreakdown: Array.isArray(data.data.serviceBreakdown)
-              ? data.data.serviceBreakdown
-              : [],
-            recentActivity: Array.isArray(data.data.recentActivity)
-              ? data.data.recentActivity
-              : [],
-            floatAlerts: Array.isArray(data.data.floatAlerts)
-              ? data.data.floatAlerts
-              : [],
-            chartData: Array.isArray(data.data.chartData)
-              ? data.data.chartData
-              : [],
-          });
+          // Transform the API response to match our expected format
+          const transformedData = transformApiData(data.data);
+          setStats(transformedData);
         } else {
           console.error("Dashboard API error:", data.error);
           setError(data.error || "Failed to load dashboard data");
@@ -163,6 +174,63 @@ export default function DashboardPage() {
     }
   };
 
+  // Transform API data to match our expected format
+  const transformApiData = (apiData: any): DashboardStats => {
+    const services = apiData.services || {};
+    const overview = apiData.overview || {};
+
+    // Calculate totals from services
+    const totalTransactions = Object.values(services).reduce(
+      (sum: number, service: any) => sum + (service.count || 0),
+      0
+    );
+    const totalVolume = Object.values(services).reduce(
+      (sum: number, service: any) => sum + (service.volume || 0),
+      0
+    );
+    const totalCommission = Object.values(services).reduce(
+      (sum: number, service: any) => sum + (service.fees || 0),
+      0
+    );
+
+    // Transform service breakdown
+    const serviceBreakdown = Object.entries(services).map(
+      ([key, service]: [string, any]) => ({
+        service: key.replace(/([A-Z])/g, " $1").trim(), // Convert camelCase to readable
+        transactions: service.count || 0,
+        volume: service.volume || 0,
+        commission: service.fees || 0,
+      })
+    );
+
+    return {
+      totalTransactions,
+      totalVolume,
+      totalCommission,
+      activeUsers: apiData.users?.activeUsers || 0,
+      todayTransactions: totalTransactions, // For now, use total as today's
+      todayVolume: totalVolume,
+      todayCommission: totalCommission,
+      serviceBreakdown,
+      recentActivity: apiData.recentActivity || [],
+      floatAlerts: apiData.float?.alerts || [],
+      chartData: apiData.chartData || [],
+      financialMetrics: apiData.financialMetrics || {},
+      revenueAnalysis: apiData.revenueAnalysis || [],
+      teamPerformance: apiData.teamPerformance || [],
+      dailyOperations: apiData.dailyOperations || [],
+      serviceMetrics: apiData.serviceMetrics || [],
+      systemAlerts: apiData.systemAlerts || 0,
+      pendingApprovals: apiData.pendingApprovals || 0,
+      users: apiData.users || {},
+      branches: apiData.branches || [],
+      branchMetrics: apiData.branchMetrics || [],
+      expenses: apiData.expenses || {},
+      commissions: apiData.commissions || {},
+      float: apiData.float || {},
+    };
+  };
+
   useEffect(() => {
     if (user?.branchId) {
       loadDashboardData();
@@ -178,8 +246,10 @@ export default function DashboardPage() {
       case "power":
         return <Zap className="h-4 w-4" />;
       case "e-zwich":
+      case "ezwich":
         return <CreditCard className="h-4 w-4" />;
       case "agency-banking":
+      case "agency banking":
         return <Building2 className="h-4 w-4" />;
       case "jumia":
         return <Package className="h-4 w-4" />;
@@ -220,28 +290,35 @@ export default function DashboardPage() {
     );
   }
 
-  // Role-based dashboard rendering
-  if (user?.role === "Admin") {
+  // Role-based dashboard rendering with proper role detection
+  const userRole = user?.role;
+
+  if (userRole === "Admin") {
     return (
       <EnhancedAdminDashboard
-        // serviceStats={mappedServiceStats}
-        // branchStats={[]}
-        // totalStats={stats}
+        serviceStats={mappedServiceStats}
+        branchStats={stats.branches || []}
+        totalStats={stats}
+        systemAlerts={stats.systemAlerts || 0}
+        pendingApprovals={stats.pendingApprovals || 0}
+        userStats={stats.users || {}}
       />
     );
   }
-  if (user?.role === "Finance") {
+
+  if (userRole === "Finance") {
     return (
-      <FinanceDashboard
+      <EnhancedFinanceDashboard
         serviceStats={mappedServiceStats}
         totalStats={stats}
-        financialOverview={{}}
+        financialOverview={stats.financialMetrics || {}}
       />
     );
   }
-  if (user?.role === "Manager") {
+
+  if (userRole === "Manager") {
     return (
-      <ManagerDashboard
+      <EnhancedManagerDashboard
         serviceStats={mappedServiceStats}
         totalStats={stats}
         recentTransactions={
@@ -251,315 +328,516 @@ export default function DashboardPage() {
     );
   }
 
-  // Fallback: show the current dashboard for other roles
-  // return (
-  //   // <div className="container mx-auto p-6 space-y-6">
-  //   //   <div className="flex items-center justify-between">
-  //   //     <div>
-  //   //       <h1 className="text-3xl font-bold">Dashboard</h1>
-  //   //       <p className="text-muted-foreground">
-  //   //         Welcome back, {user?.firstName} {user?.lastName}! Overview of{" "}
-  //   //         {user?.branchName || "your branch"} operations
-  //   //       </p>
-  //   //     </div>
-  //   //     <Button variant="outline" onClick={loadDashboardData}>
-  //   //       <RefreshCw className="h-4 w-4 mr-2" />
-  //   //       Refresh
-  //   //     </Button>
-  //   //   </div>
+  if (userRole === "Operations" || userRole === "Cashier") {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Operations Dashboard</h1>
+            <p className="text-muted-foreground">
+              Welcome back, {user?.firstName} {user?.lastName}! Daily operations
+              overview for {user?.branchName || "your branch"}
+            </p>
+          </div>
+          <Button variant="outline" onClick={loadDashboardData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
 
-  //   //   {/* Error Alert */}
-  //   //   {error && (
-  //   //     <Alert className="border-yellow-200 bg-yellow-50">
-  //   //       <AlertTriangle className="h-4 w-4 text-yellow-600" />
-  //   //       <AlertDescription className="text-yellow-700">
-  //   //         {error} - Showing available data with fallback values.
-  //   //       </AlertDescription>
-  //   //     </Alert>
-  //   //   )}
+        {/* Error Alert */}
+        {error && (
+          <Alert className="border-yellow-200 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-700">
+              {error} - Showing available data with fallback values.
+            </AlertDescription>
+          </Alert>
+        )}
 
-  //   //   {/* Float Alerts */}
-  //   //   {stats.floatAlerts && stats.floatAlerts.length > 0 && (
-  //   //     <div className="space-y-2">
-  //   //       {stats.floatAlerts.map((alert) => (
-  //   //         <Alert
-  //   //           key={alert.id}
-  //   //           className={`border-l-4 ${
-  //   //             alert.severity === "critical"
-  //   //               ? "border-l-red-500 bg-red-50"
-  //   //               : "border-l-yellow-500 bg-yellow-50"
-  //   //           }`}
-  //   //         >
-  //   //           <AlertTriangle
-  //   //             className={`h-4 w-4 ${
-  //   //               alert.severity === "critical"
-  //   //                 ? "text-red-600"
-  //   //                 : "text-yellow-600"
-  //   //             }`}
-  //   //           />
-  //   //           <AlertDescription>
-  //   //             <span className="font-medium">
-  //   //               {alert.service} - {alert.provider}
-  //   //             </span>{" "}
-  //   //             float balance is {alert.severity}:{" "}
-  //   //             {formatCurrency(alert.current_balance)}
-  //   //           </AlertDescription>
-  //   //         </Alert>
-  //   //       ))}
-  //   //     </div>
-  //   //   )}
+        {/* Float Alerts */}
+        {stats.floatAlerts && stats.floatAlerts.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-lg font-semibold">Float Alerts</h3>
+            {stats.floatAlerts.map((alert) => (
+              <Alert
+                key={alert.id}
+                className={`border-l-4 ${
+                  alert.severity === "critical"
+                    ? "border-l-red-500 bg-red-50"
+                    : "border-l-yellow-500 bg-yellow-50"
+                }`}
+              >
+                <AlertTriangle
+                  className={`h-4 w-4 ${
+                    alert.severity === "critical"
+                      ? "text-red-600"
+                      : "text-yellow-600"
+                  }`}
+                />
+                <AlertDescription>
+                  <span className="font-medium">
+                    {alert.service} - {alert.provider}
+                  </span>{" "}
+                  float balance is {alert.severity}:{" "}
+                  {formatCurrency(alert.current_balance)}
+                </AlertDescription>
+              </Alert>
+            ))}
+          </div>
+        )}
 
-  //   //   {/* Overview Cards */}
-  //   //   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-  //   //     <Card>
-  //   //       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-  //   //         <CardTitle className="text-sm font-medium">
-  //   //           Today's Transactions
-  //   //         </CardTitle>
-  //   //         <Activity className="h-4 w-4 text-muted-foreground" />
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         <div className="text-2xl font-bold">{stats.todayTransactions}</div>
-  //   //         <p className="text-xs text-muted-foreground">
-  //   //           Total: {stats.totalTransactions}
-  //   //         </p>
-  //   //       </CardContent>
-  //   //     </Card>
+        {/* Daily Operations Overview */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Transactions
+              </CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.todayTransactions}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {stats.totalTransactions}
+              </p>
+            </CardContent>
+          </Card>
 
-  //   //     <Card>
-  //   //       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-  //   //         <CardTitle className="text-sm font-medium">
-  //   //           Today's Volume
-  //   //         </CardTitle>
-  //   //         <TrendingUp className="h-4 w-4 text-muted-foreground" />
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         <div className="text-2xl font-bold">
-  //   //           {formatCurrency(stats.todayVolume)}
-  //   //         </div>
-  //   //         <p className="text-xs text-muted-foreground">
-  //   //           Total: {formatCurrency(stats.totalVolume)}
-  //   //         </p>
-  //   //       </CardContent>
-  //   //     </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Volume
+              </CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.todayVolume)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatCurrency(stats.totalVolume)}
+              </p>
+            </CardContent>
+          </Card>
 
-  //   //     <Card>
-  //   //       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-  //   //         <CardTitle className="text-sm font-medium">
-  //   //           Today's Commission
-  //   //         </CardTitle>
-  //   //         <DollarSign className="h-4 w-4 text-muted-foreground" />
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         <div className="text-2xl font-bold">
-  //   //           {formatCurrency(stats.todayCommission)}
-  //   //         </div>
-  //   //         <p className="text-xs text-muted-foreground">
-  //   //           Total: {formatCurrency(stats.totalCommission)}
-  //   //         </p>
-  //   //       </CardContent>
-  //   //     </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Commission
+              </CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.todayCommission)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatCurrency(stats.totalCommission)}
+              </p>
+            </CardContent>
+          </Card>
 
-  //   //     <Card>
-  //   //       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-  //   //         <CardTitle className="text-sm font-medium">Active Users</CardTitle>
-  //   //         <Users className="h-4 w-4 text-muted-foreground" />
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         <div className="text-2xl font-bold">{stats.activeUsers}</div>
-  //   //         <p className="text-xs text-muted-foreground">Branch staff</p>
-  //   //       </CardContent>
-  //   //     </Card>
-  //   //   </div>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Active Users
+              </CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.activeUsers}</div>
+              <p className="text-xs text-muted-foreground">Currently online</p>
+            </CardContent>
+          </Card>
+        </div>
 
-  //   //   {/* Charts and Service Breakdown */}
-  //   //   <div className="grid gap-6 md:grid-cols-2">
-  //   //     {/* Transaction Volume Chart */}
-  //   //     <Card>
-  //   //       <CardHeader>
-  //   //         <CardTitle>Transaction Volume (Last 7 Days)</CardTitle>
-  //   //         <CardDescription>
-  //   //           Daily transaction volume and commission
-  //   //         </CardDescription>
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         {stats.chartData && stats.chartData.length > 0 ? (
-  //   //           <ResponsiveContainer width="100%" height={300}>
-  //   //             <AreaChart data={stats.chartData}>
-  //   //               <CartesianGrid strokeDasharray="3 3" />
-  //   //               <XAxis dataKey="date" />
-  //   //               <YAxis />
-  //   //               <Tooltip
-  //   //                 formatter={(value, name) => [
-  //   //                   name === "volume" || name === "commission"
-  //   //                     ? formatCurrency(Number(value))
-  //   //                     : value,
-  //   //                   name === "volume"
-  //   //                     ? "Volume"
-  //   //                     : name === "commission"
-  //   //                     ? "Commission"
-  //   //                     : "Transactions",
-  //   //                 ]}
-  //   //               />
-  //   //               <Area
-  //   //                 type="monotone"
-  //   //                 dataKey="volume"
-  //   //                 stackId="1"
-  //   //                 stroke="#8884d8"
-  //   //                 fill="#8884d8"
-  //   //               />
-  //   //               <Area
-  //   //                 type="monotone"
-  //   //                 dataKey="commission"
-  //   //                 stackId="1"
-  //   //                 stroke="#82ca9d"
-  //   //                 fill="#82ca9d"
-  //   //               />
-  //   //             </AreaChart>
-  //   //           </ResponsiveContainer>
-  //   //         ) : (
-  //   //           <div className="text-center py-8 text-muted-foreground">
-  //   //             No chart data available
-  //   //           </div>
-  //   //         )}
-  //   //       </CardContent>
-  //   //     </Card>
+        {/* Service Performance */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Service Performance Today
+              </CardTitle>
+              <CardDescription>
+                How each service is performing today
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {stats.serviceBreakdown?.map((service) => (
+                  <div
+                    key={service.service}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      {getServiceIcon(service.service)}
+                      <span className="font-medium">{service.service}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">{service.transactions}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {formatCurrency(service.volume)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
-  //   //     {/* Service Breakdown */}
-  //   //     <Card>
-  //   //       <CardHeader>
-  //   //         <CardTitle>Service Breakdown</CardTitle>
-  //   //         <CardDescription>
-  //   //           Transaction distribution by service
-  //   //         </CardDescription>
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         {stats.serviceBreakdown && stats.serviceBreakdown.length > 0 ? (
-  //   //           <ResponsiveContainer width="100%" height={300}>
-  //   //             <PieChart>
-  //   //               <Pie
-  //   //                 data={stats.serviceBreakdown}
-  //   //                 cx="50%"
-  //   //                 cy="50%"
-  //   //                 labelLine={false}
-  //   //                 label={({ service, transactions }) =>
-  //   //                   `${service}: ${transactions}`
-  //   //                 }
-  //   //                 outerRadius={80}
-  //   //                 fill="#8884d8"
-  //   //                 dataKey="transactions"
-  //   //               >
-  //   //                 {stats.serviceBreakdown.map((entry, index) => (
-  //   //                   <Cell
-  //   //                     key={`cell-${index}`}
-  //   //                     fill={COLORS[index % COLORS.length]}
-  //   //                   />
-  //   //                 ))}
-  //   //               </Pie>
-  //   //               <Tooltip formatter={(value) => [value, "Transactions"]} />
-  //   //             </PieChart>
-  //   //           </ResponsiveContainer>
-  //   //         ) : (
-  //   //           <div className="text-center py-8 text-muted-foreground">
-  //   //             No service data available
-  //   //           </div>
-  //   //         )}
-  //   //       </CardContent>
-  //   //     </Card>
-  //   //   </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Activity className="h-5 w-5" />
+                Recent Transactions
+              </CardTitle>
+              <CardDescription>Latest transactions processed</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {stats.recentActivity?.slice(0, 5).map((activity) => (
+                  <div
+                    key={activity.id}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      {getServiceIcon(activity.service)}
+                      <div>
+                        <div className="font-medium">{activity.service}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {activity.user} • {activity.timestamp}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">
+                        {formatCurrency(activity.amount)}
+                      </div>
+                      <Badge variant="outline">{activity.type}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
 
-  //   //   {/* Service Performance and Recent Activity */}
-  //   //   <div className="grid gap-6 md:grid-cols-2">
-  //   //     {/* Service Performance */}
-  //   //     <Card>
-  //   //       <CardHeader>
-  //   //         <CardTitle>Service Performance</CardTitle>
-  //   //         <CardDescription>Today's performance by service</CardDescription>
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         <div className="space-y-4">
-  //   //           {stats.serviceBreakdown && stats.serviceBreakdown.length > 0 ? (
-  //   //             stats.serviceBreakdown.map((service) => (
-  //   //               <div
-  //   //                 key={service.service}
-  //   //                 className="flex items-center justify-between p-3 border rounded-lg"
-  //   //               >
-  //   //                 <div className="flex items-center gap-3">
-  //   //                   {getServiceIcon(service.service)}
-  //   //                   <div>
-  //   //                     <p className="font-medium capitalize">
-  //   //                       {service.service.replace("-", " ")}
-  //   //                     </p>
-  //   //                     <p className="text-sm text-muted-foreground">
-  //   //                       {service.transactions} transactions
-  //   //                     </p>
-  //   //                   </div>
-  //   //                 </div>
-  //   //                 <div className="text-right">
-  //   //                   <p className="font-medium">
-  //   //                     {formatCurrency(service.volume)}
-  //   //                   </p>
-  //   //                   <p className="text-sm text-muted-foreground">
-  //   //                     {formatCurrency(service.commission)} commission
-  //   //                   </p>
-  //   //                 </div>
-  //   //               </div>
-  //   //             ))
-  //   //           ) : (
-  //   //             <div className="text-center py-8 text-muted-foreground">
-  //   //               No service data available
-  //   //             </div>
-  //   //           )}
-  //   //         </div>
-  //   //       </CardContent>
-  //   //     </Card>
+        {/* Simple Charts */}
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <LineChart className="h-5 w-5" />
+                This Week's Performance
+              </CardTitle>
+              <CardDescription>Daily transaction count</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="h-48 flex items-end justify-between gap-2">
+                {stats.chartData?.slice(-7).map((day, index) => (
+                  <div key={day.date} className="flex flex-col items-center">
+                    <div
+                      className="w-8 bg-primary rounded-t"
+                      style={{
+                        height: `${
+                          (day.transactions /
+                            Math.max(
+                              ...stats.chartData.map((d) => d.transactions)
+                            )) *
+                          160
+                        }px`,
+                        minHeight: "20px",
+                      }}
+                    ></div>
+                    <span className="text-xs mt-2">{day.date}</span>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
 
-  //   //     {/* Recent Activity */}
-  //   //     <Card>
-  //   //       <CardHeader>
-  //   //         <CardTitle>Recent Activity</CardTitle>
-  //   //         <CardDescription>
-  //   //           Latest transactions across all services
-  //   //         </CardDescription>
-  //   //       </CardHeader>
-  //   //       <CardContent>
-  //   //         <div className="space-y-4">
-  //   //           {stats.recentActivity && stats.recentActivity.length > 0 ? (
-  //   //             stats.recentActivity.map((activity) => (
-  //   //               <div
-  //   //                 key={activity.id}
-  //   //                 className="flex items-center justify-between p-3 border rounded-lg"
-  //   //               >
-  //   //                 <div className="flex items-center gap-3">
-  //   //                   {getServiceIcon(activity.service)}
-  //   //                   <div>
-  //   //                     <p className="font-medium capitalize">
-  //   //                       {activity.type.replace("_", " ")}
-  //   //                     </p>
-  //   //                     <p className="text-sm text-muted-foreground">
-  //   //                       {activity.service} • {activity.user}
-  //   //                     </p>
-  //   //                   </div>
-  //   //                 </div>
-  //   //                 <div className="text-right">
-  //   //                   <p className="font-medium">
-  //   //                     {formatCurrency(activity.amount)}
-  //   //                   </p>
-  //   //                   <p className="text-sm text-muted-foreground">
-  //   //                     {format(new Date(activity.timestamp), "HH:mm")}
-  //   //                   </p>
-  //   //                 </div>
-  //   //               </div>
-  //   //             ))
-  //   //           ) : (
-  //   //             <div className="text-center py-8 text-muted-foreground">
-  //   //               No recent activity
-  //   //             </div>
-  //   //           )}
-  //   //         </div>
-  //   //       </CardContent>
-  //   //     </Card>
-  //   //   </div>
-  //   // </div>
-  // );
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieChart className="h-5 w-5" />
+                Service Distribution
+              </CardTitle>
+              <CardDescription>Revenue by service type</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {stats.serviceBreakdown?.map((service) => (
+                  <div
+                    key={service.service}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      {getServiceIcon(service.service)}
+                      <span className="font-medium">{service.service}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">
+                        {formatCurrency(service.volume)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {service.transactions} transactions
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Quick Actions */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Target className="h-5 w-5" />
+              Quick Actions
+            </CardTitle>
+            <CardDescription>Common tasks for your role</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <Button variant="outline" className="h-20 flex-col">
+                <Smartphone className="h-6 w-6 mb-2" />
+                <span>Process MoMo</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col">
+                <CreditCard className="h-6 w-6 mb-2" />
+                <span>E-Zwich Transaction</span>
+              </Button>
+              <Button variant="outline" className="h-20 flex-col">
+                <Zap className="h-6 w-6 mb-2" />
+                <span>Power Sale</span>
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Default dashboard for unknown roles
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Welcome back, {user?.firstName} {user?.lastName}! Overview of{" "}
+            {user?.branchName || "your branch"} operations
+          </p>
+        </div>
+        <Button variant="outline" onClick={loadDashboardData}>
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert className="border-yellow-200 bg-yellow-50">
+          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-yellow-700">
+            {error} - Showing available data with fallback values.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {/* Float Alerts */}
+      {stats.floatAlerts && stats.floatAlerts.length > 0 && (
+        <div className="space-y-2">
+          {stats.floatAlerts.map((alert) => (
+            <Alert
+              key={alert.id}
+              className={`border-l-4 ${
+                alert.severity === "critical"
+                  ? "border-l-red-500 bg-red-50"
+                  : "border-l-yellow-500 bg-yellow-50"
+              }`}
+            >
+              <AlertTriangle
+                className={`h-4 w-4 ${
+                  alert.severity === "critical"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              />
+              <AlertDescription>
+                <span className="font-medium">
+                  {alert.service} - {alert.provider}
+                </span>{" "}
+                float balance is {alert.severity}:{" "}
+                {formatCurrency(alert.current_balance)}
+              </AlertDescription>
+            </Alert>
+          ))}
+        </div>
+      )}
+
+      {/* Overview Cards */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Today's Transactions
+            </CardTitle>
+            <Activity className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.todayTransactions}</div>
+            <p className="text-xs text-muted-foreground">
+              Total: {stats.totalTransactions}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Today's Volume
+            </CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(stats.todayVolume)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(stats.totalVolume)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Today's Commission
+            </CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(stats.todayCommission)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(stats.totalCommission)}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+            <Users className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.activeUsers}</div>
+            <p className="text-xs text-muted-foreground">Currently online</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Service Breakdown */}
+      {stats.serviceBreakdown && stats.serviceBreakdown.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Service Performance</CardTitle>
+            <CardDescription>
+              Today's performance by service type
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {stats.serviceBreakdown.map((service, index) => (
+                <div
+                  key={service.service}
+                  className="flex items-center space-x-4 rounded-lg border p-4"
+                >
+                  <div className="flex-shrink-0">
+                    {getServiceIcon(service.service)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {service.service.charAt(0).toUpperCase() +
+                        service.service.slice(1)}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {service.transactions} transactions
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatCurrency(service.volume)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent Activity */}
+      {stats.recentActivity && stats.recentActivity.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>
+              Latest transactions and activities
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.recentActivity.slice(0, 5).map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex items-center space-x-4 rounded-lg border p-4"
+                >
+                  <div className="flex-shrink-0">
+                    {getServiceIcon(activity.service)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {activity.type} - {activity.service}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatCurrency(activity.amount)} by {activity.user}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(activity.timestamp), "MMM dd, HH:mm")}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {!stats.serviceBreakdown.length &&
+        !stats.recentActivity.length &&
+        !error && (
+          <Card>
+            <CardContent className="text-center py-8">
+              <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">No Data Available</h3>
+              <p className="text-muted-foreground mb-4">
+                No transactions or activities found for the current period.
+              </p>
+              <Button onClick={loadDashboardData} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Data
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+    </div>
+  );
 }

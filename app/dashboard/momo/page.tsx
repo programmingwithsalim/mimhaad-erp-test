@@ -42,6 +42,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useServiceStatistics } from "@/hooks/use-service-statistics";
+import { useDynamicFee } from "@/hooks/use-dynamic-fee";
 import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
 import {
   Smartphone,
@@ -58,6 +59,8 @@ import {
   Receipt,
 } from "lucide-react";
 import { format } from "date-fns";
+import { EditMoMoTransactionDialog } from "@/components/transactions/edit-momo-transaction-dialog";
+import { TransactionActions } from "@/components/transactions/transaction-actions";
 
 interface Transaction {
   id: string;
@@ -95,6 +98,10 @@ export default function MoMoPage() {
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] =
+    useState<Transaction | null>(null);
+  const [receipt, setReceipt] = useState<any>(null);
 
   const [formData, setFormData] = useState({
     type: "",
@@ -105,6 +112,43 @@ export default function MoMoPage() {
     provider: "",
     notes: "",
   });
+
+  const [feeLoading, setFeeLoading] = useState(false);
+
+  // Use dynamic fee calculation
+  const { calculateFee } = useDynamicFee();
+
+  // Calculate fee when type, amount, or provider changes
+  useEffect(() => {
+    const fetchFee = async () => {
+      if (!formData.type || !formData.amount || !formData.provider) {
+        setFormData((prev) => ({ ...prev, fee: "" }));
+        return;
+      }
+
+      setFeeLoading(true);
+      try {
+        // Map transaction types for fee calculation
+        const transactionTypeForFee =
+          formData.type === "cash-in" ? "deposit" : "withdrawal";
+        const feeResult = await calculateFee(
+          "momo",
+          transactionTypeForFee,
+          Number(formData.amount)
+        );
+        setFormData((prev) => ({
+          ...prev,
+          fee: feeResult.fee.toString(),
+        }));
+      } catch (err) {
+        setFormData((prev) => ({ ...prev, fee: "0" }));
+      } finally {
+        setFeeLoading(false);
+      }
+    };
+
+    fetchFee();
+  }, [formData.type, formData.amount, formData.provider, calculateFee]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -152,14 +196,15 @@ export default function MoMoPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success && Array.isArray(data.accounts)) {
-          // Filter for MoMo accounts
+          // Filter for MoMo accounts and only active ones
           const momoAccounts = data.accounts.filter(
             (account: any) =>
-              account.account_type === "momo" ||
-              account.provider?.toLowerCase().includes("momo") ||
-              account.provider?.toLowerCase().includes("mtn") ||
-              account.provider?.toLowerCase().includes("vodafone") ||
-              account.provider?.toLowerCase().includes("airteltigo")
+              account.is_active === true &&
+              (account.account_type === "momo" ||
+                account.provider?.toLowerCase().includes("momo") ||
+                account.provider?.toLowerCase().includes("mtn") ||
+                account.provider?.toLowerCase().includes("vodafone") ||
+                account.provider?.toLowerCase().includes("airteltigo"))
           );
           setFloatAccounts(momoAccounts);
         } else {
@@ -202,48 +247,53 @@ export default function MoMoPage() {
       !formData.provider
     ) {
       toast({
-        title: "Error",
+        title: "Missing Information",
         description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
     }
 
+    setSubmitting(true);
+
     try {
-      setSubmitting(true);
-
-      const transactionData = {
-        type: formData.type,
-        amount: Number.parseFloat(formData.amount),
-        fee: Number.parseFloat(formData.fee || "0"),
-        customer_name: formData.customer_name,
-        phone_number: formData.phone_number,
-        provider: formData.provider,
-        reference: `MOMO-${Date.now()}`,
-        branchId: user.branchId,
-        userId: user.id,
-        notes: formData.notes,
-      };
-
-      const response = await fetch("/api/momo/transactions", {
+      const transactionTypeForFee =
+        formData.type === "cash-in" ? "deposit" : "withdrawal";
+      const response = await fetch("/api/transactions/unified", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(transactionData),
+        body: JSON.stringify({
+          serviceType: "momo",
+          transactionType: transactionTypeForFee,
+          amount: Number(formData.amount),
+          fee: Number(formData.fee) || 0,
+          customerName: formData.customer_name,
+          phoneNumber: formData.phone_number,
+          provider: formData.provider,
+          reference: `MOMO-${Date.now()}`,
+          notes: formData.notes,
+          branchId: user.branchId,
+          userId: user.id,
+          processedBy: user.name || user.username,
+        }),
       });
 
       const result = await response.json();
 
       if (result.success) {
-        // Show receipt
-        setCurrentTransaction({
-          ...transactionData,
-          id: result.transactionId,
-          status: "completed",
-          created_at: new Date().toISOString(),
+        toast({
+          title: "Transaction Successful",
+          description:
+            result.message || "MoMo transaction processed successfully",
         });
-        setShowReceiptDialog(true);
+
+        // Show receipt automatically if available
+        if (result.receipt) {
+          setReceipt(result.receipt);
+          setShowReceiptDialog(true);
+        }
 
         // Reset form
         setFormData({
@@ -260,23 +310,14 @@ export default function MoMoPage() {
         loadTransactions();
         loadFloatAccounts();
         refreshStatistics();
-
-        toast({
-          title: "Transaction Successful",
-          description: "MoMo transaction created successfully",
-        });
       } else {
-        toast({
-          title: "Transaction Failed",
-          description: result.error || "Failed to create transaction",
-          variant: "destructive",
-        });
+        throw new Error(result.error || "Failed to process transaction");
       }
     } catch (error) {
-      console.error("Error creating transaction:", error);
       toast({
         title: "Transaction Failed",
-        description: "Failed to create transaction",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     } finally {
@@ -289,22 +330,28 @@ export default function MoMoPage() {
     setShowEditDialog(true);
   };
 
-  const handleDelete = async (transactionId: string) => {
-    if (
-      !confirm(
-        "Are you sure you want to delete this transaction? This action cannot be undone."
-      )
-    ) {
-      return;
-    }
+  const handleDelete = (transaction: Transaction) => {
+    setTransactionToDelete(transaction);
+    setShowDeleteDialog(true);
+  };
 
+  const confirmDelete = async () => {
+    if (!transactionToDelete) return;
     try {
-      const response = await fetch(`/api/momo/transactions/${transactionId}`, {
-        method: "DELETE",
-      });
-
+      const response = await fetch(
+        `/api/transactions/${transactionToDelete.id}`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sourceModule: "momo",
+            processedBy: user?.id,
+            branchId: user?.branchId,
+            reason: "User requested deletion",
+          }),
+        }
+      );
       const result = await response.json();
-
       if (result.success) {
         toast({
           title: "Transaction Deleted",
@@ -321,12 +368,14 @@ export default function MoMoPage() {
         });
       }
     } catch (error) {
-      console.error("Error deleting transaction:", error);
       toast({
         title: "Delete Failed",
         description: "Failed to delete transaction",
         variant: "destructive",
       });
+    } finally {
+      setShowDeleteDialog(false);
+      setTransactionToDelete(null);
     }
   };
 
@@ -378,13 +427,41 @@ export default function MoMoPage() {
   const getStatusBadge = (status: string) => {
     switch (status?.toLowerCase()) {
       case "completed":
-        return <Badge variant="default">Completed</Badge>;
+        return (
+          <Badge variant="outline" className="bg-green-50 text-green-700">
+            Completed
+          </Badge>
+        );
       case "pending":
-        return <Badge variant="secondary">Pending</Badge>;
+        return (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
+            Pending
+          </Badge>
+        );
       case "failed":
-        return <Badge variant="destructive">Failed</Badge>;
+      case "error":
+        return (
+          <Badge variant="outline" className="bg-red-50 text-red-700">
+            Failed
+          </Badge>
+        );
+      case "reversed":
+        return (
+          <Badge variant="outline" className="bg-red-100 text-red-800">
+            Reversed
+          </Badge>
+        );
+      case "deleted":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-200 text-gray-700 line-through"
+          >
+            Deleted
+          </Badge>
+        );
       default:
-        return <Badge variant="outline">Unknown</Badge>;
+        return <Badge variant="outline">{status || "Unknown"}</Badge>;
     }
   };
 
@@ -612,12 +689,18 @@ export default function MoMoPage() {
                             <SelectValue placeholder="Select provider" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="MTN">
-                              MTN Mobile Money
-                            </SelectItem>
-                            <SelectItem value="telecel">
-                              Vodafone Cash
-                            </SelectItem>
+                            {floatAccounts.map((account: any) => (
+                              <SelectItem
+                                key={account.provider}
+                                value={account.provider}
+                              >
+                                {account.provider}
+                                {account.current_balance !== undefined &&
+                                  ` (Bal: ${formatCurrency(
+                                    account.current_balance
+                                  )})`}
+                              </SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
                       </div>
@@ -808,25 +891,16 @@ export default function MoMoPage() {
                           {getStatusBadge(transaction.status)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEdit(transaction)}
-                              title="Edit Transaction"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(transaction.id)}
-                              title="Delete Transaction"
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <TransactionActions
+                            transaction={transaction}
+                            userRole={user?.role || "Operation"}
+                            sourceModule="momo"
+                            onSuccess={() => {
+                              loadTransactions();
+                              loadFloatAccounts();
+                              refreshStatistics();
+                            }}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}
@@ -850,61 +924,67 @@ export default function MoMoPage() {
               Transaction completed successfully
             </DialogDescription>
           </DialogHeader>
-          {currentTransaction && (
+          {receipt && (
             <div id="receipt-content" className="space-y-4">
-              <div className="text-center border-b pb-4">
-                <h3 className="text-lg font-bold">
-                  MIMHAAD FINANCIAL SERVICES
-                </h3>
-                <p className="text-sm">{user?.branchName || "Main Branch"}</p>
-                <p className="text-sm">Tel: 0241378880</p>
-                <p className="text-sm">{format(new Date(), "PPP")}</p>
-              </div>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Transaction ID:</span>
-                  <span className="font-mono">{currentTransaction.id}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Customer:</span>
-                  <span>{currentTransaction.customer_name}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Phone Number:</span>
-                  <span>{currentTransaction.phone_number}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Transaction Type:</span>
-                  <span className="capitalize">{currentTransaction.type}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Provider:</span>
-                  <span>{currentTransaction.provider}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Amount:</span>
-                  <span>{formatCurrency(currentTransaction.amount)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>Fee:</span>
-                  <span>{formatCurrency(currentTransaction.fee)}</span>
-                </div>
-                <div className="flex justify-between text-sm font-medium border-t pt-2">
-                  <span>Total:</span>
-                  <span>
-                    {formatCurrency(
-                      currentTransaction.amount +
-                        (currentTransaction.type === "cash-out"
-                          ? currentTransaction.fee
-                          : 0)
-                    )}
-                  </span>
-                </div>
-              </div>
-              <div className="text-center text-xs border-t pt-4">
-                <p>Thank you for using our service!</p>
-                <p>For inquiries, please call 0241378880</p>
-              </div>
+              {typeof receipt === "string" ? (
+                <div dangerouslySetInnerHTML={{ __html: receipt }} />
+              ) : (
+                <>
+                  <div className="text-center border-b pb-4">
+                    <h3 className="text-lg font-bold">
+                      MIMHAAD FINANCIAL SERVICES
+                    </h3>
+                    <p className="text-sm">
+                      {user?.branchName || "Main Branch"}
+                    </p>
+                    <p className="text-sm">Tel: 0241378880</p>
+                    <p className="text-sm">{format(new Date(), "PPP")}</p>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Transaction ID:</span>
+                      <span className="font-mono">{receipt.id}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Customer:</span>
+                      <span>{receipt.customer_name}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Phone Number:</span>
+                      <span>{receipt.phone_number}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Transaction Type:</span>
+                      <span className="capitalize">{receipt.type}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Provider:</span>
+                      <span>{receipt.provider}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Amount:</span>
+                      <span>{formatCurrency(receipt.amount)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm">
+                      <span>Fee:</span>
+                      <span>{formatCurrency(receipt.fee)}</span>
+                    </div>
+                    <div className="flex justify-between text-sm font-medium border-t pt-2">
+                      <span>Total:</span>
+                      <span>
+                        {formatCurrency(
+                          receipt.amount +
+                            (receipt.type === "cash-out" ? receipt.fee : 0)
+                        )}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="text-center text-xs border-t pt-4">
+                    <p>Thank you for using our service!</p>
+                    <p>For inquiries, please call 0241378880</p>
+                  </div>
+                </>
+              )}
             </div>
           )}
           <div className="flex justify-end gap-2">
@@ -917,6 +997,42 @@ export default function MoMoPage() {
             <Button onClick={printReceipt}>
               <Printer className="mr-2 h-4 w-4" />
               Print Receipt
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <EditMoMoTransactionDialog
+        transaction={editingTransaction}
+        open={showEditDialog}
+        onOpenChange={setShowEditDialog}
+        onSuccess={() => {
+          setShowEditDialog(false);
+          setEditingTransaction(null);
+          loadTransactions();
+          loadFloatAccounts();
+          refreshStatistics();
+        }}
+      />
+
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete Transaction</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this transaction? This action
+              cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
             </Button>
           </div>
         </DialogContent>

@@ -1,261 +1,282 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { z } from "zod";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
+
+// Input validation schemas
+const AuditLogQuerySchema = z.object({
+  page: z.string().transform(Number).pipe(z.number().min(1).default(1)),
+  limit: z
+    .string()
+    .transform(Number)
+    .pipe(z.number().min(1).max(100).default(50)),
+  userId: z.string().optional(),
+  actionType: z.string().optional(),
+  entityType: z.string().optional(),
+  severity: z.string().optional(),
+  status: z.string().optional(),
+  branchId: z.string().optional(),
+  searchTerm: z.string().optional(),
+  startDate: z.string().optional(),
+  endDate: z.string().optional(),
+});
+
+const CreateAuditLogSchema = z.object({
+  userId: z.string().optional(),
+  username: z.string().min(1),
+  actionType: z.string().min(1),
+  entityType: z.string().min(1),
+  entityId: z.string().optional(),
+  description: z.string().min(1),
+  details: z.any().optional(),
+  severity: z.enum(["low", "medium", "high", "critical"]).default("low"),
+  branchId: z.string().optional(),
+  branchName: z.string().optional(),
+  status: z.enum(["success", "failure"]).default("success"),
+  errorMessage: z.string().optional(),
+  ipAddress: z.string().optional(),
+  userAgent: z.string().optional(),
+});
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url)
-    const page = Number.parseInt(searchParams.get("page") || "1")
-    const limit = Number.parseInt(searchParams.get("limit") || "50")
-    const offset = (page - 1) * limit
+    const { searchParams } = new URL(request.url);
 
-    // Check if audit_logs table exists and create it if it doesn't
-    const tableExists = await sql`
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'audit_logs'
-      )
-    `
+    // Validate and parse query parameters
+    const validatedParams = AuditLogQuerySchema.parse(
+      Object.fromEntries(searchParams)
+    );
+    const { page, limit, ...filters } = validatedParams;
 
-    if (!tableExists[0]?.exists) {
-      // Create the table
-      await sql`
-        CREATE TABLE IF NOT EXISTS audit_logs (
-          id SERIAL PRIMARY KEY,
-          user_id VARCHAR(255),
-          username VARCHAR(255) NOT NULL,
-          action_type VARCHAR(100) NOT NULL,
-          entity_type VARCHAR(100) NOT NULL,
-          entity_id VARCHAR(255),
-          description TEXT NOT NULL,
-          details JSONB,
-          ip_address INET,
-          user_agent TEXT,
-          severity VARCHAR(20) DEFAULT 'low' CHECK (severity IN ('low', 'medium', 'high', 'critical')),
-          branch_id VARCHAR(255),
-          branch_name VARCHAR(255),
-          status VARCHAR(20) DEFAULT 'success' CHECK (status IN ('success', 'failure')),
-          error_message TEXT,
-          related_entities JSONB,
-          metadata JSONB,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-        )
-      `
+    const offset = (page - 1) * limit;
 
-      // Create indexes
-      await sql`CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id)`
-      await sql`CREATE INDEX IF NOT EXISTS idx_audit_logs_action_type ON audit_logs(action_type)`
-      await sql`CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at)`
+    // Build dynamic query with proper parameterization
+    let whereConditions: string[] = [];
+    let queryParams: any[] = [];
+    let paramIndex = 1;
 
-      return NextResponse.json({
-        success: true,
-        logs: [],
-        total: 0,
-        message: "Audit logs table created. No logs found yet.",
-      })
+    // Add filters with proper parameterization
+    if (filters.userId) {
+      const userIds = filters.userId.split(",");
+      const placeholders = userIds.map(() => `$${paramIndex++}`).join(",");
+      whereConditions.push(`user_id IN (${placeholders})`);
+      queryParams.push(...userIds);
     }
 
-    // Build filters
-    const filters = []
-    const values = []
-
-    if (searchParams.get("userId")) {
-      filters.push(`user_id = $${filters.length + 1}`)
-      values.push(searchParams.get("userId"))
+    if (filters.actionType) {
+      const actionTypes = filters.actionType.split(",");
+      const placeholders = actionTypes.map(() => `$${paramIndex++}`).join(",");
+      whereConditions.push(`action_type IN (${placeholders})`);
+      queryParams.push(...actionTypes);
     }
 
-    if (searchParams.get("actionType")) {
-      const actionTypes = searchParams.get("actionType")!.split(",")
-      const placeholders = actionTypes.map((_, index) => `$${filters.length + index + 1}`).join(",")
-      filters.push(`action_type IN (${placeholders})`)
-      values.push(...actionTypes)
+    if (filters.entityType) {
+      const entityTypes = filters.entityType.split(",");
+      const placeholders = entityTypes.map(() => `$${paramIndex++}`).join(",");
+      whereConditions.push(`entity_type IN (${placeholders})`);
+      queryParams.push(...entityTypes);
     }
 
-    if (searchParams.get("entityType")) {
-      const entityTypes = searchParams.get("entityType")!.split(",")
-      const placeholders = entityTypes.map((_, index) => `$${filters.length + index + 1}`).join(",")
-      filters.push(`entity_type IN (${placeholders})`)
-      values.push(...entityTypes)
+    if (filters.severity) {
+      const severities = filters.severity.split(",");
+      const placeholders = severities.map(() => `$${paramIndex++}`).join(",");
+      whereConditions.push(`severity IN (${placeholders})`);
+      queryParams.push(...severities);
     }
 
-    if (searchParams.get("severity")) {
-      const severities = searchParams.get("severity")!.split(",")
-      const placeholders = severities.map((_, index) => `$${filters.length + index + 1}`).join(",")
-      filters.push(`severity IN (${placeholders})`)
-      values.push(...severities)
+    if (filters.status) {
+      const statuses = filters.status.split(",");
+      const placeholders = statuses.map(() => `$${paramIndex++}`).join(",");
+      whereConditions.push(`status IN (${placeholders})`);
+      queryParams.push(...statuses);
     }
 
-    if (searchParams.get("status")) {
-      const statuses = searchParams.get("status")!.split(",")
-      const placeholders = statuses.map((_, index) => `$${filters.length + index + 1}`).join(",")
-      filters.push(`status IN (${placeholders})`)
-      values.push(...statuses)
+    if (filters.branchId) {
+      const branchIds = filters.branchId.split(",");
+      const placeholders = branchIds.map(() => `$${paramIndex++}`).join(",");
+      whereConditions.push(`branch_id IN (${placeholders})`);
+      queryParams.push(...branchIds);
     }
 
-    if (searchParams.get("branchId")) {
-      const branchIds = searchParams.get("branchId")!.split(",")
-      const placeholders = branchIds.map((_, index) => `$${filters.length + index + 1}`).join(",")
-      filters.push(`branch_id IN (${placeholders})`)
-      values.push(...branchIds)
+    if (filters.searchTerm) {
+      whereConditions.push(
+        `(description ILIKE $${paramIndex++} OR username ILIKE $${paramIndex++})`
+      );
+      queryParams.push(`%${filters.searchTerm}%`, `%${filters.searchTerm}%`);
     }
 
-    if (searchParams.get("searchTerm")) {
-      filters.push(`(description ILIKE $${filters.length + 1} OR username ILIKE $${filters.length + 1})`)
-      values.push(`%${searchParams.get("searchTerm")}%`)
+    if (filters.startDate) {
+      whereConditions.push(`created_at >= $${paramIndex++}`);
+      queryParams.push(filters.startDate);
     }
 
-    if (searchParams.get("startDate")) {
-      filters.push(`created_at >= $${filters.length + 1}`)
-      values.push(searchParams.get("startDate"))
+    if (filters.endDate) {
+      whereConditions.push(`created_at <= $${paramIndex++}`);
+      queryParams.push(filters.endDate);
     }
 
-    if (searchParams.get("endDate")) {
-      filters.push(`created_at <= $${filters.length + 1}`)
-      values.push(searchParams.get("endDate"))
-    }
-
-    const whereClause = filters.length > 0 ? `WHERE ${filters.join(" AND ")}` : ""
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
 
     // Get total count
-    let total = 0
+    let total = 0;
     try {
       if (whereClause) {
-        const countQuery = `SELECT COUNT(*) as total FROM audit_logs ${whereClause}`
-        const countResult = await sql.unsafe(countQuery, values)
-        total = Number.parseInt(countResult[0]?.total || "0")
+        const countResult = await sql.unsafe(
+          `SELECT COUNT(*) as total FROM audit_logs ${whereClause}`,
+          queryParams
+        );
+        total = Number.parseInt(countResult[0]?.total || "0");
       } else {
-        const countResult = await sql`SELECT COUNT(*) as total FROM audit_logs`
-        total = Number.parseInt(countResult[0]?.total || "0")
+        const countResult = await sql`SELECT COUNT(*) as total FROM audit_logs`;
+        total = Number.parseInt(countResult[0]?.total || "0");
       }
     } catch (countError) {
-      console.error("Error getting count:", countError)
-      total = 0
+      console.error("Error getting count:", countError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Failed to get audit log count",
+          details:
+            countError instanceof Error ? countError.message : "Unknown error",
+        },
+        { status: 500 }
+      );
     }
 
     // Get paginated results
-    let logs = []
+    let logs = [];
     try {
-      const dataQuery = `
-    SELECT 
-      id,
-      user_id as "userId",
-      username,
-      action_type as "actionType",
-      entity_type as "entityType",
-      entity_id as "entityId",
-      description,
-      details,
-      ip_address as "ipAddress",
-      user_agent as "userAgent",
-      severity,
-      branch_id as "branchId",
-      branch_name as "branchName",
-      status,
-      error_message as "errorMessage",
-      related_entities as "relatedEntities",
-      metadata,
-      created_at as "timestamp"
-    FROM audit_logs 
-    ${whereClause}
-    ORDER BY created_at DESC 
-    LIMIT $${values.length + 1} OFFSET $${values.length + 2}
-  `
+      const selectQuery = `
+        SELECT 
+          id,
+          user_id as "userId",
+          username,
+          action_type as "actionType",
+          entity_type as "entityType",
+          entity_id as "entityId",
+          description,
+          details,
+          ip_address as "ipAddress",
+          user_agent as "userAgent",
+          severity,
+          branch_id as "branchId",
+          branch_name as "branchName",
+          status,
+          error_message as "errorMessage",
+          related_entities as "relatedEntities",
+          metadata,
+          created_at as "timestamp"
+        FROM audit_logs 
+        ${whereClause}
+        ORDER BY created_at DESC 
+        LIMIT $${paramIndex++} OFFSET $${paramIndex++}
+      `;
 
-      // Use proper neon template literal syntax instead of sql.unsafe
       if (whereClause) {
-        const dataResult = await sql.unsafe(dataQuery, [...values, limit, offset])
-        logs = dataResult || []
+        const dataResult = await sql.unsafe(selectQuery, [
+          ...queryParams,
+          limit,
+          offset,
+        ]);
+        logs = dataResult || [];
       } else {
-        // When no filters, use template literal syntax
         const dataResult = await sql`
-      SELECT 
-        id,
-        user_id as "userId",
-        username,
-        action_type as "actionType",
-        entity_type as "entityType",
-        entity_id as "entityId",
-        description,
-        details,
-        ip_address as "ipAddress",
-        user_agent as "userAgent",
-        severity,
-        branch_id as "branchId",
-        branch_name as "branchName",
-        status,
-        error_message as "errorMessage",
-        related_entities as "relatedEntities",
-        metadata,
-        created_at as "timestamp"
-      FROM audit_logs 
-      ORDER BY created_at DESC 
-      LIMIT ${limit} OFFSET ${offset}
-    `
-        logs = dataResult || []
+          SELECT 
+            id,
+            user_id as "userId",
+            username,
+            action_type as "actionType",
+            entity_type as "entityType",
+            entity_id as "entityId",
+            description,
+            details,
+            ip_address as "ipAddress",
+            user_agent as "userAgent",
+            severity,
+            branch_id as "branchId",
+            branch_name as "branchName",
+            status,
+            error_message as "errorMessage",
+            related_entities as "relatedEntities",
+            metadata,
+            created_at as "timestamp"
+          FROM audit_logs 
+          ORDER BY created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        logs = dataResult || [];
       }
     } catch (dataError) {
-      console.error("Error getting data:", dataError)
-      logs = []
+      console.error("Error getting audit logs:", dataError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Failed to get audit logs",
+          details:
+            dataError instanceof Error ? dataError.message : "Unknown error",
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      logs,
-      total,
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
+      data: {
+        logs,
+        pagination: {
+          page,
+          limit,
+          total,
+          pages: Math.ceil(total / limit),
+          hasNext: page < Math.ceil(total / limit),
+          hasPrev: page > 1,
+        },
       },
-    })
+    });
   } catch (error) {
-    console.error("Error fetching audit logs:", error)
+    console.error("Error in audit logs GET:", error);
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid query parameters",
+          details: error.errors,
+        },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to fetch audit logs",
+        error: "Internal server error",
         details: error instanceof Error ? error.message : "Unknown error",
-        logs: [],
-        total: 0,
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json()
+    const body = await request.json();
 
+    // Handle export request
     if (body.action === "export") {
-      // Handle export functionality
       return NextResponse.json({
         success: true,
         message: "Export functionality will be implemented",
-      })
+        data: { exportId: "export_" + Date.now() },
+      });
     }
 
-    // Create new audit log entry
-    const {
-      userId,
-      username,
-      actionType,
-      entityType,
-      entityId,
-      description,
-      details,
-      severity = "low",
-      branchId,
-      branchName,
-      status = "success",
-      errorMessage,
-      ipAddress,
-      userAgent,
-    } = body
+    // Validate create audit log request
+    const validatedData = CreateAuditLogSchema.parse(body);
 
     const result = await sql`
       INSERT INTO audit_logs (
@@ -264,28 +285,68 @@ export async function POST(request: Request) {
         status, error_message, ip_address, user_agent
       )
       VALUES (
-        ${userId}, ${username}, ${actionType}, ${entityType}, ${entityId || null},
-        ${description}, ${details ? JSON.stringify(details) : null}, ${severity},
-        ${branchId || null}, ${branchName || null}, ${status}, ${errorMessage || null},
-        ${ipAddress || null}, ${userAgent || null}
+        ${validatedData.userId || null}, 
+        ${validatedData.username}, 
+        ${validatedData.actionType}, 
+        ${validatedData.entityType}, 
+        ${validatedData.entityId || null},
+        ${validatedData.description}, 
+        ${
+          validatedData.details ? JSON.stringify(validatedData.details) : null
+        }, 
+        ${validatedData.severity},
+        ${validatedData.branchId || null}, 
+        ${validatedData.branchName || null}, 
+        ${validatedData.status}, 
+        ${validatedData.errorMessage || null},
+        ${validatedData.ipAddress || null}, 
+        ${validatedData.userAgent || null}
       )
-      RETURNING *
-    `
+      RETURNING 
+        id,
+        user_id as "userId",
+        username,
+        action_type as "actionType",
+        entity_type as "entityType",
+        entity_id as "entityId",
+        description,
+        details,
+        severity,
+        branch_id as "branchId",
+        branch_name as "branchName",
+        status,
+        error_message as "errorMessage",
+        ip_address as "ipAddress",
+        user_agent as "userAgent",
+        created_at as "timestamp"
+    `;
 
     return NextResponse.json({
       success: true,
       message: "Audit log created successfully",
       data: result[0],
-    })
+    });
   } catch (error) {
-    console.error("Error creating audit log:", error)
+    console.error("Error in audit logs POST:", error);
+
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Invalid request data",
+          details: error.errors,
+        },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,
         error: "Failed to create audit log",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

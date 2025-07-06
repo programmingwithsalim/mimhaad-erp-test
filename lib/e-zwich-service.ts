@@ -1,47 +1,48 @@
-import { neon } from "@neondatabase/serverless"
+import { neon } from "@neondatabase/serverless";
+import { UnifiedGLPostingService } from "./services/unified-gl-posting-service";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export interface CardBatch {
-  id: string
-  batch_code: string
-  quantity_received: number
-  quantity_available: number
-  card_type: string
-  expiry_date: string
-  status: string
-  branch_id: string
-  created_by: string
-  created_at: string
-  notes?: string
+  id: string;
+  batch_code: string;
+  quantity_received: number;
+  quantity_available: number;
+  card_type: string;
+  expiry_date: string;
+  status: string;
+  branch_id: string;
+  created_by: string;
+  created_at: string;
+  notes?: string;
 }
 
 export interface CardIssuance {
-  id: string
-  card_number: string
-  batch_id: string
-  customer_name: string
-  customer_phone: string
-  customer_id_number: string
-  customer_id_type: string
-  issued_by: string
-  issued_at: string
-  status: string
-  branch_id: string
+  id: string;
+  card_number: string;
+  batch_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_id_number: string;
+  customer_id_type: string;
+  issued_by: string;
+  issued_at: string;
+  status: string;
+  branch_id: string;
 }
 
 export interface WithdrawalTransaction {
-  id: string
-  card_number: string
-  amount: number
-  fee: number
-  customer_name: string
-  customer_phone: string
-  processed_by: string
-  processed_at: string
-  status: string
-  branch_id: string
-  reference_number: string
+  id: string;
+  card_number: string;
+  amount: number;
+  fee: number;
+  customer_name: string;
+  customer_phone: string;
+  processed_by: string;
+  processed_at: string;
+  status: string;
+  branch_id: string;
+  reference_number: string;
 }
 
 export async function ensureEZwichTables() {
@@ -61,7 +62,7 @@ export async function ensureEZwichTables() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         notes TEXT
       )
-    `
+    `;
 
     // Create card_issuances table
     await sql`
@@ -78,7 +79,7 @@ export async function ensureEZwichTables() {
         status VARCHAR(20) NOT NULL DEFAULT 'active',
         branch_id UUID NOT NULL
       )
-    `
+    `;
 
     // Create withdrawal_transactions table
     await sql`
@@ -95,62 +96,73 @@ export async function ensureEZwichTables() {
         branch_id UUID NOT NULL,
         reference_number VARCHAR(50) UNIQUE NOT NULL
       )
-    `
+    `;
 
-    console.log("E-Zwich tables ensured successfully")
-    return true
+    console.log("E-Zwich tables ensured successfully");
+    return true;
   } catch (error) {
-    console.error("Error ensuring E-Zwich tables:", error)
-    throw error
+    console.error("Error ensuring E-Zwich tables:", error);
+    throw error;
   }
 }
 
 export async function getCardBatches(branchId: string): Promise<CardBatch[]> {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     const batches = await sql`
       SELECT * FROM card_batches 
       WHERE branch_id = ${branchId} 
       ORDER BY created_at DESC
-    `
+    `;
 
     return batches.map((batch) => ({
       ...batch,
       created_at: batch.created_at.toISOString(),
       expiry_date: batch.expiry_date.toISOString().split("T")[0],
-    }))
+    }));
   } catch (error) {
-    console.error("Error fetching card batches:", error)
-    throw new Error(`Failed to fetch card batches: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching card batches:", error);
+    throw new Error(
+      `Failed to fetch card batches: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 export async function createCardBatch(batchData: {
-  batch_code: string
-  quantity_received: number
-  card_type: string
-  expiry_date: string
-  status?: string
-  branch_id: string
-  created_by: string
-  notes?: string
+  batch_code: string;
+  quantity_received: number;
+  card_type: string;
+  expiry_date: string;
+  status?: string;
+  branch_id: string;
+  created_by: string;
+  notes?: string;
 }): Promise<CardBatch> {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     // Validate required fields
-    if (!batchData.batch_code || !batchData.quantity_received || !batchData.branch_id || !batchData.created_by) {
-      throw new Error("Missing required fields: batch_code, quantity_received, branch_id, created_by")
+    if (
+      !batchData.batch_code ||
+      !batchData.quantity_received ||
+      !batchData.branch_id ||
+      !batchData.created_by
+    ) {
+      throw new Error(
+        "Missing required fields: batch_code, quantity_received, branch_id, created_by"
+      );
     }
 
     // Check if batch code already exists
     const existingBatch = await sql`
       SELECT id FROM card_batches WHERE batch_code = ${batchData.batch_code}
-    `
+    `;
 
     if (existingBatch.length > 0) {
-      throw new Error(`Batch code ${batchData.batch_code} already exists`)
+      throw new Error(`Batch code ${batchData.batch_code} already exists`);
     }
 
     const result = await sql`
@@ -176,27 +188,33 @@ export async function createCardBatch(batchData: {
         ${batchData.notes || null}
       )
       RETURNING *
-    `
+    `;
 
     if (result.length === 0) {
-      throw new Error("Failed to create card batch - no data returned")
+      throw new Error("Failed to create card batch - no data returned");
     }
 
-    const newBatch = result[0]
+    const newBatch = result[0];
     return {
       ...newBatch,
       created_at: newBatch.created_at.toISOString(),
       expiry_date: newBatch.expiry_date.toISOString().split("T")[0],
-    }
+    };
   } catch (error) {
-    console.error("Error creating card batch:", error)
-    throw new Error(`Failed to create card batch: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error creating card batch:", error);
+    throw new Error(
+      `Failed to create card batch: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
-export async function getCardIssuances(branchId: string): Promise<CardIssuance[]> {
+export async function getCardIssuances(
+  branchId: string
+): Promise<CardIssuance[]> {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     const issuances = await sql`
       SELECT ci.*, cb.batch_code 
@@ -204,51 +222,55 @@ export async function getCardIssuances(branchId: string): Promise<CardIssuance[]
       LEFT JOIN card_batches cb ON ci.batch_id = cb.id
       WHERE ci.branch_id = ${branchId} 
       ORDER BY ci.issued_at DESC
-    `
+    `;
 
     return issuances.map((issuance) => ({
       ...issuance,
       issued_at: issuance.issued_at.toISOString(),
-    }))
+    }));
   } catch (error) {
-    console.error("Error fetching card issuances:", error)
-    throw new Error(`Failed to fetch card issuances: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching card issuances:", error);
+    throw new Error(
+      `Failed to fetch card issuances: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 export async function createCardIssuance(issuanceData: {
-  card_number: string
-  batch_id: string
-  customer_name: string
-  customer_phone: string
-  customer_id_number: string
-  customer_id_type: string
-  issued_by: string
-  branch_id: string
+  card_number: string;
+  batch_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_id_number: string;
+  customer_id_type: string;
+  issued_by: string;
+  branch_id: string;
 }): Promise<CardIssuance> {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     // Check if card number already exists
     const existingCard = await sql`
       SELECT id FROM card_issuances WHERE card_number = ${issuanceData.card_number}
-    `
+    `;
 
     if (existingCard.length > 0) {
-      throw new Error(`Card number ${issuanceData.card_number} already exists`)
+      throw new Error(`Card number ${issuanceData.card_number} already exists`);
     }
 
     // Check if batch has available cards
     const batch = await sql`
       SELECT quantity_available FROM card_batches WHERE id = ${issuanceData.batch_id}
-    `
+    `;
 
     if (batch.length === 0) {
-      throw new Error("Batch not found")
+      throw new Error("Batch not found");
     }
 
     if (batch[0].quantity_available <= 0) {
-      throw new Error("No cards available in this batch")
+      throw new Error("No cards available in this batch");
     }
 
     // Create the issuance
@@ -262,62 +284,70 @@ export async function createCardIssuance(issuanceData: {
         ${issuanceData.customer_id_type}, ${issuanceData.issued_by}, ${issuanceData.branch_id}
       )
       RETURNING *
-    `
+    `;
 
     // Update batch quantity
     await sql`
       UPDATE card_batches 
       SET quantity_available = quantity_available - 1 
       WHERE id = ${issuanceData.batch_id}
-    `
+    `;
 
-    const newIssuance = result[0]
+    const newIssuance = result[0];
     return {
       ...newIssuance,
       issued_at: newIssuance.issued_at.toISOString(),
-    }
+    };
   } catch (error) {
-    console.error("Error creating card issuance:", error)
-    throw new Error(`Failed to create card issuance: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error creating card issuance:", error);
+    throw new Error(
+      `Failed to create card issuance: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
-export async function getWithdrawalTransactions(branchId: string): Promise<WithdrawalTransaction[]> {
+export async function getWithdrawalTransactions(
+  branchId: string
+): Promise<WithdrawalTransaction[]> {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     const withdrawals = await sql`
       SELECT * FROM withdrawal_transactions 
       WHERE branch_id = ${branchId} 
       ORDER BY processed_at DESC
-    `
+    `;
 
     return withdrawals.map((withdrawal) => ({
       ...withdrawal,
       processed_at: withdrawal.processed_at.toISOString(),
       amount: Number.parseFloat(withdrawal.amount),
       fee: Number.parseFloat(withdrawal.fee),
-    }))
+    }));
   } catch (error) {
-    console.error("Error fetching withdrawal transactions:", error)
+    console.error("Error fetching withdrawal transactions:", error);
     throw new Error(
-      `Failed to fetch withdrawal transactions: ${error instanceof Error ? error.message : "Unknown error"}`,
-    )
+      `Failed to fetch withdrawal transactions: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 export async function createWithdrawalTransaction(withdrawalData: {
-  card_number: string
-  amount: number
-  fee: number
-  customer_name: string
-  customer_phone: string
-  processed_by: string
-  branch_id: string
-  reference_number: string
+  card_number: string;
+  amount: number;
+  fee: number;
+  customer_name: string;
+  customer_phone: string;
+  processed_by: string;
+  branch_id: string;
+  reference_number: string;
 }): Promise<WithdrawalTransaction> {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     const result = await sql`
       INSERT INTO withdrawal_transactions (
@@ -329,26 +359,47 @@ export async function createWithdrawalTransaction(withdrawalData: {
         ${withdrawalData.processed_by}, ${withdrawalData.branch_id}, ${withdrawalData.reference_number}
       )
       RETURNING *
-    `
+    `;
 
-    const newWithdrawal = result[0]
+    const newWithdrawal = result[0];
+
+    // Unified GL Posting
+    try {
+      await UnifiedGLPostingService.createGLEntries({
+        transactionId: newWithdrawal.id,
+        sourceModule: "e_zwich",
+        transactionType: "withdrawal",
+        amount: Number(newWithdrawal.amount),
+        fee: Number(newWithdrawal.fee),
+        customerName: newWithdrawal.customer_name,
+        reference: newWithdrawal.reference_number,
+        processedBy: newWithdrawal.processed_by,
+        branchId: newWithdrawal.branch_id,
+        metadata: { card_number: newWithdrawal.card_number },
+      });
+    } catch (glError) {
+      console.error("[GL] Failed to post E-Zwich withdrawal to GL:", glError);
+    }
+
     return {
       ...newWithdrawal,
       processed_at: newWithdrawal.processed_at.toISOString(),
       amount: Number.parseFloat(newWithdrawal.amount),
       fee: Number.parseFloat(newWithdrawal.fee),
-    }
+    };
   } catch (error) {
-    console.error("Error creating withdrawal transaction:", error)
+    console.error("Error creating withdrawal transaction:", error);
     throw new Error(
-      `Failed to create withdrawal transaction: ${error instanceof Error ? error.message : "Unknown error"}`,
-    )
+      `Failed to create withdrawal transaction: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 export async function getEZwichStatistics(branchId: string) {
   try {
-    await ensureEZwichTables()
+    await ensureEZwichTables();
 
     const [batchStats, issuanceStats, withdrawalStats] = await Promise.all([
       sql`
@@ -372,25 +423,35 @@ export async function getEZwichStatistics(branchId: string) {
         FROM withdrawal_transactions 
         WHERE branch_id = ${branchId}
       `,
-    ])
+    ]);
 
     return {
       batches: {
         total: Number.parseInt(batchStats[0]?.total_batches || "0"),
-        totalCardsReceived: Number.parseInt(batchStats[0]?.total_cards_received || "0"),
-        totalCardsAvailable: Number.parseInt(batchStats[0]?.total_cards_available || "0"),
+        totalCardsReceived: Number.parseInt(
+          batchStats[0]?.total_cards_received || "0"
+        ),
+        totalCardsAvailable: Number.parseInt(
+          batchStats[0]?.total_cards_available || "0"
+        ),
       },
       issuances: {
         total: Number.parseInt(issuanceStats[0]?.total_issued || "0"),
       },
       withdrawals: {
         total: Number.parseInt(withdrawalStats[0]?.total_withdrawals || "0"),
-        totalAmount: Number.parseFloat(withdrawalStats[0]?.total_withdrawal_amount || "0"),
+        totalAmount: Number.parseFloat(
+          withdrawalStats[0]?.total_withdrawal_amount || "0"
+        ),
         totalFees: Number.parseFloat(withdrawalStats[0]?.total_fees || "0"),
       },
-    }
+    };
   } catch (error) {
-    console.error("Error fetching E-Zwich statistics:", error)
-    throw new Error(`Failed to fetch E-Zwich statistics: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching E-Zwich statistics:", error);
+    throw new Error(
+      `Failed to fetch E-Zwich statistics: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }

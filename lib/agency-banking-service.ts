@@ -5,30 +5,31 @@
  * and integrating them with the GL system.
  */
 
-import { neon } from "@neondatabase/serverless"
+import { neon } from "@neondatabase/serverless";
 
 // Agency Banking Transaction interface
 export interface AgencyBankingTransaction {
-  id: string
-  type: "deposit" | "withdrawal" | "interbank" | "commission"
-  amount: number
-  fee: number
-  customerName: string
-  accountNumber: string
-  partnerBank: string
-  partnerBankCode: string
-  reference?: string
-  status: "pending" | "completed" | "failed"
-  date: string
-  branchId?: string
-  userId: string
-  cashTillAffected: number
-  floatAffected: number
-  metadata?: Record<string, any>
+  id: string;
+  type: "deposit" | "withdrawal" | "interbank" | "commission";
+  amount: number;
+  fee: number;
+  customerName: string;
+  accountNumber: string;
+  partnerBank: string;
+  partnerBankCode: string;
+  reference?: string;
+  status: "pending" | "completed" | "failed";
+  date: string;
+  branchId?: string;
+  userId: string;
+  cashTillAffected: number;
+  floatAffected: number;
+  metadata?: Record<string, any>;
+  deleted?: boolean;
 }
 
 // In-memory storage for transactions (replace with database in production)
-let transactionsCache: AgencyBankingTransaction[] = []
+let transactionsCache: AgencyBankingTransaction[] = [];
 
 // Initialize with mock data
 const initializeMockTransactions = () => {
@@ -85,9 +86,9 @@ const initializeMockTransactions = () => {
         cashTillAffected: 1015.0,
         floatAffected: -1000.0,
       },
-    ]
+    ];
   }
-}
+};
 
 /**
  * Create an Agency Banking transaction
@@ -95,10 +96,10 @@ const initializeMockTransactions = () => {
  * @returns The created transaction or null if creation failed
  */
 export async function createAgencyBankingTransaction(
-  transaction: Omit<AgencyBankingTransaction, "id" | "date" | "status">,
+  transaction: Omit<AgencyBankingTransaction, "id" | "date" | "status">
 ): Promise<AgencyBankingTransaction | null> {
   try {
-    initializeMockTransactions()
+    initializeMockTransactions();
 
     // Create the transaction
     const newTransaction: AgencyBankingTransaction = {
@@ -106,14 +107,14 @@ export async function createAgencyBankingTransaction(
       ...transaction,
       date: new Date().toISOString(),
       status: "pending",
-    }
+    };
 
-    transactionsCache.push(newTransaction)
+    transactionsCache.push(newTransaction);
 
-    return newTransaction
+    return newTransaction;
   } catch (error) {
-    console.error("Error creating Agency Banking transaction:", error)
-    return null
+    console.error("Error creating Agency Banking transaction:", error);
+    return null;
   }
 }
 
@@ -122,32 +123,37 @@ export async function createAgencyBankingTransaction(
  * @param id ID of the transaction to complete
  * @returns The completed transaction or null if completion failed
  */
-export async function completeAgencyBankingTransaction(id: string): Promise<AgencyBankingTransaction | null> {
+export async function completeAgencyBankingTransaction(
+  id: string
+): Promise<AgencyBankingTransaction | null> {
   try {
-    initializeMockTransactions()
+    initializeMockTransactions();
 
-    const transactionIndex = transactionsCache.findIndex((t) => t.id === id)
+    const transactionIndex = transactionsCache.findIndex((t) => t.id === id);
 
     if (transactionIndex === -1) {
-      console.error("Agency Banking transaction not found:", id)
-      return null
+      console.error("Agency Banking transaction not found:", id);
+      return null;
     }
 
-    const transaction = transactionsCache[transactionIndex]
+    const transaction = transactionsCache[transactionIndex];
 
     if (transaction.status !== "pending") {
-      console.error("Agency Banking transaction is not in pending status:", transaction)
-      return null
+      console.error(
+        "Agency Banking transaction is not in pending status:",
+        transaction
+      );
+      return null;
     }
 
     // Update the transaction status
-    transaction.status = "completed"
-    transactionsCache[transactionIndex] = transaction
+    transaction.status = "completed";
+    transactionsCache[transactionIndex] = transaction;
 
-    return transaction
+    return transaction;
   } catch (error) {
-    console.error("Error completing Agency Banking transaction:", error)
-    return null
+    console.error("Error completing Agency Banking transaction:", error);
+    return null;
   }
 }
 
@@ -157,53 +163,79 @@ export async function completeAgencyBankingTransaction(id: string): Promise<Agen
  * @returns Array of Agency Banking transactions matching the filters
  */
 export async function getAgencyBankingTransactions(filters?: {
-  status?: "pending" | "completed" | "failed"
-  type?: "deposit" | "withdrawal" | "interbank" | "commission"
-  partnerBankCode?: string
-  startDate?: string
-  endDate?: string
-  branchId?: string
-  userId?: string
+  status?: "pending" | "completed" | "failed";
+  type?: "deposit" | "withdrawal" | "interbank" | "commission";
+  partnerBankCode?: string;
+  startDate?: string;
+  endDate?: string;
+  branchId?: string;
+  userId?: string;
 }): Promise<AgencyBankingTransaction[]> {
   try {
-    initializeMockTransactions()
-    let transactions = [...transactionsCache]
-
-    // Apply filters if provided
+    const sql = neon(process.env.DATABASE_URL!);
+    let query = `SELECT * FROM agency_banking_transactions WHERE deleted = false`;
+    const params: any[] = [];
     if (filters) {
       if (filters.status) {
-        transactions = transactions.filter((t) => t.status === filters.status)
+        query += ` AND status = $${params.length + 1}`;
+        params.push(filters.status);
       }
-
       if (filters.type) {
-        transactions = transactions.filter((t) => t.type === filters.type)
+        query += ` AND type = $${params.length + 1}`;
+        params.push(filters.type);
       }
-
       if (filters.partnerBankCode) {
-        transactions = transactions.filter((t) => t.partnerBankCode === filters.partnerBankCode)
+        query += ` AND partner_bank_code = $${params.length + 1}`;
+        params.push(filters.partnerBankCode);
       }
-
       if (filters.startDate) {
-        transactions = transactions.filter((t) => t.date >= filters.startDate)
+        query += ` AND date >= $${params.length + 1}`;
+        params.push(filters.startDate);
       }
-
       if (filters.endDate) {
-        transactions = transactions.filter((t) => t.date <= filters.endDate)
+        query += ` AND date <= $${params.length + 1}`;
+        params.push(filters.endDate);
       }
-
       if (filters.branchId) {
-        transactions = transactions.filter((t) => t.branchId === filters.branchId)
+        query += ` AND branch_id = $${params.length + 1}`;
+        params.push(filters.branchId);
       }
-
       if (filters.userId) {
-        transactions = transactions.filter((t) => t.userId === filters.userId)
+        query += ` AND user_id = $${params.length + 1}`;
+        params.push(filters.userId);
       }
     }
-
-    return transactions
+    query += ` ORDER BY date DESC`;
+    let transactions;
+    if (params.length > 0) {
+      transactions = await sql.unsafe(query, ...(params as any[]));
+    } else {
+      transactions = await sql.unsafe(query);
+    }
+    return Array.isArray(transactions)
+      ? transactions.map((t: any) => ({
+          id: t.id,
+          type: t.type,
+          amount: Number(t.amount),
+          fee: Number(t.fee),
+          customerName: t.customer_name,
+          accountNumber: t.account_number,
+          partnerBank: t.partner_bank,
+          partnerBankCode: t.partner_bank_code,
+          reference: t.reference,
+          status: t.status,
+          date: t.date,
+          branchId: t.branch_id,
+          userId: t.user_id,
+          cashTillAffected: Number(t.cash_till_affected || 0),
+          floatAffected: Number(t.float_affected || 0),
+          metadata: {},
+          deleted: t.deleted,
+        }))
+      : [];
   } catch (error) {
-    console.error("Error getting Agency Banking transactions:", error)
-    return []
+    console.error("Error getting Agency Banking transactions:", error);
+    return [];
   }
 }
 
@@ -212,14 +244,16 @@ export async function getAgencyBankingTransactions(filters?: {
  * @param id ID of the transaction to get
  * @returns The transaction or null if not found
  */
-export async function getAgencyBankingTransactionById(id: string): Promise<AgencyBankingTransaction | null> {
+export async function getAgencyBankingTransactionById(
+  id: string
+): Promise<AgencyBankingTransaction | null> {
   try {
-    initializeMockTransactions()
-    const transaction = transactionsCache.find((t) => t.id === id)
-    return transaction || null
+    initializeMockTransactions();
+    const transaction = transactionsCache.find((t) => t.id === id);
+    return transaction || null;
   } catch (error) {
-    console.error("Error getting Agency Banking transaction by ID:", error)
-    return null
+    console.error("Error getting Agency Banking transaction by ID:", error);
+    return null;
   }
 }
 
@@ -229,15 +263,15 @@ export async function getAgencyBankingTransactionById(id: string): Promise<Agenc
  * @returns Transaction statistics
  */
 export async function getAgencyBankingTransactionStatistics(filters?: {
-  startDate?: string
-  endDate?: string
-  branchId?: string
+  startDate?: string;
+  endDate?: string;
+  branchId?: string;
 }): Promise<{
-  totalTransactions: number
-  totalAmount: number
-  totalFees: number
-  transactionsByType: Record<string, number>
-  transactionsByBank: Record<string, number>
+  totalTransactions: number;
+  totalAmount: number;
+  totalFees: number;
+  transactionsByType: Record<string, number>;
+  transactionsByBank: Record<string, number>;
 }> {
   try {
     const transactions = await getAgencyBankingTransactions({
@@ -245,7 +279,7 @@ export async function getAgencyBankingTransactionStatistics(filters?: {
       startDate: filters?.startDate,
       endDate: filters?.endDate,
       branchId: filters?.branchId,
-    })
+    });
 
     const statistics = {
       totalTransactions: transactions.length,
@@ -253,28 +287,33 @@ export async function getAgencyBankingTransactionStatistics(filters?: {
       totalFees: transactions.reduce((sum, t) => sum + (t.fee || 0), 0),
       transactionsByType: {} as Record<string, number>,
       transactionsByBank: {} as Record<string, number>,
-    }
+    };
 
     // Count transactions by type
     transactions.forEach((t) => {
-      statistics.transactionsByType[t.type] = (statistics.transactionsByType[t.type] || 0) + 1
-    })
+      statistics.transactionsByType[t.type] =
+        (statistics.transactionsByType[t.type] || 0) + 1;
+    });
 
     // Count transactions by bank
     transactions.forEach((t) => {
-      statistics.transactionsByBank[t.partnerBankCode] = (statistics.transactionsByBank[t.partnerBankCode] || 0) + 1
-    })
+      statistics.transactionsByBank[t.partnerBankCode] =
+        (statistics.transactionsByBank[t.partnerBankCode] || 0) + 1;
+    });
 
-    return statistics
+    return statistics;
   } catch (error) {
-    console.error("Error getting Agency Banking transaction statistics:", error)
+    console.error(
+      "Error getting Agency Banking transaction statistics:",
+      error
+    );
     return {
       totalTransactions: 0,
       totalAmount: 0,
       totalFees: 0,
       transactionsByType: {},
       transactionsByBank: {},
-    }
+    };
   }
 }
 
@@ -300,10 +339,10 @@ export async function getAgencyBankingFloatAccounts(branchId: string) {
           branch_name: "Main Branch",
           branch_code: "MB001",
         },
-      ]
+      ];
     }
 
-    const sql = neon(process.env.DATABASE_URL)
+    const sql = neon(process.env.DATABASE_URL);
 
     // Query the database for agency banking float accounts
     const accounts = await sql`
@@ -319,16 +358,19 @@ export async function getAgencyBankingFloatAccounts(branchId: string) {
       AND fa.account_type = 'agency-banking'
       AND fa.is_active = true
       ORDER BY fa.created_at DESC
-    `
+    `;
 
     return accounts.map((account) => ({
       ...account,
       current_balance: Number(account.current_balance),
       min_threshold: Number(account.min_threshold),
       max_threshold: Number(account.max_threshold),
-    }))
+    }));
   } catch (error) {
-    console.error(`Error fetching agency banking float accounts for branch ${branchId}:`, error)
+    console.error(
+      `Error fetching agency banking float accounts for branch ${branchId}:`,
+      error
+    );
     // Return mock data on error
     return [
       {
@@ -343,7 +385,7 @@ export async function getAgencyBankingFloatAccounts(branchId: string) {
         branch_name: "Main Branch",
         branch_code: "MB001",
       },
-    ]
+    ];
   }
 }
 
@@ -353,7 +395,10 @@ export async function getAgencyBankingFloatAccounts(branchId: string) {
  * @param provider Optional provider code to filter by
  * @returns The float account or null if not found
  */
-export async function getAgencyBankingFloatAccount(branchId: string, provider?: string) {
+export async function getAgencyBankingFloatAccount(
+  branchId: string,
+  provider?: string
+) {
   try {
     if (!process.env.DATABASE_URL) {
       // Return mock data if no database connection
@@ -368,10 +413,10 @@ export async function getAgencyBankingFloatAccount(branchId: string, provider?: 
         is_active: true,
         branch_name: "Main Branch",
         branch_code: "MB001",
-      }
+      };
     }
 
-    const sql = neon(process.env.DATABASE_URL)
+    const sql = neon(process.env.DATABASE_URL);
 
     let query = sql`
       SELECT 
@@ -385,35 +430,38 @@ export async function getAgencyBankingFloatAccount(branchId: string, provider?: 
       WHERE fa.branch_id = ${branchId}
       AND fa.account_type = 'agency-banking'
       AND fa.is_active = true
-    `
+    `;
 
     // Add provider filter if specified
     if (provider) {
       query = sql`
         ${query} AND fa.provider = ${provider}
-      `
+      `;
     }
 
     // Limit to one result and order by most recently created
     query = sql`
       ${query} ORDER BY fa.created_at DESC LIMIT 1
-    `
+    `;
 
-    const accounts = await query
+    const accounts = await query;
 
     if (accounts.length === 0) {
-      return null
+      return null;
     }
 
-    const account = accounts[0]
+    const account = accounts[0];
     return {
       ...account,
       current_balance: Number(account.current_balance),
       min_threshold: Number(account.min_threshold),
       max_threshold: Number(account.max_threshold),
-    }
+    };
   } catch (error) {
-    console.error(`Error fetching agency banking float account for branch ${branchId}:`, error)
+    console.error(
+      `Error fetching agency banking float account for branch ${branchId}:`,
+      error
+    );
     // Return mock data on error
     return {
       id: "float-agency-001",
@@ -426,7 +474,7 @@ export async function getAgencyBankingFloatAccount(branchId: string, provider?: 
       is_active: true,
       branch_name: "Main Branch",
       branch_code: "MB001",
-    }
+    };
   }
 }
 
@@ -436,7 +484,10 @@ export async function getAgencyBankingFloatAccount(branchId: string, provider?: 
  * @param createdBy User ID of the creator
  * @returns The created float account
  */
-export async function initializeAgencyBankingFloatAccount(branchId: string, createdBy: string) {
+export async function initializeAgencyBankingFloatAccount(
+  branchId: string,
+  createdBy: string
+) {
   try {
     if (!process.env.DATABASE_URL) {
       // Return mock data if no database connection
@@ -452,10 +503,10 @@ export async function initializeAgencyBankingFloatAccount(branchId: string, crea
         branch_name: "Main Branch",
         branch_code: "MB001",
         created_by: createdBy,
-      }
+      };
     }
 
-    const sql = neon(process.env.DATABASE_URL)
+    const sql = neon(process.env.DATABASE_URL);
 
     // Check if an account already exists
     const existingAccounts = await sql`
@@ -464,12 +515,12 @@ export async function initializeAgencyBankingFloatAccount(branchId: string, crea
       AND account_type = 'agency-banking'
       AND is_active = true
       LIMIT 1
-    `
+    `;
 
     if (existingAccounts.length > 0) {
       // Account already exists, fetch and return it
-      const account = await getAgencyBankingFloatAccount(branchId)
-      return account
+      const account = await getAgencyBankingFloatAccount(branchId);
+      return account;
     }
 
     // Create a new account
@@ -494,16 +545,19 @@ export async function initializeAgencyBankingFloatAccount(branchId: string, crea
         ${createdBy}
       )
       RETURNING *
-    `
+    `;
 
     if (result.length === 0) {
-      throw new Error("Failed to create agency banking float account")
+      throw new Error("Failed to create agency banking float account");
     }
 
     // Fetch the account with branch details
-    return await getAgencyBankingFloatAccount(branchId)
+    return await getAgencyBankingFloatAccount(branchId);
   } catch (error) {
-    console.error(`Error initializing agency banking float account for branch ${branchId}:`, error)
+    console.error(
+      `Error initializing agency banking float account for branch ${branchId}:`,
+      error
+    );
     // Return mock data on error
     return {
       id: "float-agency-001",
@@ -517,6 +571,6 @@ export async function initializeAgencyBankingFloatAccount(branchId: string, crea
       branch_name: "Main Branch",
       branch_code: "MB001",
       created_by: createdBy,
-    }
+    };
   }
 }

@@ -1,48 +1,56 @@
-"use client"
+"use client";
 
-import { useState, useEffect, useCallback } from "react"
-import { useCurrentUser } from "@/hooks/use-current-user"
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 interface Transaction {
-  id: string
-  customer_name: string
-  phone_number: string
-  amount: number
-  fee: number
-  type: string
-  status: string
-  reference: string
-  provider: string
-  created_at: string
-  branch_id: string
-  processed_by: string
-  service_type: string
+  id: string;
+  customer_name: string;
+  phone_number: string;
+  amount: number;
+  fee: number;
+  type: string;
+  status: string;
+  reference: string;
+  provider: string;
+  created_at: string;
+  branch_id: string;
+  branch_name?: string;
+  processed_by: string;
+  service_type: string;
 }
 
 interface TransactionFilters {
-  search: string
-  service: string
-  status: string
-  type: string
-  dateFrom: string
-  dateTo: string
-  branchId: string
+  search: string;
+  service: string;
+  status: string;
+  type: string;
+  dateFrom: string;
+  dateTo: string;
+  branchId: string;
 }
 
 interface PaginationInfo {
-  currentPage: number
-  totalPages: number
-  totalCount: number
-  hasNextPage: boolean
-  hasPrevPage: boolean
-  limit: number
+  currentPage: number;
+  totalPages: number;
+  totalCount: number;
+  hasNextPage: boolean;
+  hasPrevPage: boolean;
+  limit: number;
 }
 
+// Cache for storing transaction data
+const transactionCache = new Map<
+  string,
+  { data: Transaction[]; timestamp: number; pagination: PaginationInfo }
+>();
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
 export function useAllTransactions() {
-  const { user } = useCurrentUser()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { user } = useCurrentUser();
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [pagination, setPagination] = useState<PaginationInfo>({
     currentPage: 1,
     totalPages: 0,
@@ -50,7 +58,7 @@ export function useAllTransactions() {
     hasNextPage: false,
     hasPrevPage: false,
     limit: 50,
-  })
+  });
 
   const [filters, setFilters] = useState<TransactionFilters>({
     search: "",
@@ -60,79 +68,187 @@ export function useAllTransactions() {
     dateFrom: "",
     dateTo: "",
     branchId: "",
-  })
+  });
 
-  // Check if user can view all branches
-  const canViewAllBranches = user?.role === "admin" || user?.role === "finance"
-  const isFiltered = !canViewAllBranches && !!user?.branchId
+  // Debounce refs
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+  const filterTimeoutRef = useRef<NodeJS.Timeout>();
+
+  // Memoized values
+  const canViewAllBranches = useMemo(
+    () => user?.role === "admin" || user?.role === "finance",
+    [user?.role]
+  );
+
+  const isFiltered = useMemo(
+    () => !canViewAllBranches && !!user?.branchId,
+    [canViewAllBranches, user?.branchId]
+  );
+
+  const effectiveFilters = useMemo(() => {
+    const baseFilters = { ...filters };
+    if (!canViewAllBranches && user?.branchId) {
+      baseFilters.branchId = user.branchId;
+    }
+    return baseFilters;
+  }, [filters, canViewAllBranches, user?.branchId]);
+
+  // Generate cache key
+  const getCacheKey = useCallback(
+    (page: number, filters: TransactionFilters) => {
+      return `${page}-${JSON.stringify(filters)}-${user?.branchId || "all"}`;
+    },
+    [user?.branchId]
+  );
+
+  // Check cache
+  const getCachedData = useCallback((cacheKey: string) => {
+    const cached = transactionCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+      return cached;
+    }
+    return null;
+  }, []);
+
+  // Set cache
+  const setCachedData = useCallback(
+    (cacheKey: string, data: Transaction[], pagination: PaginationInfo) => {
+      transactionCache.set(cacheKey, {
+        data,
+        timestamp: Date.now(),
+        pagination,
+      });
+    },
+    []
+  );
+
+  // Clear expired cache entries
+  const clearExpiredCache = useCallback(() => {
+    const now = Date.now();
+    for (const [key, value] of transactionCache.entries()) {
+      if (now - value.timestamp > CACHE_DURATION) {
+        transactionCache.delete(key);
+      }
+    }
+  }, []);
 
   const fetchTransactions = useCallback(
-    async (page = 1) => {
+    async (page = 1, useCache = true) => {
+      if (!user) return;
+
       try {
-        setLoading(true)
-        setError(null)
+        setLoading(true);
+        setError(null);
+
+        const cacheKey = getCacheKey(page, effectiveFilters);
+
+        // Check cache first
+        if (useCache) {
+          const cached = getCachedData(cacheKey);
+          if (cached) {
+            setTransactions(cached.data);
+            setPagination(cached.pagination);
+            setLoading(false);
+            return;
+          }
+        }
 
         // Build query parameters
         const params = new URLSearchParams({
           page: page.toString(),
           limit: pagination.limit.toString(),
-        })
+        });
 
         // Add filters to params
-        Object.entries(filters).forEach(([key, value]) => {
-          if (value) {
-            params.append(key, value)
+        Object.entries(effectiveFilters).forEach(([key, value]) => {
+          if (value && value !== "all") {
+            params.append(key, value);
           }
-        })
+        });
 
-        // Always add branch filter if user is not admin or finance
-        if (!canViewAllBranches && user?.branchId) {
-          params.append("branchId", user.branchId)
-        }
+        console.log("📊 Fetching transactions with params:", params.toString());
 
-        console.log("Fetching transactions with params:", params.toString())
-        console.log("User role:", user?.role, "Branch ID:", user?.branchId)
-
-        const response = await fetch(`/api/transactions/all?${params.toString()}`, {
-          headers: {
-            "Cache-Control": "no-cache",
-            Pragma: "no-cache",
-          },
-        })
+        const response = await fetch(
+          `/api/transactions/all?${params.toString()}`,
+          {
+            headers: {
+              "Cache-Control": "no-cache",
+              Pragma: "no-cache",
+            },
+          }
+        );
 
         if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
+          throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data = await response.json()
+        const data = await response.json();
 
         if (data.success) {
-          setTransactions(data.data || [])
-          setPagination({
-            ...pagination,
-            currentPage: page,
-            totalPages: data.pagination?.totalPages || 0,
-            totalCount: data.pagination?.totalCount || 0,
-            hasNextPage: data.pagination?.hasNextPage || false,
-            hasPrevPage: data.pagination?.hasPrevPage || false,
-          })
+          const transactionData = data.data || [];
+          const paginationData = data.pagination;
+
+          setTransactions(transactionData);
+          setPagination(paginationData);
+
+          // Cache the result
+          setCachedData(cacheKey, transactionData, paginationData);
         } else {
-          throw new Error(data.error || "Failed to fetch transactions")
+          throw new Error(data.error || "Failed to fetch transactions");
         }
       } catch (err) {
-        console.error("Error fetching transactions:", err)
-        setError(err instanceof Error ? err.message : "An error occurred")
-        setTransactions([])
+        console.error("Error fetching transactions:", err);
+        setError(err instanceof Error ? err.message : "An error occurred");
+        setTransactions([]);
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
     },
-    [filters, pagination.limit, user, canViewAllBranches],
-  )
+    [
+      user,
+      effectiveFilters,
+      pagination.limit,
+      getCacheKey,
+      getCachedData,
+      setCachedData,
+    ]
+  );
 
-  const updateFilters = useCallback((newFilters: Partial<TransactionFilters>) => {
-    setFilters((prev) => ({ ...prev, ...newFilters }))
-  }, [])
+  // Debounced filter update
+  const updateFilters = useCallback(
+    (newFilters: Partial<TransactionFilters>) => {
+      setFilters((prev) => ({ ...prev, ...newFilters }));
+
+      // Clear existing timeout
+      if (filterTimeoutRef.current) {
+        clearTimeout(filterTimeoutRef.current);
+      }
+
+      // Set new timeout for debounced fetch
+      filterTimeoutRef.current = setTimeout(() => {
+        fetchTransactions(1, false); // Don't use cache for filter changes
+      }, 300);
+    },
+    [fetchTransactions]
+  );
+
+  // Debounced search update
+  const updateSearch = useCallback(
+    (search: string) => {
+      setFilters((prev) => ({ ...prev, search }));
+
+      // Clear existing timeout
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+
+      // Set new timeout for debounced fetch
+      searchTimeoutRef.current = setTimeout(() => {
+        fetchTransactions(1, false); // Don't use cache for search changes
+      }, 500); // Longer delay for search
+    },
+    [fetchTransactions]
+  );
 
   const clearFilters = useCallback(() => {
     setFilters({
@@ -143,34 +259,59 @@ export function useAllTransactions() {
       dateFrom: "",
       dateTo: "",
       branchId: "",
-    })
-  }, [])
+    });
+    fetchTransactions(1, false);
+  }, [fetchTransactions]);
 
   const goToPage = useCallback(
     (page: number) => {
-      fetchTransactions(page)
+      fetchTransactions(page, true); // Use cache for pagination
     },
-    [fetchTransactions],
-  )
+    [fetchTransactions]
+  );
 
   const nextPage = useCallback(() => {
     if (pagination.hasNextPage) {
-      goToPage(pagination.currentPage + 1)
+      goToPage(pagination.currentPage + 1);
     }
-  }, [pagination.hasNextPage, pagination.currentPage, goToPage])
+  }, [pagination.hasNextPage, pagination.currentPage, goToPage]);
 
   const prevPage = useCallback(() => {
     if (pagination.hasPrevPage) {
-      goToPage(pagination.currentPage - 1)
+      goToPage(pagination.currentPage - 1);
     }
-  }, [pagination.hasPrevPage, pagination.currentPage, goToPage])
+  }, [pagination.hasPrevPage, pagination.currentPage, goToPage]);
+
+  // Clear cache and refetch
+  const refetch = useCallback(() => {
+    transactionCache.clear();
+    fetchTransactions(pagination.currentPage, false);
+  }, [fetchTransactions, pagination.currentPage]);
 
   // Initial fetch
   useEffect(() => {
     if (user) {
-      fetchTransactions(1)
+      fetchTransactions(1, true);
     }
-  }, [filters, fetchTransactions, user])
+  }, [user, fetchTransactions]);
+
+  // Clear expired cache periodically
+  useEffect(() => {
+    const interval = setInterval(clearExpiredCache, CACHE_DURATION);
+    return () => clearInterval(interval);
+  }, [clearExpiredCache]);
+
+  // Cleanup timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+      if (filterTimeoutRef.current) {
+        clearTimeout(filterTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return {
     transactions,
@@ -179,13 +320,14 @@ export function useAllTransactions() {
     pagination,
     filters,
     updateFilters,
+    updateSearch,
     clearFilters,
-    refetch: () => fetchTransactions(pagination.currentPage),
+    refetch,
     goToPage,
     nextPage,
     prevPage,
     canViewAllBranches,
     isFiltered,
     currentUserBranch: user?.branchId,
-  }
+  };
 }

@@ -1,83 +1,103 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
-import { getCurrentUser } from "@/lib/auth-utils"
+import { NextResponse } from "next/server";
+import { UnifiedTransactionService } from "@/lib/services/unified-transaction-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
-const sql = neon(process.env.DATABASE_URL!)
-
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const currentUser = getCurrentUser(request as any)
-    const { id } = params
-    const body = await request.json()
+    const currentUser = getCurrentUser(request as any);
+    const { id } = params;
+    const body = await request.json();
 
-    const { meter_number, provider, amount, customer_name, customer_phone, status } = body
-
-    // Update the transaction
-    const result = await sql`
-      UPDATE power_transactions 
-      SET 
-        meter_number = ${meter_number},
-        provider = ${provider},
-        amount = ${amount},
-        customer_name = ${customer_name || null},
-        customer_phone = ${customer_phone || null},
-        status = ${status},
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${id} AND branch_id = ${currentUser.branchId}
-      RETURNING *
-    `
-
-    if (result.length === 0) {
-      return NextResponse.json({ success: false, error: "Transaction not found or access denied" }, { status: 404 })
+    if (!currentUser?.id || !currentUser?.branchId) {
+      return NextResponse.json(
+        { success: false, error: "User authentication required" },
+        { status: 401 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      transaction: result[0],
-      message: "Transaction updated successfully",
-    })
+    const result = await UnifiedTransactionService.editTransaction(
+      id,
+      "power",
+      body,
+      currentUser.id,
+      currentUser.branchId,
+      currentUser.name || currentUser.username
+    );
+
+    if (result.success) {
+      return NextResponse.json({
+        success: true,
+        transaction: result.transaction,
+        message: result.message,
+      });
+    } else {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: 400 }
+      );
+    }
   } catch (error) {
-    console.error("Error updating power transaction:", error)
+    console.error("Error updating power transaction:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to update transaction",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
   try {
-    const currentUser = getCurrentUser(request as any)
-    const { id } = params
+    const currentUser = getCurrentUser(request as any);
+    const { id } = params;
+    const body = await request.json();
+    const reason = body?.reason || "User requested deletion";
 
-    // Delete the transaction
-    const result = await sql`
-      DELETE FROM power_transactions 
-      WHERE id = ${id} AND branch_id = ${currentUser.branchId}
-      RETURNING *
-    `
-
-    if (result.length === 0) {
-      return NextResponse.json({ success: false, error: "Transaction not found or access denied" }, { status: 404 })
+    if (!currentUser?.id || !currentUser?.branchId) {
+      return NextResponse.json(
+        { success: false, error: "User authentication required" },
+        { status: 401 }
+      );
     }
 
-    return NextResponse.json({
-      success: true,
-      message: "Transaction deleted successfully",
-    })
+    const result = await UnifiedTransactionService.deleteTransaction(
+      id,
+      "power",
+      reason,
+      currentUser.id,
+      currentUser.branchId,
+      currentUser.name || currentUser.username
+    );
+
+    if (result.success) {
+      return NextResponse.json({
+        success: true,
+        message: result.message,
+      });
+    } else {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: 400 }
+      );
+    }
   } catch (error) {
-    console.error("Error deleting power transaction:", error)
+    console.error("Error deleting power transaction:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to delete transaction",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

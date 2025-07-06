@@ -1,10 +1,19 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import {
   TrendingUp,
   TrendingDown,
@@ -15,104 +24,179 @@ import {
   AlertTriangle,
   Info,
   CheckCircle,
-} from "lucide-react"
-import type { EnhancedDashboardData } from "@/lib/services/enhanced-dashboard-service"
+  RefreshCw,
+  Activity,
+  Users,
+  Building2,
+} from "lucide-react";
 
-interface EnhancedFinanceDashboardProps {
-  data: EnhancedDashboardData
+interface ServiceStats {
+  service: string;
+  todayTransactions: number;
+  todayVolume: number;
+  todayFees: number;
+  totalBalance: number;
+  weeklyGrowth: number;
+  monthlyGrowth: number;
 }
 
-export function EnhancedFinanceDashboard({ data }: EnhancedFinanceDashboardProps) {
-  // Safe defaults to prevent null/undefined errors
-  const safeData = {
-    totalStats: {
-      totalRevenue: 0,
-      totalFees: 0,
-      totalBalance: 0,
-      revenueChange: 0,
-      ...data?.totalStats,
-    },
-    serviceStats: data?.serviceStats || [],
-    financialMetrics: {
-      netIncome: 0,
-      profitMargin: 0,
-      cashFlow: 0,
-      pendingExpenses: 0,
-      totalRevenue: 0,
-      totalExpenses: 0,
-      outstandingCommissions: 0,
-      ...data?.financialMetrics,
-    },
-    alerts: data?.alerts || [],
-    userInfo: {
-      branchName: "Unknown Branch",
-      ...data?.userInfo,
-    },
-  }
+interface DashboardStats {
+  totalTransactions: number;
+  totalVolume: number;
+  totalCommission: number;
+  activeUsers: number;
+  todayTransactions: number;
+  todayVolume: number;
+  todayCommission: number;
+  serviceBreakdown: Array<{
+    service: string;
+    transactions: number;
+    volume: number;
+    commission: number;
+  }>;
+  recentActivity: Array<{
+    id: string;
+    type: string;
+    service: string;
+    amount: number;
+    timestamp: string;
+    user: string;
+  }>;
+  floatAlerts: Array<{
+    id: string;
+    provider: string;
+    service: string;
+    current_balance: number;
+    threshold: number;
+    severity: "warning" | "critical";
+  }>;
+  chartData: Array<{
+    date: string;
+    transactions: number;
+    volume: number;
+    commission: number;
+  }>;
+}
 
-  const { totalStats, serviceStats, financialMetrics, alerts, userInfo } = safeData
+interface EnhancedFinanceDashboardProps {
+  serviceStats: ServiceStats[];
+  totalStats: DashboardStats;
+  financialOverview: any;
+}
+
+export function EnhancedFinanceDashboard({
+  serviceStats,
+  totalStats,
+  financialOverview,
+}: EnhancedFinanceDashboardProps) {
+  const { user } = useCurrentUser();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
 
   const formatCurrency = (amount: number | null | undefined) => {
-    const safeAmount = Number(amount) || 0
+    const safeAmount = Number(amount) || 0;
     return new Intl.NumberFormat("en-GH", {
       style: "currency",
       currency: "GHS",
       minimumFractionDigits: 2,
-    }).format(safeAmount)
-  }
+    }).format(safeAmount);
+  };
 
   const getGrowthIcon = (growth: number | null | undefined) => {
-    const safeGrowth = Number(growth) || 0
-    if (safeGrowth > 0) return <TrendingUp className="h-4 w-4 text-green-600" />
-    if (safeGrowth < 0) return <TrendingDown className="h-4 w-4 text-red-600" />
-    return <div className="h-4 w-4" />
-  }
+    const safeGrowth = Number(growth) || 0;
+    if (safeGrowth > 0)
+      return <TrendingUp className="h-4 w-4 text-green-600" />;
+    if (safeGrowth < 0)
+      return <TrendingDown className="h-4 w-4 text-red-600" />;
+    return <div className="h-4 w-4" />;
+  };
 
   const getGrowthColor = (growth: number | null | undefined) => {
-    const safeGrowth = Number(growth) || 0
-    if (safeGrowth > 0) return "text-green-600"
-    if (safeGrowth < 0) return "text-red-600"
-    return "text-gray-600"
-  }
+    const safeGrowth = Number(growth) || 0;
+    if (safeGrowth > 0) return "text-green-600";
+    if (safeGrowth < 0) return "text-red-600";
+    return "text-gray-600";
+  };
 
-  const getAlertIcon = (type: string) => {
-    switch (type) {
-      case "error":
-        return <AlertTriangle className="h-4 w-4 text-red-600" />
-      case "warning":
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />
-      case "info":
-        return <Info className="h-4 w-4 text-blue-600" />
+  const getServiceIcon = (service: string) => {
+    switch (service.toLowerCase()) {
+      case "momo":
+        return <Activity className="h-4 w-4" />;
+      case "power":
+        return <Activity className="h-4 w-4" />;
+      case "e-zwich":
+      case "ezwich":
+        return <CreditCard className="h-4 w-4" />;
+      case "agency-banking":
+      case "agency banking":
+        return <Building2 className="h-4 w-4" />;
+      case "jumia":
+        return <Activity className="h-4 w-4" />;
       default:
-        return <CheckCircle className="h-4 w-4 text-green-600" />
+        return <Activity className="h-4 w-4" />;
     }
-  }
+  };
+
+  const handleRefresh = () => {
+    setLoading(true);
+    // Simulate refresh
+    setTimeout(() => {
+      setLoading(false);
+      toast({
+        title: "Dashboard Refreshed",
+        description: "Latest financial data has been loaded.",
+      });
+    }, 1000);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Branch Info */}
-      <Card className="bg-gradient-to-r from-green-50 to-blue-50 border-green-200">
-        <CardHeader>
-          <CardTitle className="text-green-800">Financial Overview - {userInfo.branchName}</CardTitle>
-          <CardDescription className="text-green-600">
-            Financial metrics and performance for your branch
-          </CardDescription>
-        </CardHeader>
-      </Card>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">
+            Finance Dashboard
+          </h2>
+          <p className="text-muted-foreground">
+            Welcome back, {user?.firstName || "Finance"}! Here's your financial
+            overview for {user?.branchName || "your branch"}.
+          </p>
+        </div>
+        <Button onClick={handleRefresh} disabled={loading}>
+          <RefreshCw
+            className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+          />
+          {loading ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
 
-      {/* Alerts Section */}
-      {alerts.length > 0 && (
+      {/* Float Alerts */}
+      {totalStats.floatAlerts && totalStats.floatAlerts.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Financial Alerts</h3>
-          {alerts.map((alert, index) => (
-            <Alert key={index} className="border-l-4 border-l-blue-500">
-              <div className="flex items-center gap-2">
-                {getAlertIcon(alert?.type || "info")}
-                <AlertDescription>{alert?.message || "No message"}</AlertDescription>
-                <Badge variant={alert?.priority === "high" ? "destructive" : "secondary"}>
-                  {alert?.priority || "low"}
-                </Badge>
-              </div>
+          <h3 className="text-lg font-semibold">Float Alerts</h3>
+          {totalStats.floatAlerts.map((alert) => (
+            <Alert
+              key={alert.id}
+              className={`border-l-4 ${
+                alert.severity === "critical"
+                  ? "border-l-red-500 bg-red-50"
+                  : "border-l-yellow-500 bg-yellow-50"
+              }`}
+            >
+              <AlertTriangle
+                className={`h-4 w-4 ${
+                  alert.severity === "critical"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              />
+              <AlertDescription>
+                <span className="font-medium">
+                  {alert.service} - {alert.provider}
+                </span>{" "}
+                float balance is {alert.severity}:{" "}
+                {formatCurrency(alert.current_balance)}
+              </AlertDescription>
             </Alert>
           ))}
         </div>
@@ -122,199 +206,173 @@ export function EnhancedFinanceDashboard({ data }: EnhancedFinanceDashboardProps
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Net Income</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Today's Revenue
+            </CardTitle>
             <DollarSign className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(financialMetrics.netIncome)}</div>
-            <p className="text-xs text-muted-foreground">This month</p>
+            <div className="text-2xl font-bold text-green-600">
+              {formatCurrency(totalStats.todayVolume)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(totalStats.totalVolume)}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Profit Margin</CardTitle>
-            <TrendingUp className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">
+              Today's Commission
+            </CardTitle>
+            <CreditCard className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{(financialMetrics.profitMargin || 0).toFixed(1)}%</div>
-            <p className="text-xs text-muted-foreground">Current margin</p>
+            <div className="text-2xl font-bold text-blue-600">
+              {formatCurrency(totalStats.todayCommission)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(totalStats.totalCommission)}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-purple-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Cash Flow</CardTitle>
-            <PiggyBank className="h-4 w-4 text-purple-600" />
+            <CardTitle className="text-sm font-medium">
+              Today's Transactions
+            </CardTitle>
+            <Activity className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{formatCurrency(financialMetrics.cashFlow)}</div>
-            <p className="text-xs text-muted-foreground">Available cash</p>
+            <div className="text-2xl font-bold text-purple-600">
+              {totalStats.todayTransactions}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {totalStats.totalTransactions}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-orange-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Expenses</CardTitle>
-            <Receipt className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
+            <Users className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{formatCurrency(financialMetrics.pendingExpenses)}</div>
-            <p className="text-xs text-muted-foreground">Awaiting approval</p>
+            <div className="text-2xl font-bold text-orange-600">
+              {totalStats.activeUsers}
+            </div>
+            <p className="text-xs text-muted-foreground">Branch staff</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Revenue Overview */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="border-l-4 border-l-blue-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-600" />
+      {/* Service Performance */}
+      {totalStats.serviceBreakdown &&
+        totalStats.serviceBreakdown.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Service Performance</CardTitle>
+              <CardDescription>
+                Today's performance by service type
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {totalStats.serviceBreakdown.map((service) => (
+                  <div
+                    key={service.service}
+                    className="flex items-center space-x-4 rounded-lg border p-4"
+                  >
+                    <div className="flex-shrink-0">
+                      {getServiceIcon(service.service)}
+                    </div>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {service.service.charAt(0).toUpperCase() +
+                          service.service.slice(1)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {service.transactions} transactions
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCurrency(service.volume)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCurrency(service.commission)} commission
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+      {/* Recent Activity */}
+      {totalStats.recentActivity && totalStats.recentActivity.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Financial Activity</CardTitle>
+            <CardDescription>
+              Latest transactions and financial activities
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalStats.totalRevenue)}</div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {getGrowthIcon(totalStats.revenueChange)}
-              <span className={getGrowthColor(totalStats.revenueChange)}>
-                {totalStats.revenueChange > 0 ? "+" : ""}
-                {(totalStats.revenueChange || 0).toFixed(1)}%
-              </span>
-              <span>from yesterday</span>
+            <div className="space-y-4">
+              {totalStats.recentActivity.slice(0, 5).map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex items-center space-x-4 rounded-lg border p-4"
+                >
+                  <div className="flex-shrink-0">
+                    {getServiceIcon(activity.service)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {activity.type} - {activity.service}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatCurrency(activity.amount)} by {activity.user}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
+      )}
 
-        <Card className="border-l-4 border-l-green-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Fees</CardTitle>
-            <CreditCard className="h-4 w-4 text-green-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">{formatCurrency(totalStats.totalFees)}</div>
-            <p className="text-xs text-muted-foreground">Today's fee income</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-l-4 border-l-purple-500">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Float Balance</CardTitle>
-            <PiggyBank className="h-4 w-4 text-purple-600" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{formatCurrency(totalStats.totalBalance)}</div>
-            <p className="text-xs text-muted-foreground">Available balance</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue="services" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="services">Service Performance</TabsTrigger>
-          <TabsTrigger value="financial">Financial Details</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="services" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {serviceStats.map((service, index) => (
-              <Card key={service?.service || index} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <CardTitle className="text-base capitalize flex items-center justify-between">
-                    {(service?.service || "unknown").replace("-", " ")}
-                    <Badge variant={(service?.weeklyGrowth || 0) > 0 ? "default" : "secondary"}>
-                      {(service?.weeklyGrowth || 0) > 0 ? "+" : ""}
-                      {(service?.weeklyGrowth || 0).toFixed(1)}%
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>Branch performance</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Today's Revenue</span>
-                    <span className="font-semibold">{formatCurrency(service?.todayVolume || 0)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Fees Earned</span>
-                    <span className="font-semibold">{formatCurrency(service?.todayFees || 0)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Float Balance</span>
-                    <span className="font-semibold">{formatCurrency(service?.totalBalance || 0)}</span>
-                  </div>
-                  <div className="pt-2">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>Balance Health</span>
-                      <span>{(service?.totalBalance || 0) > 10000 ? "Good" : "Low"}</span>
-                    </div>
-                    <Progress value={Math.min(((service?.totalBalance || 0) / 50000) * 100, 100)} className="h-2" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="financial" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle>Revenue vs Expenses</CardTitle>
-                <CardDescription>Monthly financial breakdown</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Total Revenue</span>
-                  <span className="font-semibold text-green-600">{formatCurrency(financialMetrics.totalRevenue)}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Total Expenses</span>
-                  <span className="font-semibold text-red-600">{formatCurrency(financialMetrics.totalExpenses)}</span>
-                </div>
-                <hr />
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Net Income</span>
-                  <span className={`font-bold ${financialMetrics.netIncome > 0 ? "text-green-600" : "text-red-600"}`}>
-                    {formatCurrency(financialMetrics.netIncome)}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Outstanding Items</CardTitle>
-                <CardDescription>Items requiring attention</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Outstanding Commissions</span>
-                  <span className="font-semibold text-orange-600">
-                    {formatCurrency(financialMetrics.outstandingCommissions)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Pending Expenses</span>
-                  <span className="font-semibold text-blue-600">
-                    {formatCurrency(financialMetrics.pendingExpenses)}
-                  </span>
-                </div>
-                <hr />
-                <div className="flex justify-between items-center">
-                  <span className="font-medium">Total Outstanding</span>
-                  <span className="font-bold text-red-600">
-                    {formatCurrency(
-                      (financialMetrics.outstandingCommissions || 0) + (financialMetrics.pendingExpenses || 0),
-                    )}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </TabsContent>
-      </Tabs>
+      {/* Empty State */}
+      {(!totalStats.serviceBreakdown ||
+        totalStats.serviceBreakdown.length === 0) &&
+        (!totalStats.recentActivity ||
+          totalStats.recentActivity.length === 0) && (
+          <Card>
+            <CardContent className="text-center py-8">
+              <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">
+                No Financial Data Available
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                No transactions or financial activities found for the current
+                period.
+              </p>
+              <Button onClick={handleRefresh} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Data
+              </Button>
+            </CardContent>
+          </Card>
+        )}
     </div>
-  )
+  );
 }
 
 // Export both named and default exports
-export default EnhancedFinanceDashboard
+export default EnhancedFinanceDashboard;

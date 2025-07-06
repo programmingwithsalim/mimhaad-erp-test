@@ -1,190 +1,222 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { useToast } from "@/hooks/use-toast"
-import { AlertTriangle, CheckCircle, XCircle, Clock, Search, Filter } from "lucide-react"
-import { format } from "date-fns"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { useToast } from "@/hooks/use-toast";
+import {
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Search,
+  Filter,
+} from "lucide-react";
+import { format } from "date-fns";
 
 interface Reversal {
-  id: string
-  transaction_id: string
-  service_type: string
-  reversal_type: string
-  reason: string
-  amount: number
-  fee: number
-  customer_name: string
-  phone_number: string
-  branch_id: string
-  branch_name: string
-  requested_by: string
-  requested_by_name: string
-  requested_at: string
-  approved_by?: string
-  approved_by_name?: string
-  approved_at?: string
-  rejected_by?: string
-  rejected_at?: string
-  executed_by?: string
-  executed_at?: string
-  status: string
-  approval_notes?: string
-  review_comments?: string
+  id: string;
+  transaction_id: string;
+  service_type: string;
+  reversal_type: string;
+  reason: string;
+  amount: number;
+  fee: number;
+  customer_name: string;
+  phone_number: string;
+  branch_id: string;
+  branch_name: string;
+  requested_by: string;
+  requested_by_name: string;
+  requested_at: string;
+  approved_by?: string;
+  approved_by_name?: string;
+  approved_at?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  executed_by?: string;
+  executed_at?: string;
+  status: string;
+  approval_notes?: string;
+  review_comments?: string;
 }
 
 export function ReversalManagementDashboard() {
-  const { toast } = useToast()
-  const [reversals, setReversals] = useState<Reversal[]>([])
-  const [loading, setLoading] = useState(true)
+  const { toast } = useToast();
+  const [reversals, setReversals] = useState<Reversal[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
     status: "all",
     serviceType: "all",
     branchId: "all",
-  })
-  const [searchQuery, setSearchQuery] = useState("")
+  });
+  const [searchQuery, setSearchQuery] = useState("");
 
   const fetchReversals = async () => {
     try {
-      setLoading(true)
-      const params = new URLSearchParams()
+      setLoading(true);
+      const params = new URLSearchParams();
 
-      if (filters.status !== "all") params.append("status", filters.status)
-      if (filters.serviceType !== "all") params.append("serviceType", filters.serviceType)
-      if (filters.branchId !== "all") params.append("branchId", filters.branchId)
+      if (filters.status !== "all") params.append("status", filters.status);
+      if (filters.serviceType !== "all")
+        params.append("serviceType", filters.serviceType);
+      if (filters.branchId !== "all")
+        params.append("branchId", filters.branchId);
 
-      const response = await fetch(`/api/transactions/reversals?${params.toString()}`)
-      const result = await response.json()
+      const response = await fetch(
+        `/api/transactions/reversals?${params.toString()}`
+      );
+      const result = await response.json();
 
       if (result.success) {
-        setReversals(result.reversals || [])
+        setReversals(result.reversals || []);
       } else {
-        throw new Error(result.error || "Failed to fetch reversals")
+        throw new Error(result.error || "Failed to fetch reversals");
       }
     } catch (error) {
-      console.error("Error fetching reversals:", error)
+      console.error("Error fetching reversals:", error);
       toast({
         title: "Error",
         description: "Failed to fetch transaction reversals",
         variant: "destructive",
-      })
+      });
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchReversals()
-  }, [filters])
+    fetchReversals();
+  }, [filters]);
 
   const handleApprove = async (reversalId: string) => {
     try {
-      const response = await fetch(`/api/transactions/reversals/${reversalId}/approve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          approved_by: "current-user", // Replace with actual user ID
-          approval_notes: "Approved via dashboard",
-        }),
-      })
+      const response = await fetch(
+        `/api/transactions/reversals/${reversalId}/approve`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            approved_by: "current-user", // Replace with actual user ID
+            approval_notes: "Approved via dashboard",
+          }),
+        }
+      );
 
-      const result = await response.json()
+      const result = await response.json();
 
       if (result.success) {
         toast({
           title: "Reversal Approved",
           description: "The reversal request has been approved successfully.",
-        })
-        fetchReversals()
+        });
+        fetchReversals();
       } else {
-        throw new Error(result.error || "Failed to approve reversal")
+        throw new Error(result.error || "Failed to approve reversal");
       }
     } catch (error) {
-      console.error("Error approving reversal:", error)
+      console.error("Error approving reversal:", error);
       toast({
         title: "Error",
         description: "Failed to approve reversal",
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   const handleReject = async (reversalId: string) => {
     try {
-      const response = await fetch(`/api/transactions/reversals/${reversalId}/reject`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          rejected_by: "current-user", // Replace with actual user ID
-          rejection_reason: "Rejected via dashboard",
-        }),
-      })
+      const response = await fetch(
+        `/api/transactions/reversals/${reversalId}/reject`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            rejected_by: "current-user", // Replace with actual user ID
+            rejection_reason: "Rejected via dashboard",
+          }),
+        }
+      );
 
-      const result = await response.json()
+      const result = await response.json();
 
       if (result.success) {
         toast({
           title: "Reversal Rejected",
           description: "The reversal request has been rejected.",
-        })
-        fetchReversals()
+        });
+        fetchReversals();
       } else {
-        throw new Error(result.error || "Failed to reject reversal")
+        throw new Error(result.error || "Failed to reject reversal");
       }
     } catch (error) {
-      console.error("Error rejecting reversal:", error)
+      console.error("Error rejecting reversal:", error);
       toast({
         title: "Error",
         description: "Failed to reject reversal",
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   const handleExecute = async (reversalId: string) => {
     try {
-      const response = await fetch(`/api/transactions/reversals/${reversalId}/execute`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          executed_by: "current-user", // Replace with actual user ID
-        }),
-      })
+      const response = await fetch(
+        `/api/transactions/reversals/${reversalId}/execute`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            executed_by: "current-user", // Replace with actual user ID
+          }),
+        }
+      );
 
-      const result = await response.json()
+      const result = await response.json();
 
       if (result.success) {
         toast({
           title: "Reversal Executed",
           description: "The reversal has been executed successfully.",
-        })
-        fetchReversals()
+        });
+        fetchReversals();
       } else {
-        throw new Error(result.error || "Failed to execute reversal")
+        throw new Error(result.error || "Failed to execute reversal");
       }
     } catch (error) {
-      console.error("Error executing reversal:", error)
+      console.error("Error executing reversal:", error);
       toast({
         title: "Error",
         description: "Failed to execute reversal",
         variant: "destructive",
-      })
+      });
     }
-  }
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -194,49 +226,76 @@ export function ReversalManagementDashboard() {
             <Clock className="w-3 h-3 mr-1" />
             Pending
           </Badge>
-        )
+        );
       case "approved":
         return (
           <Badge variant="outline" className="text-blue-600">
             <CheckCircle className="w-3 h-3 mr-1" />
             Approved
           </Badge>
-        )
+        );
       case "rejected":
         return (
           <Badge variant="destructive">
             <XCircle className="w-3 h-3 mr-1" />
             Rejected
           </Badge>
-        )
+        );
       case "completed":
         return (
           <Badge variant="default" className="text-green-600">
             <CheckCircle className="w-3 h-3 mr-1" />
             Completed
           </Badge>
-        )
+        );
+      case "reversed":
+        return (
+          <Badge variant="outline" className="bg-red-100 text-red-800">
+            Reversed
+          </Badge>
+        );
+      case "deleted":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-200 text-gray-700 line-through"
+          >
+            Deleted
+          </Badge>
+        );
       default:
-        return <Badge variant="secondary">{status}</Badge>
+        return <Badge variant="secondary">{status}</Badge>;
     }
-  }
+  };
 
   const filteredReversals = reversals.filter(
     (reversal) =>
       searchQuery === "" ||
-      reversal.transaction_id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      reversal.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      reversal.reason.toLowerCase().includes(searchQuery.toLowerCase()),
-  )
+      reversal.transaction_id
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      reversal.customer_name
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase()) ||
+      reversal.reason.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  const pendingReversals = filteredReversals.filter((r) => r.status === "pending")
-  const approvedReversals = filteredReversals.filter((r) => r.status === "approved")
-  const completedReversals = filteredReversals.filter((r) => r.status === "completed")
+  const pendingReversals = filteredReversals.filter(
+    (r) => r.status === "pending"
+  );
+  const approvedReversals = filteredReversals.filter(
+    (r) => r.status === "approved"
+  );
+  const completedReversals = filteredReversals.filter(
+    (r) => r.status === "completed"
+  );
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">Transaction Reversals</h2>
+        <h2 className="text-3xl font-bold tracking-tight">
+          Transaction Reversals
+        </h2>
         <Button onClick={fetchReversals} disabled={loading}>
           {loading ? "Loading..." : "Refresh"}
         </Button>
@@ -246,7 +305,9 @@ export function ReversalManagementDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Reversals</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Pending Reversals
+            </CardTitle>
             <Clock className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -270,13 +331,17 @@ export function ReversalManagementDashboard() {
             <CheckCircle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{completedReversals.length}</div>
+            <div className="text-2xl font-bold">
+              {completedReversals.length}
+            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Reversals</CardTitle>
+            <CardTitle className="text-sm font-medium">
+              Total Reversals
+            </CardTitle>
             <AlertTriangle className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -311,7 +376,12 @@ export function ReversalManagementDashboard() {
 
             <div className="space-y-2">
               <Label htmlFor="status">Status</Label>
-              <Select value={filters.status} onValueChange={(value) => setFilters({ ...filters, status: value })}>
+              <Select
+                value={filters.status}
+                onValueChange={(value) =>
+                  setFilters({ ...filters, status: value })
+                }
+              >
                 <SelectTrigger>
                   <SelectValue placeholder="All statuses" />
                 </SelectTrigger>
@@ -329,7 +399,9 @@ export function ReversalManagementDashboard() {
               <Label htmlFor="serviceType">Service Type</Label>
               <Select
                 value={filters.serviceType}
-                onValueChange={(value) => setFilters({ ...filters, serviceType: value })}
+                onValueChange={(value) =>
+                  setFilters({ ...filters, serviceType: value })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="All services" />
@@ -349,10 +421,18 @@ export function ReversalManagementDashboard() {
       {/* Reversals Tabs */}
       <Tabs defaultValue="all" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="all">All Reversals ({filteredReversals.length})</TabsTrigger>
-          <TabsTrigger value="pending">Pending ({pendingReversals.length})</TabsTrigger>
-          <TabsTrigger value="approved">Approved ({approvedReversals.length})</TabsTrigger>
-          <TabsTrigger value="completed">Completed ({completedReversals.length})</TabsTrigger>
+          <TabsTrigger value="all">
+            All Reversals ({filteredReversals.length})
+          </TabsTrigger>
+          <TabsTrigger value="pending">
+            Pending ({pendingReversals.length})
+          </TabsTrigger>
+          <TabsTrigger value="approved">
+            Approved ({approvedReversals.length})
+          </TabsTrigger>
+          <TabsTrigger value="completed">
+            Completed ({completedReversals.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="all">
@@ -396,18 +476,24 @@ export function ReversalManagementDashboard() {
         </TabsContent>
       </Tabs>
     </div>
-  )
+  );
 }
 
 interface ReversalsListProps {
-  reversals: Reversal[]
-  onApprove: (id: string) => void
-  onReject: (id: string) => void
-  onExecute: (id: string) => void
-  getStatusBadge: (status: string) => React.ReactNode
+  reversals: Reversal[];
+  onApprove: (id: string) => void;
+  onReject: (id: string) => void;
+  onExecute: (id: string) => void;
+  getStatusBadge: (status: string) => React.ReactNode;
 }
 
-function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBadge }: ReversalsListProps) {
+function ReversalsList({
+  reversals,
+  onApprove,
+  onReject,
+  onExecute,
+  getStatusBadge,
+}: ReversalsListProps) {
   if (reversals.length === 0) {
     return (
       <Card>
@@ -415,11 +501,13 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
           <div className="text-center">
             <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <h3 className="text-lg font-medium mb-2">No Reversals Found</h3>
-            <p className="text-muted-foreground">No transaction reversals match your current filters.</p>
+            <p className="text-muted-foreground">
+              No transaction reversals match your current filters.
+            </p>
           </div>
         </CardContent>
       </Card>
-    )
+    );
   }
 
   return (
@@ -430,9 +518,12 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <CardTitle className="text-lg">
-                  {reversal.service_type.toUpperCase()} - {reversal.reversal_type.toUpperCase()}
+                  {reversal.service_type.toUpperCase()} -{" "}
+                  {reversal.reversal_type.toUpperCase()}
                 </CardTitle>
-                <CardDescription>Transaction ID: {reversal.transaction_id}</CardDescription>
+                <CardDescription>
+                  Transaction ID: {reversal.transaction_id}
+                </CardDescription>
               </div>
               {getStatusBadge(reversal.status)}
             </div>
@@ -445,7 +536,9 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
               </div>
               <div>
                 <Label className="text-sm font-medium">Amount</Label>
-                <p className="text-sm font-mono">GHS {reversal.amount.toFixed(2)}</p>
+                <p className="text-sm font-mono">
+                  GHS {reversal.amount.toFixed(2)}
+                </p>
               </div>
               <div>
                 <Label className="text-sm font-medium">Branch</Label>
@@ -460,14 +553,19 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-muted-foreground">
               <div>
-                <strong>Requested by:</strong> {reversal.requested_by_name} <br />
-                <strong>Requested at:</strong> {format(new Date(reversal.requested_at), "PPp")}
+                <strong>Requested by:</strong> {reversal.requested_by_name}{" "}
+                <br />
+                <strong>Requested at:</strong>{" "}
+                {format(new Date(reversal.requested_at), "PPp")}
               </div>
               {reversal.approved_by && (
                 <div>
-                  <strong>Approved by:</strong> {reversal.approved_by_name} <br />
+                  <strong>Approved by:</strong> {reversal.approved_by_name}{" "}
+                  <br />
                   <strong>Approved at:</strong>{" "}
-                  {reversal.approved_at ? format(new Date(reversal.approved_at), "PPp") : "N/A"}
+                  {reversal.approved_at
+                    ? format(new Date(reversal.approved_at), "PPp")
+                    : "N/A"}
                 </div>
               )}
             </div>
@@ -475,7 +573,9 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
             {reversal.approval_notes && (
               <div>
                 <Label className="text-sm font-medium">Notes</Label>
-                <p className="text-sm text-muted-foreground">{reversal.approval_notes}</p>
+                <p className="text-sm text-muted-foreground">
+                  {reversal.approval_notes}
+                </p>
               </div>
             )}
 
@@ -486,7 +586,11 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
                   <Button size="sm" onClick={() => onApprove(reversal.id)}>
                     Approve
                   </Button>
-                  <Button size="sm" variant="destructive" onClick={() => onReject(reversal.id)}>
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => onReject(reversal.id)}
+                  >
                     Reject
                   </Button>
                 </>
@@ -501,5 +605,5 @@ function ReversalsList({ reversals, onApprove, onReject, onExecute, getStatusBad
         </Card>
       ))}
     </div>
-  )
+  );
 }

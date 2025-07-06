@@ -67,6 +67,29 @@ export function PowerTransactionTable({
     onTransactionUpdated?.();
   };
 
+  const getStatusBadge = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case "completed":
+      case "success":
+        return <Badge className="bg-green-100 text-green-800">Completed</Badge>;
+      case "pending":
+        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>;
+      case "failed":
+      case "error":
+        return <Badge className="bg-red-100 text-red-800">Failed</Badge>;
+      case "reversed":
+        return <Badge className="bg-red-100 text-red-800">Reversed</Badge>;
+      case "deleted":
+        return (
+          <Badge className="bg-gray-200 text-gray-700 line-through">
+            Deleted
+          </Badge>
+        );
+      default:
+        return <Badge variant="secondary">{status || "Unknown"}</Badge>;
+    }
+  };
+
   return (
     <>
       <div className="rounded-md border">
@@ -112,15 +135,7 @@ export function PowerTransactionTable({
                   </TableCell>
                   <TableCell>GHS {transaction.amount.toFixed(2)}</TableCell>
                   <TableCell>
-                    <Badge
-                      variant={
-                        transaction.status === "completed"
-                          ? "default"
-                          : "secondary"
-                      }
-                    >
-                      {transaction.status}
-                    </Badge>
+                    {getStatusBadge(transaction.status)}
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">

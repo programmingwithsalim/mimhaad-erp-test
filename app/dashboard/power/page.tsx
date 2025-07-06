@@ -43,6 +43,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useBranchFloatAccountsFixed } from "@/hooks/use-branch-float-accounts-fixed";
+import { useDynamicFee } from "@/hooks/use-dynamic-fee";
 import { formatCurrency } from "@/lib/currency";
 import { Badge } from "@/components/ui/badge";
 import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
@@ -53,6 +54,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { TransactionActions } from "@/components/transactions/transaction-actions";
 
 const powerTransactionSchema = z.object({
   meterNumber: z.string().min(1, "Meter number is required"),
@@ -90,8 +92,35 @@ export default function PowerPageEnhancedFixed() {
       account.is_active &&
       (account.account_type === "power" ||
         account.provider.toLowerCase().includes("power") ||
-        account.provider.toLowerCase().includes("electricity"))
+        account.provider.toLowerCase().includes("electricity") ||
+        account.provider.toLowerCase().includes("ecg") ||
+        account.provider.toLowerCase().includes("nedco"))
   );
+
+  // Debug logging
+  console.log("🔍 [POWER] All float accounts:", floatAccounts.length);
+  console.log("🔍 [POWER] Power floats found:", powerFloats.length);
+  powerFloats.forEach((account) => {
+    console.log(
+      `  - ${account.provider} (${account.account_type}): GHS ${account.current_balance}`
+    );
+  });
+
+  // When preparing floatAccounts for DynamicFloatDisplay, include both power floats and cash in till accounts:
+  const allRelevantFloats = [
+    ...floatAccounts.filter(
+      (acc) =>
+        acc.is_active &&
+        (acc.account_type === "power" ||
+          acc.provider.toLowerCase().includes("power") ||
+          acc.provider.toLowerCase().includes("electricity") ||
+          acc.provider.toLowerCase().includes("ecg") ||
+          acc.provider.toLowerCase().includes("nedco"))
+    ),
+    ...floatAccounts.filter(
+      (acc) => acc.account_type === "cash-in-till" && acc.is_active
+    ),
+  ];
 
   const form = useForm<PowerTransactionFormData>({
     resolver: zodResolver(powerTransactionSchema),
@@ -108,41 +137,45 @@ export default function PowerPageEnhancedFixed() {
   const watchedAmount = form.watch("amount");
   const watchedFloatId = form.watch("floatAccountId");
 
+  // Use dynamic fee calculation
+  const { calculateFee } = useDynamicFee();
+
   // Calculate fee when amount or provider changes
   useEffect(() => {
-    const calculateFee = async () => {
+    const fetchFee = async () => {
       if (watchedAmount && watchedAmount > 0) {
         try {
-          const selectedFloat = powerFloats.find(
-            (f) => f.id === watchedFloatId
+          const feeResult = await calculateFee(
+            "power",
+            "transaction",
+            watchedAmount
           );
-          const response = await fetch("/api/power/calculate-fee", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              amount: watchedAmount,
-              provider: selectedFloat?.provider || "ECG",
-            }),
-          });
-
-          if (response.ok) {
-            const data = await response.json();
-            setCalculatedFee(data.fee || 0);
-          } else {
-            // Fallback calculation
-            setCalculatedFee(Math.min(watchedAmount * 0.02, 10)); // 2% max 10 GHS
-          }
+          setCalculatedFee(feeResult.fee);
         } catch (error) {
           console.error("Error calculating fee:", error);
-          setCalculatedFee(Math.min(watchedAmount * 0.02, 10));
+          setCalculatedFee(Math.min(watchedAmount * 0.02, 10)); // 2% max 10 GHS fallback
         }
       } else {
         setCalculatedFee(0);
       }
     };
 
-    calculateFee();
-  }, [watchedAmount, watchedFloatId, powerFloats]);
+    fetchFee();
+  }, [watchedAmount, calculateFee]);
+
+  // Debug logging when float accounts load
+  useEffect(() => {
+    console.log("🔍 [POWER] Float accounts loaded:", floatAccounts.length);
+    console.log(
+      "🔍 [POWER] All accounts:",
+      floatAccounts.map((acc) => ({
+        provider: acc.provider,
+        account_type: acc.account_type,
+        is_active: acc.is_active,
+        balance: acc.current_balance,
+      }))
+    );
+  }, [floatAccounts]);
 
   const onSubmit = async (data: PowerTransactionFormData) => {
     if (!user) {
@@ -181,28 +214,27 @@ export default function PowerPageEnhancedFixed() {
     setIsSubmitting(true);
 
     try {
-      const transactionData = {
-        meter_number: data.meterNumber,
-        provider: selectedFloat.provider,
-        amount: data.amount,
-        fee: calculatedFee,
-        customer_name: data.customerName,
-        customer_phone: data.customerPhone,
-        reference: data.reference || `PWR-${Date.now()}`,
-        floatAccountId: data.floatAccountId,
-        userId: user.id,
-        branchId: user.branchId,
-        processedBy: user.name || user.username,
-        username: user.username,
-        branchName: user.branchName,
-      };
-
-      const response = await fetch("/api/power/transactions", {
+      const response = await fetch("/api/transactions/unified", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(transactionData),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          serviceType: "power",
+          transactionType: "sale",
+          amount: data.amount,
+          fee: calculatedFee,
+          customerName: data.customerName,
+          phoneNumber: data.customerPhone,
+          provider: selectedFloat.provider,
+          reference: data.reference || `POWER-${Date.now()}`,
+          notes: `Meter: ${data.meterNumber}`,
+          branchId: user.branchId,
+          userId: user.id,
+          processedBy: user.name || user.username,
+          metadata: {
+            meter_number: data.meterNumber,
+            float_account_id: data.floatAccountId,
+          },
+        }),
       });
 
       if (!response.ok) {
@@ -256,18 +288,20 @@ export default function PowerPageEnhancedFixed() {
             setTransactions([]);
           }
         });
+
+      // Fetch statistics
+      fetch(`/api/power/statistics?branchId=${user.branchId}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.success) {
+            setStatistics(data.data);
+          }
+        })
+        .catch((error) => {
+          console.error("Error fetching power statistics:", error);
+        });
     }
   }, [user?.branchId]);
-
-  // When preparing floatAccounts for DynamicFloatDisplay, include both power floats and cash in till accounts:
-  const allRelevantFloats = [
-    ...floatAccounts.filter(
-      (acc) => acc.account_type === "power" && acc.is_active
-    ),
-    ...floatAccounts.filter(
-      (acc) => acc.account_type === "cash-in-till" && acc.is_active
-    ),
-  ];
 
   const handleEdit = (tx: any) => {
     setCurrentTransaction(tx);
@@ -459,7 +493,9 @@ export default function PowerPageEnhancedFixed() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">0</div>
+            <div className="text-2xl font-bold">
+              {statistics?.summary?.completedCount || 0}
+            </div>
             <p className="text-xs text-muted-foreground">Processed today</p>
           </CardContent>
         </Card>
@@ -470,7 +506,9 @@ export default function PowerPageEnhancedFixed() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">GHS 0.00</div>
+            <div className="text-2xl font-bold">
+              {formatCurrency(statistics?.summary?.totalCommission || 0)}
+            </div>
             <p className="text-xs text-muted-foreground">Fees collected</p>
           </CardContent>
         </Card>
@@ -699,7 +737,12 @@ export default function PowerPageEnhancedFixed() {
             {/* Float Balances Sidebar */}
             <div className="space-y-4">
               <DynamicFloatDisplay
-                selectedProvider={form.watch("floatAccountId")}
+                selectedProvider={(() => {
+                  const selectedFloat = powerFloats.find(
+                    (f) => f.id === form.watch("floatAccountId")
+                  );
+                  return selectedFloat?.provider;
+                })()}
                 floatAccounts={allRelevantFloats.map((acc) => ({
                   ...acc,
                   account_name: acc.account_number || acc.provider || "",
@@ -793,31 +836,31 @@ export default function PowerPageEnhancedFixed() {
                             </span>
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handlePrintReceipt(tx)}
-                              title="Print"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="mx-2"
-                              variant="outline"
-                              onClick={() => handleEdit(tx)}
-                              title="Edit"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDelete(tx)}
-                              title="Delete"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <TransactionActions
+                              transaction={tx}
+                              userRole={user?.role || "Operation"}
+                              sourceModule="power"
+                              onSuccess={() => {
+                                // Refresh transactions
+                                if (user?.branchId) {
+                                  fetch(
+                                    `/api/power/transactions?branchId=${user.branchId}`
+                                  )
+                                    .then((res) => res.json())
+                                    .then((data) => {
+                                      if (
+                                        data.success &&
+                                        Array.isArray(data.transactions)
+                                      ) {
+                                        setTransactions(data.transactions);
+                                      } else {
+                                        setTransactions([]);
+                                      }
+                                    });
+                                }
+                                refreshAccounts();
+                              }}
+                            />
                           </td>
                         </tr>
                       ))}

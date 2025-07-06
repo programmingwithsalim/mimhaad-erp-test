@@ -34,6 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useServiceStatistics } from "@/hooks/use-service-statistics";
+import { useDynamicFee } from "@/hooks/use-dynamic-fee";
 import { DynamicFloatDisplay } from "@/components/shared/dynamic-float-display";
 import {
   Package,
@@ -47,6 +48,7 @@ import {
   Edit,
   Trash2,
   Printer,
+  Eye,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -65,6 +67,7 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
+import { TransactionActions } from "@/components/transactions/transaction-actions";
 
 export default function JumiaPage() {
   const { toast } = useToast();
@@ -268,20 +271,41 @@ export default function JumiaPage() {
       return;
     }
 
-    try {
-      setSubmitting(true);
+    if (!podForm.tracking_id || !podForm.amount || !podForm.customer_name) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
 
-      const response = await fetch("/api/jumia/transactions", {
+    setSubmitting(true);
+
+    try {
+      const response = await fetch("/api/transactions/unified", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          transaction_type: "pod_collection",
-          ...podForm,
-          amount: Number.parseFloat(podForm.amount),
-          branch_id: user.branchId,
-          user_id: user.id,
+          serviceType: "jumia",
+          transactionType: "pod_payment",
+          amount: Number(podForm.amount),
+          fee: 0, // No fee for POD payment
+          customerName: podForm.customer_name,
+          phoneNumber: podForm.customer_phone,
+          provider: "Jumia",
+          reference: podForm.tracking_id,
+          notes: podForm.notes,
+          branchId: user.branchId,
+          userId: user.id,
+          processedBy: user.name || user.username,
+          metadata: {
+            delivery_status: podForm.delivery_status,
+            payment_method: podForm.payment_method,
+            float_account_id: podForm.float_account_id,
+          },
         }),
       });
 
@@ -290,10 +314,14 @@ export default function JumiaPage() {
       if (result.success) {
         toast({
           title: "Payment Collection Recorded",
-          description: `Payment of ${formatCurrency(
-            Number.parseFloat(podForm.amount)
-          )} collected for tracking ID ${podForm.tracking_id}.`,
+          description:
+            result.message ||
+            `Payment of ${formatCurrency(
+              Number(podForm.amount)
+            )} collected for tracking ID ${podForm.tracking_id}.`,
         });
+
+        // Reset form
         setPodForm({
           tracking_id: "",
           amount: "",
@@ -304,23 +332,19 @@ export default function JumiaPage() {
           float_account_id: "",
           notes: "",
         });
+
         // Refresh data
         loadTransactions();
         loadFloatAccounts();
         refreshStatistics();
-        printReceipt(result.data);
       } else {
-        toast({
-          title: "Error",
-          description: result.error || "Failed to record payment collection",
-          variant: "destructive",
-        });
+        throw new Error(result.error || "Failed to record payment collection");
       }
     } catch (error) {
-      console.error("Error recording payment:", error);
       toast({
-        title: "Error",
-        description: "Failed to record payment collection",
+        title: "Failed to Record Payment",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
     } finally {
@@ -480,6 +504,21 @@ export default function JumiaPage() {
         return (
           <Badge variant="outline" className="bg-green-50 text-green-700">
             Completed
+          </Badge>
+        );
+      case "reversed":
+        return (
+          <Badge variant="outline" className="bg-red-100 text-red-800">
+            Reversed
+          </Badge>
+        );
+      case "deleted":
+        return (
+          <Badge
+            variant="outline"
+            className="bg-gray-200 text-gray-700 line-through"
+          >
+            Deleted
           </Badge>
         );
       default:
@@ -1329,32 +1368,16 @@ export default function JumiaPage() {
                           {transaction.payment_method?.replace("_", " ") || "-"}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => printReceipt(transaction)}
-                              title="Print"
-                            >
-                              <Printer className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleEdit(transaction)}
-                              title="Edit"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => handleDelete(transaction)}
-                              title="Delete"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <TransactionActions
+                            transaction={transaction}
+                            userRole={user?.role || "Operation"}
+                            sourceModule="jumia"
+                            onSuccess={() => {
+                              loadTransactions();
+                              loadFloatAccounts();
+                              refreshStatistics();
+                            }}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

@@ -42,6 +42,8 @@ interface EzwichPartnerAccount {
   account_number: string;
   account_type: string;
   current_balance?: string;
+  is_active?: boolean;
+  isezwichpartner: boolean;
 }
 
 interface EnhancedCardIssuanceFormProps {
@@ -70,7 +72,8 @@ const bioSchema = z.object({
     { message: "Customer must be at least 18 years old" }
   ),
   gender: z.string().optional(),
-  address: z.string().optional(),
+  address_line1: z.string().optional(),
+  address_line2: z.string().optional(),
   city: z.string().min(2, "City is required"),
   region: z.string().min(2, "Region is required"),
 });
@@ -138,7 +141,9 @@ const fullSchema = bioSchema
     }
   );
 
-const steps = ["Bio", "ID", "Card", "Review"];
+const steps = ["Bio & ID", "Card", "Review"];
+
+type CardIssuanceFormData = z.infer<typeof fullSchema>;
 
 export default function EnhancedCardIssuanceForm({
   allFloatAccounts = [],
@@ -151,30 +156,29 @@ export default function EnhancedCardIssuanceForm({
   const [selectedPartnerAccount, setSelectedPartnerAccount] =
     useState<EzwichPartnerAccount | null>(null);
 
-  const methods = useForm({
+  const methods = useForm<CardIssuanceFormData>({
     resolver: zodResolver(fullSchema),
-    mode: "onTouched",
     defaultValues: {
       customer_name: "",
       customer_phone: "",
       customer_email: "",
+      card_number: "",
       date_of_birth: "",
       gender: "",
-      address: "",
+      address_line1: "",
+      address_line2: "",
       city: "",
       region: "",
+      postal_code: "",
       id_type: "",
       id_number: "",
-      id_expiry_date: "",
-      card_type: "standard",
-      card_number: "",
-      partner_bank: "",
       payment_method: undefined,
-      customer_photo: null,
-      id_front_image: null,
-      id_back_image: null,
-      notes: "",
-      fee: "",
+      partner_bank: "",
+      fee: "15.00", // Default fee as string
+      card_type: "standard",
+      id_expiry_date: new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0], // 3 years from now
     },
   });
 
@@ -200,34 +204,32 @@ export default function EnhancedCardIssuanceForm({
         "customer_email",
         "date_of_birth",
         "gender",
-        "address",
+        "address_line1",
         "city",
         "region",
+        "id_type",
+        "id_number",
+        "id_expiry_date",
       ]);
-    if (step === 1)
-      valid = await trigger(["id_type", "id_number", "id_expiry_date"]);
-    if (step === 2) {
+    else if (step === 1)
       valid = await trigger([
         "card_type",
         "card_number",
-        "partner_bank",
         "payment_method",
+        "partner_bank",
+        "fee",
         "customer_photo",
         "id_front_image",
         "id_back_image",
       ]);
-      if (!valid) {
-        toast({
-          title: "Missing or invalid fields",
-          description:
-            "Please fill all required card details and upload all images.",
-          variant: "destructive",
-        });
-      }
+    else if (step === 2) {
+      // Review step - validate everything
+      valid = await trigger();
     }
-    if (step === 3) valid = true;
-    if (valid && step < steps.length - 1)
+
+    if (valid) {
       setStep((s) => Math.min(s + 1, steps.length - 1));
+    }
   };
   const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
@@ -258,13 +260,25 @@ export default function EnhancedCardIssuanceForm({
       submitData.append("user_id", user.id);
       submitData.append("branch_id", user.branchId);
       submitData.append("processed_by", user.id);
+
+      // Add partner account ID if selected
+      if (data.partner_bank && selectedPartnerAccount) {
+        submitData.append("partner_account_id", selectedPartnerAccount.id);
+        submitData.append("partner_bank", selectedPartnerAccount.provider);
+      }
+
+      // Ensure fee is included
+      const fee = data.fee || "15.00";
+      submitData.append("fee", fee);
+
       const apiPaymentMethod =
         data.payment_method === "agency-banking"
           ? "bank"
-          : data.payment_method === "cash-in-till"
+          : data.payment_method === "cash"
           ? "cash"
           : data.payment_method;
       submitData.append("payment_method", apiPaymentMethod);
+
       const response = await fetch("/api/e-zwich/card-issuance", {
         method: "POST",
         body: submitData,
@@ -307,6 +321,91 @@ export default function EnhancedCardIssuanceForm({
     setSelectedPartnerAccount(null);
   }, []);
 
+  // Helper function to generate a card number
+  const generateCardNumber = () => {
+    const prefix = "639";
+    const randomDigits = Math.floor(Math.random() * 100000000)
+      .toString()
+      .padStart(8, "0");
+    const cardNumber = prefix + randomDigits;
+    methods.setValue("card_number", cardNumber);
+  };
+
+  // Helper function to auto-fill region based on city
+  const handleCityChange = (city: string) => {
+    const cityRegionMap: Record<string, string> = {
+      Accra: "Greater Accra",
+      Kumasi: "Ashanti",
+      Tamale: "Northern",
+      Sekondi: "Western",
+      "Cape Coast": "Central",
+      Ho: "Volta",
+      Sunyani: "Bono",
+      Koforidua: "Eastern",
+      Wa: "Upper West",
+      Bolgatanga: "Upper East",
+    };
+
+    if (cityRegionMap[city]) {
+      methods.setValue("region", cityRegionMap[city]);
+    }
+  };
+
+  // Filter float accounts for E-Zwich payment method
+  const filteredAccounts = allFloatAccounts.filter(
+    (account: EzwichPartnerAccount) => {
+      // First check if account is active
+      if (account.is_active === false) return false;
+
+      // Get the current payment method
+      const paymentMethod = methods.watch("payment_method");
+
+      // If no payment method selected, show all active accounts
+      if (!paymentMethod) return true;
+
+      // Filter based on payment method
+      switch (paymentMethod) {
+        case "momo":
+          // Show only MoMo accounts
+          return (
+            account.account_type === "momo" ||
+            account.provider.toLowerCase().includes("momo") ||
+            account.provider.toLowerCase().includes("mtn") ||
+            account.provider.toLowerCase().includes("vodafone") ||
+            account.provider.toLowerCase().includes("airtel")
+          );
+
+        case "agency-banking":
+          // Show only agency banking accounts
+          return (
+            account.account_type === "agency-banking" ||
+            account.provider.toLowerCase().includes("bank") ||
+            account.provider.toLowerCase().includes("agency")
+          );
+
+        case "cash":
+          // Show only cash accounts
+          return (
+            account.account_type === "cash" ||
+            account.provider.toLowerCase().includes("cash")
+          );
+
+        default:
+          return true;
+      }
+    }
+  );
+
+  // Reset partner account when payment method changes
+  useEffect(() => {
+    const paymentMethod = methods.watch("payment_method");
+    if (paymentMethod) {
+      // Clear the partner bank selection when payment method changes
+      methods.setValue("partner_bank", "");
+      setSelectedPartnerAccount(null);
+    }
+  }, [methods.watch("payment_method")]);
+
   return (
     <Card>
       <CardHeader>
@@ -336,228 +435,277 @@ export default function EnhancedCardIssuanceForm({
               ))}
             </div>
             {step === 0 && (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {/* Bio fields */}
-                <div className="flex items-center gap-2 text-lg font-semibold border-b pb-2">
-                  <User className="h-5 w-5" />
-                  Bio Information
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-lg font-semibold border-b pb-2">
+                    <User className="h-5 w-5" />
+                    Bio Information
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <FormField
+                      name="customer_name"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Full Name *</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Enter full name"
+                              required
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="customer_phone"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Phone Number *</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Enter phone number"
+                              required
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="customer_email"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email Address</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              type="email"
+                              placeholder="Enter email address"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="date_of_birth"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Date of Birth</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="date" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <Controller
+                      name="gender"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Gender</FormLabel>
+                          <FormControl>
+                            <Select
+                              value={field.value}
+                              onValueChange={field.onChange}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select gender" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="male">Male</SelectItem>
+                                <SelectItem value="female">Female</SelectItem>
+                                <SelectItem value="other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="address_line1"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Address Line 1</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              {...field}
+                              placeholder="Enter address line 1"
+                              rows={2}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="address_line2"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem className="md:col-span-2">
+                          <FormLabel>Address Line 2</FormLabel>
+                          <FormControl>
+                            <Textarea
+                              {...field}
+                              placeholder="Enter address line 2"
+                              rows={2}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="city"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>City</FormLabel>
+                          <FormControl>
+                            <Select
+                              value={field.value}
+                              onValueChange={(value) => {
+                                field.onChange(value);
+                                handleCityChange(value);
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select city" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Accra">Accra</SelectItem>
+                                <SelectItem value="Kumasi">Kumasi</SelectItem>
+                                <SelectItem value="Tamale">Tamale</SelectItem>
+                                <SelectItem value="Sekondi">Sekondi</SelectItem>
+                                <SelectItem value="Cape Coast">
+                                  Cape Coast
+                                </SelectItem>
+                                <SelectItem value="Ho">Ho</SelectItem>
+                                <SelectItem value="Sunyani">Sunyani</SelectItem>
+                                <SelectItem value="Koforidua">
+                                  Koforidua
+                                </SelectItem>
+                                <SelectItem value="Wa">Wa</SelectItem>
+                                <SelectItem value="Bolgatanga">
+                                  Bolgatanga
+                                </SelectItem>
+                                <SelectItem value="Other">Other</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="region"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Region</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Enter region"
+                              required
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <FormField
-                    name="customer_name"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Full Name *</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Enter full name"
-                            required
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="customer_phone"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Phone Number *</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Enter phone number"
-                            required
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="customer_email"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email Address</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type="email"
-                            placeholder="Enter email address"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="date_of_birth"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Date of Birth</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="date" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <Controller
-                    name="gender"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Gender</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select gender" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="male">Male</SelectItem>
-                              <SelectItem value="female">Female</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="address"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>Address</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            {...field}
-                            placeholder="Enter full address"
-                            rows={2}
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="city"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>City</FormLabel>
-                        <FormControl>
-                          <Input {...field} placeholder="Enter city" required />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="region"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem className="md:col-span-2">
-                        <FormLabel>Region</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Enter region"
-                            required
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+
+                {/* ID fields */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-lg font-semibold border-b pb-2">
+                    <Hash className="h-5 w-5" />
+                    ID Information
+                  </div>
+                  <div className="grid gap-4 md:grid-cols-3">
+                    <Controller
+                      name="id_type"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ID Type *</FormLabel>
+                          <FormControl>
+                            <Select
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              required
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select ID type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="ghana_card">
+                                  Ghana Card
+                                </SelectItem>
+                                <SelectItem value="voters_id">
+                                  Voter's ID
+                                </SelectItem>
+                                <SelectItem value="passport">
+                                  Passport
+                                </SelectItem>
+                                <SelectItem value="drivers_license">
+                                  Driver's License
+                                </SelectItem>
+                                <SelectItem value="nhis">NHIS Card</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="id_number"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ID Number *</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              placeholder="Enter ID number"
+                              required
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      name="id_expiry_date"
+                      control={methods.control}
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ID Expiry Date</FormLabel>
+                          <FormControl>
+                            <Input {...field} type="date" />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
                 </div>
               </div>
             )}
             {step === 1 && (
-              <div className="space-y-4">
-                {/* ID fields */}
-                <div className="flex items-center gap-2 text-lg font-semibold border-b pb-2">
-                  <Hash className="h-5 w-5" />
-                  ID Information
-                </div>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <Controller
-                    name="id_type"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ID Type *</FormLabel>
-                        <FormControl>
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            required
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select ID type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="ghana_card">
-                                Ghana Card
-                              </SelectItem>
-                              <SelectItem value="voters_id">
-                                Voter's ID
-                              </SelectItem>
-                              <SelectItem value="passport">Passport</SelectItem>
-                              <SelectItem value="drivers_license">
-                                Driver's License
-                              </SelectItem>
-                              <SelectItem value="nhis">NHIS Card</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="id_number"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ID Number *</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Enter ID number"
-                            required
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    name="id_expiry_date"
-                    control={methods.control}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>ID Expiry Date</FormLabel>
-                        <FormControl>
-                          <Input {...field} type="date" />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            )}
-            {step === 2 && (
               <div className="space-y-4">
                 {/* Card details fields */}
                 <div className="flex items-center gap-2 text-lg font-semibold border-b pb-2">
@@ -570,16 +718,19 @@ export default function EnhancedCardIssuanceForm({
                     control={methods.control}
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Card Number *</FormLabel>
+                        <FormLabel>Card Number</FormLabel>
                         <FormControl>
-                          <Input
-                            {...field}
-                            placeholder="Enter card number"
-                            minLength={7}
-                            maxLength={11}
-                            required
-                            pattern="^\d{7,11}$"
-                          />
+                          <div className="flex gap-2">
+                            <Input {...field} placeholder="Enter card number" />
+                            <Button
+                              type="button"
+                              variant="outline"
+                              onClick={generateCardNumber}
+                              className="whitespace-nowrap"
+                            >
+                              Generate
+                            </Button>
+                          </div>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -608,7 +759,7 @@ export default function EnhancedCardIssuanceForm({
                               <SelectItem value="agency-banking">
                                 Bank
                               </SelectItem>
-                              <SelectItem value="cash-in-till">Cash</SelectItem>
+                              <SelectItem value="cash">Cash</SelectItem>
                             </SelectContent>
                           </Select>
                         </FormControl>
@@ -621,27 +772,16 @@ export default function EnhancedCardIssuanceForm({
                     control={methods.control}
                     render={({ field }) => {
                       const paymentMethod = methods.watch("payment_method");
-                      let filteredAccounts = allFloatAccounts;
-                      if (paymentMethod === "momo") {
-                        filteredAccounts = allFloatAccounts.filter(
-                          (a) => a.account_type === "momo"
-                        );
-                      } else if (paymentMethod === "agency-banking") {
-                        filteredAccounts = allFloatAccounts.filter(
-                          (a) => a.account_type === "agency-banking"
-                        );
-                      } else if (paymentMethod === "cash") {
-                        filteredAccounts = allFloatAccounts.filter(
-                          (a) => a.account_type === "cash"
-                        );
-                      }
                       // Find selected account
                       const selectedAccount =
                         filteredAccounts.find((a) => a.id === field.value) ||
                         null;
+
+                      // Update selected partner account when field value changes
                       useEffect(() => {
                         setSelectedPartnerAccount(selectedAccount);
-                      }, [field.value, filteredAccounts]);
+                      }, [field.value, selectedAccount]);
+
                       return (
                         <FormItem>
                           <FormLabel>Partner Account</FormLabel>
@@ -789,7 +929,7 @@ export default function EnhancedCardIssuanceForm({
                                 <Upload className="w-8 h-8 text-muted-foreground mb-2" />
                               )}
                               <span className="text-xs text-muted-foreground">
-                                {field.value ? "Change Photo" : "Upload Photo"}
+                                {field.value ? "Change Image" : "Upload Front"}
                               </span>
                             </label>
                           </div>
@@ -833,7 +973,7 @@ export default function EnhancedCardIssuanceForm({
                                 <Upload className="w-8 h-8 text-muted-foreground mb-2" />
                               )}
                               <span className="text-xs text-muted-foreground">
-                                {field.value ? "Change Photo" : "Upload Photo"}
+                                {field.value ? "Change Image" : "Upload Back"}
                               </span>
                             </label>
                           </div>
@@ -845,121 +985,114 @@ export default function EnhancedCardIssuanceForm({
                 </div>
               </div>
             )}
-            {step === 3 && (
+            {step === 2 && (
               <div className="space-y-6">
-                <div className="text-xl font-bold mb-2">Review & Confirm</div>
-                <div className="grid md:grid-cols-2 gap-6">
-                  <div className="bg-card rounded-lg p-4 shadow">
-                    <div className="font-semibold text-primary mb-2">
-                      Bio Information
-                    </div>
-                    <div>
-                      <span className="font-medium">Full Name:</span>{" "}
-                      {values.customer_name}
-                    </div>
-                    <div>
-                      <span className="font-medium">Phone Number:</span>{" "}
-                      {values.customer_phone}
-                    </div>
-                    <div>
-                      <span className="font-medium">Email:</span>{" "}
-                      {values.customer_email}
-                    </div>
-                    <div>
-                      <span className="font-medium">Date of Birth:</span>{" "}
-                      {values.date_of_birth}
-                    </div>
-                    <div>
-                      <span className="font-medium">Gender:</span>{" "}
-                      {values.gender}
-                    </div>
-                    <div>
-                      <span className="font-medium">Address:</span>{" "}
-                      {values.address}
-                    </div>
-                    <div>
-                      <span className="font-medium">City:</span> {values.city}
-                    </div>
-                    <div>
-                      <span className="font-medium">Region:</span>{" "}
-                      {values.region}
-                    </div>
-                  </div>
-                  <div className="bg-card rounded-lg p-4 shadow">
-                    <div className="font-semibold text-primary mb-2">
-                      ID & Card Details
-                    </div>
-                    <div>
-                      <span className="font-medium">ID Type:</span>{" "}
-                      {values.id_type}
-                    </div>
-                    <div>
-                      <span className="font-medium">ID Number:</span>{" "}
-                      {values.id_number}
-                    </div>
-                    <div>
-                      <span className="font-medium">ID Expiry Date:</span>{" "}
-                      {values.id_expiry_date}
-                    </div>
-                    <div>
-                      <span className="font-medium">Card Type:</span> Standard
-                    </div>
-                    <div>
-                      <span className="font-medium">Card Number:</span>{" "}
-                      {values.card_number}
-                    </div>
-                    <div>
-                      <span className="font-medium">Payment Method:</span>{" "}
-                      {values.payment_method}
-                    </div>
-                    <div>
-                      <span className="font-medium">Fee:</span> {values.fee}
-                    </div>
-                  </div>
+                {/* Review step */}
+                <div className="flex items-center gap-2 text-lg font-semibold border-b pb-2">
+                  <RefreshCw className="h-5 w-5" />
+                  Review Information
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                  {values.customer_photo && (
-                    <div className="flex flex-col items-center">
-                      <div className="font-semibold mb-1">Customer Photo</div>
-                      <img
-                        src={
-                          values.customer_photo instanceof File
-                            ? URL.createObjectURL(values.customer_photo)
-                            : values.customer_photo
-                        }
-                        alt="Customer Photo"
-                        className="w-32 h-32 object-cover rounded border shadow"
-                      />
+                <div className="grid gap-6 md:grid-cols-2">
+                  {/* Bio Information Review */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">Bio Information</h3>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Name:</span>{" "}
+                        {values.customer_name}
+                      </div>
+                      <div>
+                        <span className="font-medium">Phone:</span>{" "}
+                        {values.customer_phone}
+                      </div>
+                      <div>
+                        <span className="font-medium">Email:</span>{" "}
+                        {values.customer_email || "N/A"}
+                      </div>
+                      <div>
+                        <span className="font-medium">Date of Birth:</span>{" "}
+                        {values.date_of_birth || "N/A"}
+                      </div>
+                      <div>
+                        <span className="font-medium">Gender:</span>{" "}
+                        {values.gender || "N/A"}
+                      </div>
+                      <div>
+                        <span className="font-medium">City:</span> {values.city}
+                      </div>
+                      <div>
+                        <span className="font-medium">Region:</span>{" "}
+                        {values.region}
+                      </div>
                     </div>
-                  )}
-                  {values.id_front_image && (
-                    <div className="flex flex-col items-center">
-                      <div className="font-semibold mb-1">ID Front Image</div>
-                      <img
-                        src={
-                          values.id_front_image instanceof File
-                            ? URL.createObjectURL(values.id_front_image)
-                            : values.id_front_image
-                        }
-                        alt="ID Front"
-                        className="w-32 h-32 object-cover rounded border shadow"
-                      />
+                  </div>
+
+                  {/* ID Information Review */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">ID Information</h3>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">ID Type:</span>{" "}
+                        {values.id_type}
+                      </div>
+                      <div>
+                        <span className="font-medium">ID Number:</span>{" "}
+                        {values.id_number}
+                      </div>
+                      <div>
+                        <span className="font-medium">Expiry Date:</span>{" "}
+                        {values.id_expiry_date || "N/A"}
+                      </div>
                     </div>
-                  )}
-                  {values.id_back_image && (
-                    <div className="flex flex-col items-center">
-                      <div className="font-semibold mb-1">ID Back Image</div>
-                      <img
-                        src={
-                          values.id_back_image instanceof File
-                            ? URL.createObjectURL(values.id_back_image)
-                            : values.id_back_image
-                        }
-                        alt="ID Back"
-                        className="w-32 h-32 object-cover rounded border shadow"
-                      />
+                  </div>
+
+                  {/* Card Information Review */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">Card Information</h3>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Card Number:</span>{" "}
+                        {values.card_number}
+                      </div>
+                      <div>
+                        <span className="font-medium">Payment Method:</span>{" "}
+                        {values.payment_method}
+                      </div>
+                      <div>
+                        <span className="font-medium">Partner Account:</span>{" "}
+                        {selectedPartnerAccount?.provider || "N/A"}
+                      </div>
+                      <div>
+                        <span className="font-medium">Fee:</span> GHS{" "}
+                        {values.fee}
+                      </div>
                     </div>
-                  )}
+                  </div>
+
+                  {/* Notes Review */}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-lg">
+                      Additional Information
+                    </h3>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Notes:</span>{" "}
+                        {values.notes || "N/A"}
+                      </div>
+                      <div>
+                        <span className="font-medium">Customer Photo:</span>{" "}
+                        {values.customer_photo ? "Uploaded" : "Not uploaded"}
+                      </div>
+                      <div>
+                        <span className="font-medium">ID Front:</span>{" "}
+                        {values.id_front_image ? "Uploaded" : "Not uploaded"}
+                      </div>
+                      <div>
+                        <span className="font-medium">ID Back:</span>{" "}
+                        {values.id_back_image ? "Uploaded" : "Not uploaded"}
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

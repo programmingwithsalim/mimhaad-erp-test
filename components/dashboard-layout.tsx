@@ -34,46 +34,25 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/lib/auth-context";
+import { RoleSwitcher } from "@/components/role-switcher";
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
-  const [user, setUser] = useState<any>(null);
+  const { user, logout } = useAuth();
   const router = useRouter();
-
-  useEffect(() => {
-    // Try to get user session, but don't fail if not available
-    const checkSession = async () => {
-      try {
-        const response = await fetch("/api/auth/session");
-        if (response.ok) {
-          const data = await response.json();
-          setUser(data.user);
-        }
-      } catch (error) {
-        console.log("Session check failed, using mock user");
-        setUser({
-          id: "user-1",
-          firstName: "Admin",
-          lastName: "User",
-          email: "admin@example.com",
-          role: "Admin",
-        });
-      }
-    };
-
-    checkSession();
-  }, []);
 
   const handleLogout = async () => {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await logout();
     } catch (error) {
       console.log("Logout failed");
+      // Fallback redirect
+      router.push("/");
     }
-    router.push("/");
   };
 
   return (
@@ -171,6 +150,9 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               </div>
 
               <div className="flex items-center space-x-4">
+                {/* Role Switcher */}
+                <RoleSwitcher />
+
                 <Button variant="ghost" size="sm">
                   <Bell className="h-5 w-5" />
                 </Button>

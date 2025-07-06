@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { getSession } from "@/lib/auth-service";
 import { NotificationService } from "@/lib/services/notification-service";
 import { AuditLoggerService } from "@/lib/services/audit-logger-service";
 import { GLPostingService } from "@/lib/services/gl-posting-service";
 import { v4 as uuidv4 } from "uuid";
+import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
 
 interface AgencyBankingTransactionData {
   type: "deposit" | "withdrawal" | "interbank" | "commission";
@@ -91,605 +92,250 @@ export async function POST(request: Request) {
       customer_name,
       customer_phone,
       amount,
-      fee,
-      partner_bank,
+      partner_bank_id,
       type,
       account_number,
       reference,
       notes,
     } = body;
 
-    console.log("🏦 Processing Agency Banking Transaction:", {
-      type: type,
-      amount: amount,
-      customerName: customer_name,
-      partnerBank: partner_bank,
-      userId: session.user.id,
-    });
+    const { user } = session;
+    await ensureSchemaExists();
 
-    // Validate required fields
-    if (!customer_name || !amount || !partner_bank || !type) {
+    // 1. Fetch available partner bank (float account) for this branch
+    const floatAccounts = await sql`
+      SELECT * FROM float_accounts
+      WHERE branch_id = ${user.branchId}
+        AND account_type = 'agency-banking'
+        AND is_active = true
+    `;
+    const partnerBank = floatAccounts.find(
+      (fa: any) => fa.id === partner_bank_id
+    );
+    if (!partnerBank) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "Selected partner bank not found for this branch." },
         { status: 400 }
       );
     }
 
-    const { user } = session;
+    // 2. Fetch fee dynamically from fee_config (via calculate-fee endpoint)
+    let fee = 0;
+    try {
+      const feeRes = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+        }/api/agency-banking/calculate-fee`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount,
+            transactionType: type,
+            partnerBankId: partner_bank_id,
+          }),
+        }
+      );
+      const feeData = await feeRes.json();
+      fee = Number(feeData.fee) || 0;
+    } catch (err) {
+      console.error("Failed to fetch fee from fee_config:", err);
+      fee = 0;
+    }
 
-    // Ensure schema exists
-    await ensureSchemaExists();
-
-    // Generate transaction ID
-    const transactionId = `${uuidv4().substring(0, 8)}`;
-    const now = new Date().toISOString();
-
-    // Calculate cash till and float effects
+    // 3. Calculate cash till and float effects
     let cashTillAffected = 0;
     let floatAffected = 0;
-
     switch (type) {
       case "deposit":
-        // Customer deposits to bank account → We transfer from our agency account to customer's bank account
-        // We lose agency float (money goes to customer's bank account)
-        // We gain cash in till (customer gives us physical cash)
-        // No fee charged to customer
-        cashTillAffected = amount; // We gain cash from customer
-        floatAffected = -amount; // We lose agency float (transferred to customer's bank account)
+        cashTillAffected = amount + fee;
+        floatAffected = -amount;
         break;
-
       case "withdrawal":
-        // Customer withdraws from bank account → We transfer from customer's bank account to our agency account
-        // We gain agency float (money comes from customer's bank account to our agency account)
-        // We lose cash in till (we give customer physical cash)
-        // No fee charged to customer
-        cashTillAffected = -amount; // We lose cash (give to customer)
-        floatAffected = amount; // We gain agency float (from customer's bank account)
+        cashTillAffected = -(amount - fee);
+        floatAffected = amount;
         break;
-
       case "interbank":
-        // Customer pays us cash to transfer to another bank account
-        // We gain cash in till (customer pays us cash + fee)
-        // We lose agency float (we transfer to destination bank)
-        cashTillAffected = amount + (fee || 0); // We gain cash (amount + fee from customer)
-        floatAffected = -amount; // We lose agency float (transferred to destination bank)
+        cashTillAffected = fee;
+        floatAffected = 0;
         break;
-
       case "commission":
-        // Commission earned - we gain both cash and no float change
         cashTillAffected = amount;
         floatAffected = 0;
         break;
     }
 
-    console.log(
-      `💰 Cash till affected: ${cashTillAffected}, Float affected: ${floatAffected}`
-    );
-
-    // Start database transaction
-    await sql`BEGIN`;
-
-    let cashTillAccount = null;
-    let updatedCashBalance = null;
-    let updatedFloatBalance = null;
-    let glTransactionId = null;
-    let transaction = null;
-
-    try {
-      // 1. Create the main transaction record
-      transaction = await sql`
+    // 4. Create the transaction record
+    const transactionId = `${uuidv4().substring(0, 8)}`;
+    const now = new Date().toISOString();
+    await sql`
         INSERT INTO agency_banking_transactions (
           id, type, amount, fee, customer_name, account_number,
           partner_bank, partner_bank_code, partner_bank_id,
           reference, status, date, branch_id, user_id,
           cash_till_affected, float_affected, created_at, updated_at
         ) VALUES (
-          ${transactionId}, ${type}, ${amount}, ${fee || 0},
+        ${transactionId}, ${type}, ${amount}, ${fee},
           ${customer_name}, ${account_number || ""},
-          ${partner_bank}, '', ${user.branchId},
+        ${partnerBank.account_name || partnerBank.provider || ""},
+        ${partnerBank.account_number || ""},
+        ${partnerBank.id},
           ${reference || `AGENCY-${Date.now()}`}, 'completed', ${now},
-          ${user.branchId}, ${user.id},
+        ${user.id},
           ${cashTillAffected}, ${floatAffected}, ${now}, ${now}
         )
-        RETURNING *
       `;
 
-      // 2. Update partner bank float account balance
-      if (floatAffected !== 0) {
-        // Find the agency float account for this branch
-        const agencyFloatAccount = await sql`
-          SELECT id FROM float_accounts
-          WHERE branch_id = ${user.branchId}
-            AND account_type = 'agency-banking'
-            AND is_active = true
-          LIMIT 1
-        `;
-        if (agencyFloatAccount.length > 0) {
-          const updatedFloatAccount = await sql`
+    // 5. Update float and cash till balances
+    if (floatAffected !== 0) {
+      await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance + ${floatAffected},
-                updated_at = NOW()
-            WHERE id = ${agencyFloatAccount[0].id}
-            RETURNING id, current_balance
-          `;
-          if (updatedFloatAccount.length > 0) {
-            updatedFloatBalance = updatedFloatAccount[0].current_balance;
-            console.log(
-              `Updated partner bank float: ${
-                floatAffected > 0 ? "+" : ""
-              }${floatAffected}, New balance: ${updatedFloatBalance}`
-            );
-          }
-        } else {
-          console.warn(
-            `No agency float account found for branch ${user.branchId}`
-          );
-        }
-      }
-
-      // 3. Update cash till balance
-      if (cashTillAffected !== 0) {
-        // Get the cash till account for this branch
-        cashTillAccount = await sql`
-          SELECT id, current_balance FROM float_accounts 
-          WHERE account_type = 'cash-in-till' 
-          AND branch_id = ${user.branchId}
-          AND is_active = true
-          LIMIT 1
-        `;
-
-        if (cashTillAccount.length > 0) {
-          const updatedCashAccount = await sql`
-            UPDATE float_accounts 
-            SET current_balance = current_balance + ${cashTillAffected},
-                updated_at = NOW()
-            WHERE id = ${cashTillAccount[0].id}
-            RETURNING id, current_balance
-          `;
-
-          if (updatedCashAccount.length > 0) {
-            updatedCashBalance = updatedCashAccount[0].current_balance;
-            console.log(
-              `Updated cash till balance: ${
-                cashTillAffected > 0 ? "+" : ""
-              }${cashTillAffected}, New balance: ${updatedCashBalance}`
-            );
-          }
-        } else {
-          console.warn(
-            `No cash till account found for branch ${user.branchId}`
-          );
-        }
-      }
-
-      // 4. Create GL entries using GLPostingService
-      try {
-        console.log("📊 Creating GL entries for agency banking transaction...");
-
-        // Get GL accounts
-        const cashAccount = await getOrCreateGLAccount(
-          "1001",
-          "Cash in Till",
-          "Asset"
-        );
-        const partnerBankAccount = await getOrCreateGLAccount(
-          `2100-${user.branchId.substring(0, 8)}`,
-          `${partner_bank} Agency Float`,
-          "Liability"
-        );
-        const feeRevenueAccount = await getOrCreateGLAccount(
-          "4002",
-          "Agency Banking Fee Income",
-          "Revenue"
-        );
-
-        if (!cashAccount || !partnerBankAccount || !feeRevenueAccount) {
-          throw new Error("Failed to get or create required GL accounts");
-        }
-
-        // Create GL entries based on transaction type with CORRECT debit/credit logic
-        const entries = [];
-
-        switch (type) {
-          case "deposit":
-            // Customer deposits to bank account → Agency float decreases
-            // DR: Cash in Till (Asset) - we receive cash from customer
-            // CR: Agency Bank Float (Liability) - we owe the bank less (our liability decreases)
-            console.log("📝 Creating DEPOSIT GL entries:");
-            console.log(`  DR: Cash in Till (${cashAccount.code}) - ${amount}`);
-            console.log(
-              `  CR: Agency Bank Float (${partnerBankAccount.code}) - ${amount}`
-            );
-
-            entries.push({
-              accountId: cashAccount.id,
-              accountCode: cashAccount.code,
-              debit: amount,
-              credit: 0,
-              description: `Agency Banking Deposit - ${partner_bank} - ${account_number}`,
-              metadata: {
-                transactionId: transactionId,
-                customerName: customer_name,
-                partnerBank: partner_bank,
-              },
-            });
-
-            entries.push({
-              accountId: partnerBankAccount.id,
-              accountCode: partnerBankAccount.code,
-              debit: 0,
-              credit: amount,
-              description: `Agency Banking Deposit - ${partner_bank} - ${account_number}`,
-              metadata: {
-                transactionId: transactionId,
-                customerName: customer_name,
-                partnerBank: partner_bank,
-              },
-            });
-            break;
-
-          case "withdrawal":
-            // Customer withdraws from bank account → Agency float increases
-            // DR: Agency Bank Float (Liability) - we owe the bank more (our liability increases)
-            // CR: Cash in Till (Asset) - we give out cash to customer
-            console.log("📝 Creating WITHDRAWAL GL entries:");
-            console.log(
-              `  DR: Agency Bank Float (${partnerBankAccount.code}) - ${amount}`
-            );
-            console.log(`  CR: Cash in Till (${cashAccount.code}) - ${amount}`);
-
-            entries.push({
-              accountId: partnerBankAccount.id,
-              accountCode: partnerBankAccount.code,
-              debit: amount,
-              credit: 0,
-              description: `Agency Banking Withdrawal - ${partner_bank} - ${account_number}`,
-              metadata: {
-                transactionId: transactionId,
-                customerName: customer_name,
-                partnerBank: partner_bank,
-              },
-            });
-
-            entries.push({
-              accountId: cashAccount.id,
-              accountCode: cashAccount.code,
-              debit: 0,
-              credit: amount,
-              description: `Agency Banking Withdrawal - ${partner_bank} - ${account_number}`,
-              metadata: {
-                transactionId: transactionId,
-                customerName: customer_name,
-                partnerBank: partner_bank,
-              },
-            });
-            break;
-
-          case "interbank":
-            // Interbank transfer: Customer pays cash to transfer to another bank
-            // 1. Main transfer amount
-            // DR: Cash in Till (Asset) - we receive cash from customer for transfer
-            // CR: Destination Bank Float (Liability) - we owe the destination bank
-            console.log("📝 Creating INTERBANK TRANSFER GL entries:");
-            console.log(`  DR: Cash in Till (${cashAccount.code}) - ${amount}`);
-            console.log(
-              `  CR: Destination Bank Float (${partnerBankAccount.code}) - ${amount}`
-            );
-
-            entries.push({
-              accountId: cashAccount.id,
-              accountCode: cashAccount.code,
-              debit: amount,
-              credit: 0,
-              description: `Interbank Transfer - To ${partner_bank} - ${account_number}`,
-              metadata: {
-                transactionId: transactionId,
-                customerName: customer_name,
-                destinationBank: partner_bank,
-              },
-            });
-
-            entries.push({
-              accountId: partnerBankAccount.id,
-              accountCode: partnerBankAccount.code,
-              debit: 0,
-              credit: amount,
-              description: `Interbank Transfer - To ${partner_bank} - ${account_number}`,
-              metadata: {
-                transactionId: transactionId,
-                customerName: customer_name,
-                destinationBank: partner_bank,
-              },
-            });
-
-            // 2. Fee collection (separate entry)
-            if (fee > 0) {
-              console.log("📝 Creating INTERBANK FEE GL entries:");
-              console.log(`  DR: Cash in Till (${cashAccount.code}) - ${fee}`);
-              console.log(
-                `  CR: Fee Revenue (${feeRevenueAccount.code}) - ${fee}`
-              );
-
-              entries.push({
-                accountId: cashAccount.id,
-                accountCode: cashAccount.code,
-                debit: fee,
-                credit: 0,
-                description: `Interbank Transfer Fee - ${partner_bank}`,
-                metadata: {
-                  transactionId: transactionId,
-                  feeAmount: fee,
-                  destinationBank: partner_bank,
-                },
-              });
-
-              entries.push({
-                accountId: feeRevenueAccount.id,
-                accountCode: feeRevenueAccount.code,
-                debit: 0,
-                credit: fee,
-                description: `Interbank Transfer Fee Revenue - ${partner_bank}`,
-                metadata: {
-                  transactionId: transactionId,
-                  feeAmount: fee,
-                  destinationBank: partner_bank,
-                },
-              });
-            }
-            break;
-
-          case "commission":
-            // Commission earned
-            // DR: Cash in Till (Asset) - we receive commission
-            // CR: Fee Revenue (Revenue) - we earn revenue
-            console.log("📝 Creating COMMISSION GL entries:");
-            console.log(`  DR: Cash in Till (${cashAccount.code}) - ${amount}`);
-            console.log(
-              `  CR: Fee Revenue (${feeRevenueAccount.code}) - ${amount}`
-            );
-
-            entries.push({
-              accountId: cashAccount.id,
-              accountCode: cashAccount.code,
-              debit: amount,
-              credit: 0,
-              description: `Agency Banking Commission - ${partner_bank}`,
-              metadata: {
-                transactionId: transactionId,
-                partnerBank: partner_bank,
-              },
-            });
-
-            entries.push({
-              accountId: feeRevenueAccount.id,
-              accountCode: feeRevenueAccount.code,
-              debit: 0,
-              credit: amount,
-              description: `Agency Banking Commission - ${partner_bank}`,
-              metadata: {
-                transactionId: transactionId,
-                partnerBank: partner_bank,
-              },
-            });
-            break;
-        }
-
-        // Fee entries for deposit and withdrawal (if applicable) - always increase cash and revenue
-        if (fee > 0 && type !== "interbank") {
-          console.log("📝 Creating FEE GL entries:");
-          console.log(`  DR: Cash in Till (${cashAccount.code}) - ${fee}`);
-          console.log(`  CR: Fee Revenue (${feeRevenueAccount.code}) - ${fee}`);
-
-          entries.push({
-            accountId: cashAccount.id,
-            accountCode: cashAccount.code,
-            debit: fee,
-            credit: 0,
-            description: `Agency Banking Fee - ${partner_bank}`,
-            metadata: {
-              transactionId: transactionId,
-              feeAmount: fee,
-              partnerBank: partner_bank,
-            },
-          });
-
-          entries.push({
-            accountId: feeRevenueAccount.id,
-            accountCode: feeRevenueAccount.code,
-            debit: 0,
-            credit: fee,
-            description: `Agency Banking Fee Revenue - ${partner_bank}`,
-            metadata: {
-              transactionId: transactionId,
-              feeAmount: fee,
-              partnerBank: partner_bank,
-            },
-          });
-        }
-
-        // Validate that debits equal credits
-        const totalDebits = entries.reduce(
-          (sum, entry) => sum + entry.debit,
-          0
-        );
-        const totalCredits = entries.reduce(
-          (sum, entry) => sum + entry.credit,
-          0
-        );
-
-        console.log(
-          `📊 GL Entry Validation: Debits=${totalDebits}, Credits=${totalCredits}`
-        );
-
-        if (Math.abs(totalDebits - totalCredits) > 0.01) {
-          throw new Error(
-            `GL entries don't balance: Debits ${totalDebits}, Credits ${totalCredits}`
-          );
-        }
-
-        // Use GLPostingService to create and post the transaction
-        const glResult = await GLPostingService.createAndPostTransaction({
-          date: new Date().toISOString().split("T")[0],
-          sourceModule: "agency_banking",
-          sourceTransactionId: transactionId,
-          sourceTransactionType: type,
-          description: `Agency Banking ${type} - ${partner_bank} - ${account_number}`,
-          entries,
-          createdBy: user.id,
-          branchId: user.branchId,
-          branchName: user.branchName,
-          metadata: {
-            partnerBank: partner_bank,
-            partnerBankCode: "",
-            customerName: customer_name,
-            accountNumber: account_number,
-            amount: amount,
-            fee: fee || 0,
-            reference: reference || `AGENCY-${Date.now()}`,
-          },
-        });
-
-        if (glResult.success && glResult.glTransactionId) {
-          glTransactionId = glResult.glTransactionId;
-
-          // Update transaction with GL transaction ID
-          await sql`
-            UPDATE agency_banking_transactions
-            SET gl_entry_id = ${glTransactionId}
-            WHERE id = ${transactionId}
-          `;
-
-          console.log(`✅ GL transaction created with ID: ${glTransactionId}`);
-        } else {
-          console.error("❌ Failed to create GL transaction:", glResult.error);
-        }
-      } catch (glError) {
-        console.error("❌ Error creating GL entries:", glError);
-        // Don't fail the transaction if GL posting fails
-      }
-
-      // Commit the transaction
-      await sql`COMMIT`;
-
-      console.log("✅ Agency banking transaction completed:", transactionId);
-
-      // Create audit log using the AuditLoggerService
-      try {
-        console.log("📝 Creating audit log for user ID:", user.id);
-
-        await AuditLoggerService.logTransaction({
-          userId: user.id,
-          action: "create",
-          transactionType: `agency_banking_${type}`,
-          transactionId: transactionId,
-          amount: amount,
-          branchId: user.branchId,
-          branchName: user.branchName,
-          details: {
-            customerName: customer_name,
-            accountNumber: account_number,
-            partnerBank: partner_bank,
-            fee: fee || 0,
-            reference: reference || `AGENCY-${Date.now()}`,
-            cashTillAffected,
-            floatAffected,
-            glTransactionId,
-          },
-          severity: amount > 10000 ? "high" : "medium",
-          status: "success",
-        });
-
-        console.log("📝 Audit log created successfully");
-      } catch (auditError) {
-        console.error("Failed to create audit log:", auditError);
-      }
-
-      // Send transaction notification
-      try {
-        await NotificationService.sendTransactionAlert(user.id, {
-          type: type,
-          amount: Number(amount),
-          service: "Agency Banking",
-          reference: transaction.reference,
-          branchId: user.branchId,
-        });
-      } catch (notificationError) {
-        console.error(
-          "Failed to send transaction notification:",
-          notificationError
-        );
-        // Don't fail the transaction if notification fails
-      }
-
-      // Return the transaction with proper field mapping
-      const returnTransaction = {
-        id: transaction.id,
-        type: transaction.type,
-        amount: Number(transaction.amount),
-        fee: Number(transaction.fee),
-        customer_name: transaction.customer_name,
-        account_number: transaction.account_number,
-        partner_bank: transaction.partner_bank,
-        partner_bank_code: transaction.partner_bank_code,
-        partner_bank_id: transaction.partner_bank_id,
-        reference: transaction.reference,
-        status: transaction.status,
-        date: transaction.date,
-        branch_id: transaction.branch_id,
-        user_id: transaction.user_id,
-        cash_till_affected: Number(transaction.cash_till_affected),
-        float_affected: Number(transaction.float_affected),
-        created_at: transaction.created_at,
-        updated_at: transaction.updated_at,
-        gl_entry_id: glTransactionId,
-      };
-
-      return NextResponse.json({
-        success: true,
-        message: "Agency banking transaction processed successfully",
-        transaction: returnTransaction,
-        updatedBalances: {
-          cashTillBalance: updatedCashBalance,
-          floatBalance: updatedFloatBalance,
-          cashTillAccountId: cashTillAccount?.[0]?.id || null,
-        },
-      });
-    } catch (dbError) {
-      // Rollback on database error
-      await sql`ROLLBACK`;
-      console.error("Database error:", dbError);
-      throw dbError;
+        SET current_balance = current_balance + ${floatAffected}, updated_at = NOW()
+        WHERE id = ${partnerBank.id}
+      `;
     }
-  } catch (error: any) {
-    console.error("❌ Error processing agency banking transaction:", error);
-
-    // Log the error to audit using AuditLoggerService
-    try {
-      await AuditLoggerService.log({
-        userId: error.data?.userId || "unknown",
-        actionType: "agency_banking_failure",
-        entityType: "agency_banking_transaction",
-        description: "Failed to process agency banking transaction",
-        details: {
-          error: error.message,
-          stack: error.stack,
-          requestData: error.data || {},
-        },
-        severity: "critical",
-        branchId: error.data?.branchId || "unknown",
-        branchName: error.data?.branchName || "unknown",
-        status: "failure",
-        errorMessage: error.message,
-      });
-    } catch (auditError) {
-      console.error("Failed to log error to audit:", auditError);
+    if (cashTillAffected !== 0) {
+      await sql`
+            UPDATE float_accounts 
+        SET current_balance = current_balance + ${cashTillAffected}, updated_at = NOW()
+        WHERE account_type = 'cash-in-till' AND branch_id = ${user.branchId} AND is_active = true
+      `;
     }
 
+    // 6. Unified GL Posting
+    const glResult = await UnifiedGLPostingService.createGLEntries({
+      transactionId,
+      sourceModule: "agency_banking",
+      transactionType: type,
+      amount,
+      fee,
+      customerName: customer_name,
+      reference: reference || `AGENCY-${Date.now()}`,
+      processedBy: user.id,
+      branchId: user.branchId,
+      branchName: user.branchName || "",
+      metadata: {
+        partnerBank: partnerBank.account_name || partnerBank.provider || "",
+        partnerBankCode: partnerBank.account_number || "",
+        customerName: customer_name,
+        accountNumber: account_number,
+        amount,
+        fee,
+        reference: reference || `AGENCY-${Date.now()}`,
+      },
+    });
+
+    // 7. Return response
+    return NextResponse.json({
+      success: true,
+      transactionId,
+      glResult,
+    });
+  } catch (error) {
+    console.error("Error processing agency banking transaction:", error);
     return NextResponse.json(
       {
         success: false,
-        message: "Transaction failed",
-        error: error.message || "Unknown error occurred",
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const branchId = searchParams.get("branchId") || session.user.branchId;
+    const limit = searchParams.get("limit") || "50";
+    const offset = searchParams.get("offset") || "0";
+
+    // Ensure table exists
+    try {
+      await sql`
+        CREATE TABLE IF NOT EXISTS agency_banking_transactions (
+          id VARCHAR(255) PRIMARY KEY,
+          type VARCHAR(50) NOT NULL,
+          amount DECIMAL(10,2) NOT NULL,
+          fee DECIMAL(10,2) DEFAULT 0,
+          customer_name VARCHAR(255) NOT NULL,
+          account_number VARCHAR(100),
+          partner_bank VARCHAR(255) NOT NULL,
+          partner_bank_code VARCHAR(50),
+          partner_bank_id VARCHAR(255),
+          reference VARCHAR(100),
+          status VARCHAR(20) DEFAULT 'completed',
+          date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          branch_id VARCHAR(255) NOT NULL,
+          user_id VARCHAR(255) NOT NULL,
+          cash_till_affected DECIMAL(10,2) DEFAULT 0,
+          float_affected DECIMAL(10,2) DEFAULT 0,
+          gl_entry_id VARCHAR(255),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+    } catch (tableError) {
+      console.error(
+        "Error creating agency_banking_transactions table:",
+        tableError
+      );
+    }
+
+    let transactions: any[] = [];
+    let total = 0;
+    try {
+      transactions = await sql`
+        SELECT 
+          id,
+          type,
+          amount,
+          fee,
+          customer_name,
+          account_number,
+          partner_bank,
+          reference,
+          status,
+          date,
+          branch_id,
+          user_id,
+          cash_till_affected,
+          float_affected,
+          created_at
+        FROM agency_banking_transactions 
+        WHERE branch_id = ${branchId}
+        ORDER BY created_at DESC 
+        LIMIT ${Number.parseInt(limit)}
+        OFFSET ${Number.parseInt(offset)}
+      `;
+      // Get total count for pagination
+      const countResult = await sql`
+        SELECT COUNT(*)::int as count FROM agency_banking_transactions WHERE branch_id = ${branchId}
+      `;
+      total = countResult[0]?.count || 0;
+    } catch (queryError) {
+      console.error("Error querying agency_banking_transactions:", queryError);
+      transactions = [];
+    }
+
+    return NextResponse.json({
+      success: true,
+      transactions,
+      total,
+    });
+  } catch (error) {
+    console.error("Error fetching agency banking transactions:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to fetch agency banking transactions",
+        transactions: [],
+        total: 0,
       },
       { status: 500 }
     );
@@ -727,5 +373,208 @@ async function getOrCreateGLAccount(
   } catch (error) {
     console.error(`Failed to get or create GL account ${code}:`, error);
     throw error;
+  }
+}
+
+export async function PATCH(request: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { id, ...updateData } = await request.json();
+    if (!id) {
+      return NextResponse.json(
+        { error: "Transaction ID is required" },
+        { status: 400 }
+      );
+    }
+    // Fetch the existing transaction
+    const existingRows =
+      await sql`SELECT * FROM agency_banking_transactions WHERE id = ${id}`;
+    if (!existingRows.length) {
+      return NextResponse.json(
+        { error: "Transaction not found" },
+        { status: 404 }
+      );
+    }
+    const existing = existingRows[0];
+    // Reverse previous balances
+    if (existing.float_affected) {
+      await sql`UPDATE float_accounts SET current_balance = current_balance - ${existing.float_affected} WHERE id = ${existing.partner_bank_id}`;
+    }
+    if (existing.cash_till_affected) {
+      await sql`UPDATE float_accounts SET current_balance = current_balance - ${existing.cash_till_affected} WHERE account_type = 'cash-in-till' AND branch_id = ${existing.branch_id}`;
+    }
+    // Remove old GL entries
+    await UnifiedGLPostingService.deleteGLEntries({
+      transactionId: id,
+      sourceModule: "agency_banking",
+    });
+    // Calculate new values
+    const {
+      amount,
+      type,
+      partner_bank_id,
+      account_number,
+      customer_name,
+      reference,
+      notes,
+    } = updateData;
+    // Fetch partner bank
+    const floatAccounts =
+      await sql`SELECT * FROM float_accounts WHERE id = ${partner_bank_id} AND is_active = true`;
+    const partnerBank = floatAccounts[0];
+    // Fetch fee
+    let fee = 0;
+    try {
+      const feeRes = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+        }/api/agency-banking/calculate-fee`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount,
+            transactionType: type,
+            partnerBankId: partner_bank_id,
+          }),
+        }
+      );
+      const feeData = await feeRes.json();
+      fee = Number(feeData.fee) || 0;
+    } catch (err) {
+      fee = 0;
+    }
+    let cashTillAffected = 0;
+    let floatAffected = 0;
+    switch (type) {
+      case "deposit":
+        cashTillAffected = amount + fee;
+        floatAffected = -amount;
+        break;
+      case "withdrawal":
+        cashTillAffected = -(amount - fee);
+        floatAffected = amount;
+        break;
+      case "interbank":
+        cashTillAffected = fee;
+        floatAffected = 0;
+        break;
+      case "commission":
+        cashTillAffected = amount;
+        floatAffected = 0;
+        break;
+    }
+    // Update transaction
+    await sql`
+      UPDATE agency_banking_transactions SET
+        type = ${type},
+        amount = ${amount},
+        fee = ${fee},
+        customer_name = ${customer_name},
+        account_number = ${account_number},
+        partner_bank = ${
+          partnerBank.account_name || partnerBank.provider || ""
+        },
+        partner_bank_code = ${partnerBank.account_number || ""},
+        partner_bank_id = ${partnerBank.id},
+        reference = ${reference || existing.reference},
+        notes = ${notes || existing.notes},
+        cash_till_affected = ${cashTillAffected},
+        float_affected = ${floatAffected},
+        updated_at = NOW()
+      WHERE id = ${id}
+    `;
+    // Update balances
+    if (floatAffected !== 0) {
+      await sql`UPDATE float_accounts SET current_balance = current_balance + ${floatAffected} WHERE id = ${partnerBank.id}`;
+    }
+    if (cashTillAffected !== 0) {
+      await sql`UPDATE float_accounts SET current_balance = current_balance + ${cashTillAffected} WHERE account_type = 'cash-in-till' AND branch_id = ${existing.branch_id}`;
+    }
+    // Re-post GL
+    await UnifiedGLPostingService.createGLEntries({
+      transactionId: id,
+      sourceModule: "agency_banking",
+      transactionType: type,
+      amount,
+      fee,
+      customerName: customer_name,
+      reference: reference || existing.reference,
+      processedBy: session.user.id,
+      branchId: existing.branch_id,
+      branchName: session.user.branchName || "",
+      metadata: {
+        partnerBank: partnerBank.account_name || partnerBank.provider || "",
+        partnerBankCode: partnerBank.account_number || "",
+        customerName: customer_name,
+        accountNumber: account_number,
+        amount,
+        fee,
+        reference: reference || existing.reference,
+      },
+    });
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error editing agency banking transaction:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { id } = await request.json();
+    if (!id) {
+      return NextResponse.json(
+        { error: "Transaction ID is required" },
+        { status: 400 }
+      );
+    }
+    // Fetch the transaction
+    const existingRows =
+      await sql`SELECT * FROM agency_banking_transactions WHERE id = ${id}`;
+    if (!existingRows.length) {
+      return NextResponse.json(
+        { error: "Transaction not found" },
+        { status: 404 }
+      );
+    }
+    const existing = existingRows[0];
+    // Reverse balances
+    if (existing.float_affected) {
+      await sql`UPDATE float_accounts SET current_balance = current_balance - ${existing.float_affected} WHERE id = ${existing.partner_bank_id}`;
+    }
+    if (existing.cash_till_affected) {
+      await sql`UPDATE float_accounts SET current_balance = current_balance - ${existing.cash_till_affected} WHERE account_type = 'cash-in-till' AND branch_id = ${existing.branch_id}`;
+    }
+    // Remove GL entries
+    await UnifiedGLPostingService.deleteGLEntries({
+      transactionId: id,
+      sourceModule: "agency_banking",
+    });
+    // Delete transaction
+    await sql`DELETE FROM agency_banking_transactions WHERE id = ${id}`;
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error deleting agency banking transaction:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }

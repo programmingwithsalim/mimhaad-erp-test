@@ -1,83 +1,120 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { getCurrentUser } from "@/lib/auth-utils";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const branchId = searchParams.get("branchId")
-    const status = searchParams.get("status")
-    const limit = searchParams.get("limit") || "50"
+    // Get current user for authentication and branch filtering
+    const currentUser = getCurrentUser(request);
+    console.log("Current user for expenses API:", currentUser);
 
-    // Get expenses with expense head information (using first_name/last_name instead of username)
-    let expenses
-    if (branchId && status) {
+    const { searchParams } = new URL(request.url);
+    const requestedBranchId = searchParams.get("branchId");
+    const status = searchParams.get("status");
+    const limit = searchParams.get("limit") || "50";
+
+    // Determine which branch to filter by based on user role
+    let effectiveBranchId = requestedBranchId;
+
+    // If user is not admin, enforce branch-specific access
+    if (currentUser.role !== "admin") {
+      // Non-admin users can only see their own branch
+      effectiveBranchId = currentUser.branchId;
+      console.log(
+        `Non-admin user ${currentUser.name} (${currentUser.role}) - filtering by their branch: ${effectiveBranchId}`
+      );
+    } else if (requestedBranchId) {
+      // Admin users can see specific branch if requested
+      effectiveBranchId = requestedBranchId;
+      console.log(
+        `Admin user ${currentUser.name} - viewing specific branch: ${effectiveBranchId}`
+      );
+    } else {
+      // Admin users without specific branch request see all branches
+      effectiveBranchId = null;
+      console.log(`Admin user ${currentUser.name} - viewing all branches`);
+    }
+
+    // Get expenses with expense head information
+    let expenses;
+    if (effectiveBranchId && status) {
       expenses = await sql`
         SELECT 
           e.*,
           eh.name as expense_head_name,
           eh.category as expense_head_category,
           CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as created_by_name,
-          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name
+          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name,
+          b.name as branch_name
         FROM expenses e
         LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
         LEFT JOIN users u ON e.created_by = u.id
         LEFT JOIN users approver ON e.approved_by = approver.id
-        WHERE e.branch_id = ${branchId} AND e.status = ${status}
+        LEFT JOIN branches b ON e.branch_id = b.id
+        WHERE e.branch_id = ${effectiveBranchId} AND e.status = ${status}
         ORDER BY e.created_at DESC
         LIMIT ${Number.parseInt(limit)}
-      `
-    } else if (branchId) {
+      `;
+    } else if (effectiveBranchId) {
       expenses = await sql`
         SELECT 
           e.*,
           eh.name as expense_head_name,
           eh.category as expense_head_category,
           CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as created_by_name,
-          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name
+          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name,
+          b.name as branch_name
         FROM expenses e
         LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
         LEFT JOIN users u ON e.created_by = u.id
         LEFT JOIN users approver ON e.approved_by = approver.id
-        WHERE e.branch_id = ${branchId}
+        LEFT JOIN branches b ON e.branch_id = b.id
+        WHERE e.branch_id = ${effectiveBranchId}
         ORDER BY e.created_at DESC
         LIMIT ${Number.parseInt(limit)}
-      `
+      `;
     } else if (status) {
+      // Admin viewing all branches with status filter
       expenses = await sql`
         SELECT 
           e.*,
           eh.name as expense_head_name,
           eh.category as expense_head_category,
           CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as created_by_name,
-          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name
+          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name,
+          b.name as branch_name
         FROM expenses e
         LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
         LEFT JOIN users u ON e.created_by = u.id
         LEFT JOIN users approver ON e.approved_by = approver.id
+        LEFT JOIN branches b ON e.branch_id = b.id
         WHERE e.status = ${status}
         ORDER BY e.created_at DESC
         LIMIT ${Number.parseInt(limit)}
-      `
+      `;
     } else {
+      // Admin viewing all branches
       expenses = await sql`
         SELECT 
           e.*,
           eh.name as expense_head_name,
           eh.category as expense_head_category,
           CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) as created_by_name,
-          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name
+          CONCAT(COALESCE(approver.first_name, ''), ' ', COALESCE(approver.last_name, '')) as approved_by_name,
+          b.name as branch_name
         FROM expenses e
         LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
         LEFT JOIN users u ON e.created_by = u.id
         LEFT JOIN users approver ON e.approved_by = approver.id
+        LEFT JOIN branches b ON e.branch_id = b.id
         ORDER BY e.created_at DESC
         LIMIT ${Number.parseInt(limit)}
-      `
+      `;
     }
 
-    // Get summary statistics
+    // Get summary statistics with branch filtering
     const stats = await sql`
       SELECT 
         COUNT(*) as total_expenses,
@@ -90,10 +127,10 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
         COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount
       FROM expenses 
-      ${branchId ? sql`WHERE branch_id = ${branchId}` : sql``}
-    `
+      ${effectiveBranchId ? sql`WHERE branch_id = ${effectiveBranchId}` : sql``}
+    `;
 
-    const statsResult = stats[0] || {}
+    const statsResult = stats[0] || {};
 
     return NextResponse.json({
       success: true,
@@ -109,23 +146,33 @@ export async function GET(request: NextRequest) {
         approved_amount: Number.parseFloat(statsResult.approved_amount || "0"),
         paid_amount: Number.parseFloat(statsResult.paid_amount || "0"),
       },
-    })
+      userContext: {
+        role: currentUser.role,
+        branchId: currentUser.branchId,
+        branchName: currentUser.branchName,
+        canViewAllBranches: currentUser.role === "admin",
+      },
+    });
   } catch (error) {
-    console.error("Error fetching expenses:", error)
+    console.error("Error fetching expenses:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to fetch expenses",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    // Get current user for authentication and branch validation
+    const currentUser = getCurrentUser(request);
+    console.log("Current user for expense creation:", currentUser);
+
+    const body = await request.json();
     const {
       expense_head_id,
       amount,
@@ -134,21 +181,44 @@ export async function POST(request: NextRequest) {
       payment_source = "cash",
       notes,
       branch_id,
-      created_by = "550e8400-e29b-41d4-a716-446655440000", // Default UUID instead of "system"
-    } = body
+      created_by = currentUser.id, // Use current user's ID
+    } = body;
 
     // Validate required fields
-    if (!expense_head_id || !amount || !expense_date || !branch_id) {
+    if (!expense_head_id || !amount || !expense_date) {
       return NextResponse.json(
-        { success: false, error: "Missing required fields: expense_head_id, amount, expense_date, branch_id" },
-        { status: 400 },
-      )
+        {
+          success: false,
+          error:
+            "Missing required fields: expense_head_id, amount, expense_date",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Determine which branch to use based on user role
+    let effectiveBranchId = branch_id;
+
+    // If user is not admin, enforce their branch
+    if (currentUser.role !== "admin") {
+      effectiveBranchId = currentUser.branchId;
+      console.log(
+        `Non-admin user ${currentUser.name} - using their branch: ${effectiveBranchId}`
+      );
+    } else if (!branch_id) {
+      // Admin must specify a branch
+      return NextResponse.json(
+        { success: false, error: "Branch ID is required for expense creation" },
+        { status: 400 }
+      );
     }
 
     // Generate reference number
-    const referenceNumber = `EXP-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`
+    const referenceNumber = `EXP-${new Date().getFullYear()}-${String(
+      Date.now()
+    ).slice(-6)}`;
 
-    // Insert new expense (removed receipt_number field)
+    // Insert new expense
     const result = await sql`
       INSERT INTO expenses (
         reference_number,
@@ -169,27 +239,27 @@ export async function POST(request: NextRequest) {
         ${expense_date},
         ${payment_source},
         ${notes || null},
-        ${branch_id}::UUID,
+        ${effectiveBranchId}::UUID,
         ${created_by}::UUID,
         'pending'
       )
       RETURNING *
-    `
+    `;
 
     return NextResponse.json({
       success: true,
       expense: result[0],
       message: "Expense created successfully",
-    })
+    });
   } catch (error) {
-    console.error("Error creating expense:", error)
+    console.error("Error creating expense:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to create expense",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

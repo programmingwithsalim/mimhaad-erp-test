@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -63,16 +64,26 @@ export async function GET(request: NextRequest) {
       // Get card issuances
       if (branchId) {
         cardIssuances = await sql`
-          SELECT *, fee_charged as amount, 'card_issuance' as type, 0 as fee
-          FROM e_zwich_card_issuances
+          SELECT 
+            *,
+            fee_charged as amount,
+            'card_issuance' as type,
+            fee_charged as fee,
+            'completed' as status
+          FROM ezwich_card_issuance
           WHERE branch_id = ${branchId}
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
       } else {
         cardIssuances = await sql`
-          SELECT *, fee_charged as amount, 'card_issuance' as type, 0 as fee
-          FROM e_zwich_card_issuances
+          SELECT 
+            *,
+            fee_charged as amount,
+            'card_issuance' as type,
+            fee_charged as fee,
+            'completed' as status
+          FROM ezwich_card_issuance
           ORDER BY created_at DESC
           LIMIT ${limit}
         `;
@@ -81,8 +92,6 @@ export async function GET(request: NextRequest) {
       console.log("⚠️ [E-ZWICH] No card issuances table or data");
       cardIssuances = [];
     }
-
-    console.log(cardIssuances);
 
     // Combine and sort all transactions
     const allTransactions = [...withdrawalTransactions, ...cardIssuances].sort(
@@ -124,21 +133,34 @@ export async function POST(request: NextRequest) {
       branchId,
       userId,
       partner_bank,
+      settlement_account_id, // for withdrawal
     } = body;
     const now = new Date().toISOString();
-    let transactionId = `ezw_${Date.now()}_${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
-
+    // Validate required fields
+    if (
+      !type ||
+      !card_number ||
+      !customer_name ||
+      !branchId ||
+      !userId ||
+      !amount
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+    // Generate UUID for transaction ID
+    const transactionIdResult = await sql`SELECT gen_random_uuid() as id`;
+    const transactionId = transactionIdResult[0].id;
+    const txnReference = reference || `EZW-${type.toUpperCase()}-${Date.now()}`;
     if (type === "card_issuance") {
       // Insert card issuance record
       await sql`
-        INSERT INTO e_zwich_card_issuances (
+        INSERT INTO ezwich_card_issuance (
           id, fee, customer_name, card_number, reference, status, created_at, branch_id, partner_bank
         ) VALUES (
-          ${transactionId}, ${fee}, ${customer_name}, ${card_number}, ${
-        reference || transactionId
-      }, 'completed', ${now}, ${branchId}, ${partner_bank}
+          ${transactionId}, ${fee}, ${customer_name}, ${card_number}, ${txnReference}, 'completed', ${now}, ${branchId}, ${partner_bank}
         )
       `;
       // Increase cash in till by fee
@@ -150,38 +172,107 @@ export async function POST(request: NextRequest) {
           AND account_type = 'cash-in-till'
           AND is_active = true
       `;
-      // Optionally decrease card stock here if tracked
+      // Unified GL Posting
+      try {
+        await UnifiedGLPostingService.createGLEntries({
+          transactionId,
+          sourceModule: "e_zwich",
+          transactionType: "card_issuance",
+          amount: Number(fee),
+          fee: 0,
+          customerName: customer_name,
+          reference: txnReference,
+          processedBy: userId,
+          branchId,
+          metadata: { card_number },
+        });
+      } catch (glError) {
+        console.error(
+          "[GL] Failed to post E-Zwich card issuance to GL:",
+          glError
+        );
+      }
     } else if (type === "withdrawal") {
+      // Validate settlement account
+      if (!settlement_account_id) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Missing settlement account ID for withdrawal",
+          },
+          { status: 400 }
+        );
+      }
+      // Check settlement account balance
+      const settlementAccount = await sql`
+        SELECT current_balance FROM float_accounts 
+        WHERE id = ${settlement_account_id} AND is_active = true
+      `;
+      if (settlementAccount.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Settlement account not found or inactive" },
+          { status: 400 }
+        );
+      }
+      const currentBalance = Number(settlementAccount[0].current_balance);
+      if (currentBalance < amount) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Insufficient balance. Available: GHS ${currentBalance.toFixed(
+              2
+            )}, Required: GHS ${Number(amount).toFixed(2)}`,
+          },
+          { status: 400 }
+        );
+      }
       // Insert withdrawal record
       await sql`
-        INSERT INTO e_zwich_transactions (
-          id, amount, fee, customer_name, card_number, reference, status, created_at, branch_id, partner_bank
+        INSERT INTO e_zwich_withdrawals (
+          id, card_number, settlement_account_id, customer_name, 
+          amount, fee, status, reference, branch_id, partner_bank, created_at
         ) VALUES (
-          ${transactionId}, ${amount}, ${
+          ${transactionId}, ${card_number}, ${settlement_account_id}, ${customer_name},
+          ${amount}, ${
         fee || 0
-      }, ${customer_name}, ${card_number}, ${
-        reference || transactionId
-      }, 'completed', ${now}, ${branchId}, ${partner_bank}
+      }, 'completed', ${txnReference}, ${branchId}, ${partner_bank}, ${now}
         )
       `;
-      // Increase ezwich settlement by amount
-      await sql`
-        UPDATE float_accounts
-        SET current_balance = current_balance + ${amount},
-            updated_at = NOW()
-        WHERE branch_id = ${branchId}
-          AND account_type = 'ezwich-settlement'
-          AND is_active = true
-      `;
-      // Decrease cash in till by amount
+      // Decrease settlement account by amount
       await sql`
         UPDATE float_accounts
         SET current_balance = current_balance - ${amount},
             updated_at = NOW()
-        WHERE branch_id = ${branchId}
-          AND account_type = 'cash-in-till'
-          AND is_active = true
+        WHERE id = ${settlement_account_id}
       `;
+      // Increase cash in till by fee (if any)
+      if (fee && Number(fee) > 0) {
+        await sql`
+          UPDATE float_accounts
+          SET current_balance = current_balance + ${fee},
+              updated_at = NOW()
+          WHERE branch_id = ${branchId}
+            AND account_type = 'cash-in-till'
+            AND is_active = true
+        `;
+      }
+      // Unified GL Posting
+      try {
+        await UnifiedGLPostingService.createGLEntries({
+          transactionId,
+          sourceModule: "e_zwich",
+          transactionType: "withdrawal",
+          amount: Number(amount),
+          fee: Number(fee || 0),
+          customerName: customer_name,
+          reference: txnReference,
+          processedBy: userId,
+          branchId,
+          metadata: { card_number },
+        });
+      } catch (glError) {
+        console.error("[GL] Failed to post E-Zwich withdrawal to GL:", glError);
+      }
     } else {
       return NextResponse.json(
         { success: false, error: "Invalid transaction type" },

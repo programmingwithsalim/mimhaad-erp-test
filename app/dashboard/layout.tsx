@@ -1,34 +1,33 @@
-"use client"
+"use client";
 
-import type React from "react"
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { SidebarNavigation } from "@/components/sidebar-navigation"
-import { TopNavbar } from "@/components/top-navbar"
-import { useAuth } from "@/lib/auth-context"
-import { Loader2 } from "lucide-react"
-import { RoleSwitcher } from "@/components/rbac/role-switcher"
-import { useAuthOverride } from "@/lib/auth-context-override"
-import { RouteGuard } from "@/components/rbac/route-guard"
+import type React from "react";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { SidebarNavigation } from "@/components/sidebar-navigation";
+import { TopNavbar } from "@/components/top-navbar";
+import { useAuth } from "@/lib/auth-context";
+import { Loader2 } from "lucide-react";
+import { useAuthOverride } from "@/lib/auth-context-override";
+import { RouteGuard } from "@/components/rbac/route-guard";
 
 export default function DashboardLayout({
   children,
 }: {
-  children: React.ReactNode
+  children: React.ReactNode;
 }) {
-  const router = useRouter()
-  const { user, isLoading } = useAuth()
-  useAuthOverride()
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
+  useAuthOverride();
 
   useEffect(() => {
-    console.log("Dashboard layout - Auth check:", { user: !!user, isLoading })
+    console.log("Dashboard layout - Auth check:", { user: !!user, isLoading });
 
     // If not loading and no user, redirect to login
     if (!isLoading && !user) {
-      console.log("No user found, redirecting to login")
-      router.push("/")
+      console.log("No user found, redirecting to login");
+      router.push("/");
     }
-  }, [user, isLoading, router])
+  }, [user, isLoading, router]);
 
   // Show loading while checking authentication
   if (isLoading) {
@@ -40,10 +39,12 @@ export default function DashboardLayout({
             <div className="absolute h-full w-full animate-pulse rounded-full bg-primary/30"></div>
             <div className="absolute inset-2 animate-spin rounded-full border-2 border-transparent border-t-primary"></div>
           </div>
-          <p className="text-sm font-medium text-muted-foreground">Loading...</p>
+          <p className="text-sm font-medium text-muted-foreground">
+            Loading...
+          </p>
         </div>
       </div>
-    )
+    );
   }
 
   // Don't render dashboard if no user
@@ -52,10 +53,12 @@ export default function DashboardLayout({
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-2">
           <Loader2 className="h-8 w-8 animate-spin" />
-          <p className="text-sm font-medium text-muted-foreground">Redirecting to login...</p>
+          <p className="text-sm font-medium text-muted-foreground">
+            Redirecting to login...
+          </p>
         </div>
       </div>
-    )
+    );
   }
 
   return (
@@ -75,7 +78,6 @@ export default function DashboardLayout({
           </main>
         </div>
       </div>
-      <RoleSwitcher />
     </>
-  )
+  );
 }

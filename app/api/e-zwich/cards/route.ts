@@ -1,25 +1,28 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 // Generate unique card number
 function generateCardNumber(): string {
-  const timestamp = Date.now().toString().slice(-8)
+  const timestamp = Date.now().toString().slice(-8);
   const random = Math.floor(Math.random() * 10000)
     .toString()
-    .padStart(4, "0")
-  return `627760${timestamp}${random}`
+    .padStart(4, "0");
+  return `627760${timestamp}${random}`;
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const branchId = searchParams.get("branchId")
-    const limit = searchParams.get("limit") || "50"
+    const { searchParams } = new URL(request.url);
+    const branchId = searchParams.get("branchId");
+    const limit = searchParams.get("limit") || "50";
 
     if (!branchId) {
-      return NextResponse.json({ success: false, error: "Branch ID is required" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Branch ID is required" },
+        { status: 400 }
+      );
     }
 
     // Ensure table exists with VARCHAR branch_id
@@ -49,12 +52,13 @@ export async function GET(request: NextRequest) {
           branch_id VARCHAR(50) NOT NULL,
           issued_by VARCHAR(255) NOT NULL,
           fee_charged DECIMAL(10,2) DEFAULT 15.0,
+          partner_bank VARCHAR(100),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
-      `
+      `;
     } catch (tableError) {
-      console.log("Table creation skipped:", tableError)
+      console.log("Table creation skipped:", tableError);
     }
 
     const cards = await sql`
@@ -64,25 +68,25 @@ export async function GET(request: NextRequest) {
       WHERE c.branch_id = ${branchId} 
       ORDER BY c.created_at DESC
       LIMIT ${Number.parseInt(limit)}
-    `
+    `;
 
-    return NextResponse.json({ success: true, data: cards || [] })
+    return NextResponse.json({ success: true, data: cards || [] });
   } catch (error) {
-    console.error("Error fetching cards:", error)
+    console.error("Error fetching cards:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to fetch cards",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
+    const body = await request.json();
     const {
       batch_id,
       customer_name,
@@ -102,35 +106,50 @@ export async function POST(request: NextRequest) {
       branch_id,
       issued_by,
       fee_charged,
-    } = body
+      partner_bank,
+    } = body;
 
-    if (!batch_id || !customer_name || !customer_phone || !branch_id || !issued_by) {
+    if (
+      !batch_id ||
+      !customer_name ||
+      !customer_phone ||
+      !branch_id ||
+      !issued_by ||
+      !partner_bank
+    ) {
       return NextResponse.json(
         {
           success: false,
-          error: "Missing required fields: batch_id, customer_name, customer_phone, branch_id, issued_by",
+          error:
+            "Missing required fields: batch_id, customer_name, customer_phone, branch_id, issued_by, partner_bank",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Check if batch has available cards
     const batch = await sql`
       SELECT quantity_available FROM ezwich_card_batches WHERE id = ${batch_id}
-    `
+    `;
 
     if (batch.length === 0) {
-      return NextResponse.json({ success: false, error: "Batch not found" }, { status: 404 })
+      return NextResponse.json(
+        { success: false, error: "Batch not found" },
+        { status: 404 }
+      );
     }
 
     if (batch[0].quantity_available <= 0) {
-      return NextResponse.json({ success: false, error: "No cards available in this batch" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "No cards available in this batch" },
+        { status: 400 }
+      );
     }
 
-    const cardNumber = generateCardNumber()
-    const issueDate = new Date().toISOString().split("T")[0]
-    const expiryDate = new Date()
-    expiryDate.setFullYear(expiryDate.getFullYear() + 5)
+    const cardNumber = generateCardNumber();
+    const issueDate = new Date().toISOString().split("T")[0];
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 5);
 
     // Insert card
     const cardResult = await sql`
@@ -138,7 +157,7 @@ export async function POST(request: NextRequest) {
         card_number, batch_id, customer_name, customer_phone, customer_email,
         date_of_birth, gender, id_type, id_number, id_expiry_date,
         address_line1, address_line2, city, region, postal_code, country,
-        issue_date, expiry_date, branch_id, issued_by, fee_charged
+        issue_date, expiry_date, branch_id, issued_by, fee_charged, partner_bank
       ) VALUES (
         ${cardNumber}, ${batch_id}, ${customer_name}, ${customer_phone}, 
         ${customer_email || null}, ${date_of_birth || null}, ${gender || null},
@@ -146,10 +165,10 @@ export async function POST(request: NextRequest) {
         ${address_line1 || null}, ${address_line2 || null}, ${city || null},
         ${region || null}, ${postal_code || null}, ${country || "Ghana"},
         ${issueDate}, ${expiryDate.toISOString().split("T")[0]}, ${branch_id}, 
-        ${issued_by}, ${fee_charged || 15.0}
+        ${issued_by}, ${fee_charged || 15.0}, ${partner_bank}
       )
       RETURNING *
-    `
+    `;
 
     // Update batch quantity
     await sql`
@@ -157,18 +176,18 @@ export async function POST(request: NextRequest) {
       SET quantity_issued = quantity_issued + 1,
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ${batch_id}
-    `
+    `;
 
-    return NextResponse.json({ success: true, data: { card: cardResult[0] } })
+    return NextResponse.json({ success: true, data: { card: cardResult[0] } });
   } catch (error) {
-    console.error("Error issuing card:", error)
+    console.error("Error issuing card:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to issue card",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

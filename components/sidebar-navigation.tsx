@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
-import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -26,10 +26,10 @@ import {
   LogOut,
   CheckCircle,
   BarChart3,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { useAuth } from "@/lib/auth-context"
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth-context";
 
 // Menu structure organized by functionality with role-based access
 const menuItems = [
@@ -114,7 +114,7 @@ const menuItems = [
       },
       {
         title: "Commissions",
-        href: "/dashboard/monthly-commissions",
+        href: "/dashboard/commissions",
         icon: TrendingUp,
         roles: ["admin", "manager", "finance"],
       },
@@ -175,6 +175,12 @@ const menuItems = [
     title: "System",
     items: [
       {
+        title: "Admin Panel",
+        href: "/dashboard/admin",
+        icon: Shield,
+        roles: ["admin"], // Only admins can access admin panel
+      },
+      {
         title: "Settings",
         href: "/dashboard/settings",
         icon: Settings,
@@ -182,55 +188,55 @@ const menuItems = [
       },
     ],
   },
-]
+];
 
 export function SidebarNavigation() {
-  const pathname = usePathname()
-  const { user, logout } = useAuth()
-  const [isCollapsed, setIsCollapsed] = useState(false)
-  const [isMobile, setIsMobile] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const pathname = usePathname();
+  const { user, logout } = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   // Check if mobile on initial load
   useEffect(() => {
     const checkIsMobile = () => {
-      setIsMobile(window.innerWidth < 1024)
-    }
+      setIsMobile(window.innerWidth < 1024);
+    };
 
-    checkIsMobile()
-    window.addEventListener("resize", checkIsMobile)
+    checkIsMobile();
+    window.addEventListener("resize", checkIsMobile);
 
     return () => {
-      window.removeEventListener("resize", checkIsMobile)
-    }
-  }, [])
+      window.removeEventListener("resize", checkIsMobile);
+    };
+  }, []);
 
   // Close mobile sidebar when navigating
   useEffect(() => {
-    setMobileOpen(false)
-  }, [pathname])
+    setMobileOpen(false);
+  }, [pathname]);
 
   const hasPermission = (roles: string[]) => {
-    if (!user?.role) return false
-    return roles.includes(user.role.toLowerCase())
-  }
+    if (!user?.role) return false;
+    return roles.includes(user.role.toLowerCase());
+  };
 
   const toggleSidebar = () => {
-    setIsCollapsed(!isCollapsed)
-  }
+    setIsCollapsed(!isCollapsed);
+  };
 
   const toggleMobileSidebar = () => {
-    setMobileOpen(!mobileOpen)
-  }
+    setMobileOpen(!mobileOpen);
+  };
 
   const handleLogout = async () => {
     try {
-      await logout()
+      await logout();
     } catch (error) {
-      console.error("Logout error:", error)
-      window.location.href = "/"
+      console.error("Logout error:", error);
+      window.location.href = "/";
     }
-  }
+  };
 
   // Sidebar content component
   const SidebarContent = () => (
@@ -239,12 +245,18 @@ export function SidebarNavigation() {
       <div className="flex h-16 items-center justify-between border-b px-4">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full overflow-hidden bg-white">
-            <img src="/logo.png" alt="Mimhaad Logo" className="w-full h-full object-cover" />
+            <img
+              src="/logo.png"
+              alt="Mimhaad Logo"
+              className="w-full h-full object-cover"
+            />
           </div>
           {!isCollapsed && (
             <div className="flex flex-col">
               <span className="text-lg font-bold text-foreground">MIMHAAD</span>
-              <span className="text-xs text-muted-foreground">Financial Services</span>
+              <span className="text-xs text-muted-foreground">
+                Financial Services
+              </span>
             </div>
           )}
         </div>
@@ -252,7 +264,10 @@ export function SidebarNavigation() {
           <Button variant="ghost" size="icon" onClick={toggleSidebar}>
             <ChevronRight
               size={20}
-              className={cn("transition-transform duration-200", isCollapsed ? "rotate-0" : "rotate-180")}
+              className={cn(
+                "transition-transform duration-200",
+                isCollapsed ? "rotate-0" : "rotate-180"
+              )}
             />
           </Button>
         )}
@@ -262,9 +277,11 @@ export function SidebarNavigation() {
       <div className="flex-1 overflow-auto py-4">
         <nav className="space-y-4 px-3">
           {menuItems.map((section) => {
-            const visibleItems = section.items.filter((item) => hasPermission(item.roles))
+            const visibleItems = section.items.filter((item) =>
+              hasPermission(item.roles)
+            );
 
-            if (visibleItems.length === 0) return null
+            if (visibleItems.length === 0) return null;
 
             return (
               <div key={section.title} className="space-y-2">
@@ -280,8 +297,10 @@ export function SidebarNavigation() {
                 {/* Menu Items */}
                 <div className="space-y-1">
                   {visibleItems.map((item) => {
-                    const Icon = item.icon
-                    const isActive = pathname === item.href || pathname.startsWith(item.href + "/")
+                    const Icon = item.icon;
+                    const isActive =
+                      pathname === item.href ||
+                      pathname.startsWith(item.href + "/");
 
                     return (
                       <Link key={item.href} href={item.href}>
@@ -292,19 +311,21 @@ export function SidebarNavigation() {
                             isCollapsed && "justify-center px-0",
                             isActive
                               ? "bg-primary/10 text-primary font-medium"
-                              : "text-foreground/70 hover:bg-accent hover:text-foreground",
+                              : "text-foreground/70 hover:bg-accent hover:text-foreground"
                           )}
                           title={isCollapsed ? item.title : undefined}
                         >
                           <Icon className="h-4 w-4 flex-shrink-0" />
-                          {!isCollapsed && <span className="truncate">{item.title}</span>}
+                          {!isCollapsed && (
+                            <span className="truncate">{item.title}</span>
+                          )}
                         </Button>
                       </Link>
-                    )
+                    );
                   })}
                 </div>
               </div>
-            )
+            );
           })}
         </nav>
       </div>
@@ -315,7 +336,7 @@ export function SidebarNavigation() {
           variant="ghost"
           className={cn(
             "w-full justify-start gap-3 text-foreground/70 hover:bg-accent hover:text-foreground",
-            isCollapsed && "justify-center px-0",
+            isCollapsed && "justify-center px-0"
           )}
           onClick={handleLogout}
         >
@@ -324,14 +345,19 @@ export function SidebarNavigation() {
         </Button>
       </div>
     </div>
-  )
+  );
 
   // Mobile sidebar
   if (isMobile) {
     return (
       <>
         {/* Mobile toggle button */}
-        <Button variant="ghost" size="icon" className="fixed left-4 top-4 z-50 lg:hidden" onClick={toggleMobileSidebar}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="fixed left-4 top-4 z-50 lg:hidden"
+          onClick={toggleMobileSidebar}
+        >
           {mobileOpen ? <X size={24} /> : <Menu size={24} />}
         </Button>
 
@@ -350,13 +376,18 @@ export function SidebarNavigation() {
           </div>
         )}
       </>
-    )
+    );
   }
 
   // Desktop sidebar
   return (
-    <div className={cn("hidden lg:flex flex-col transition-all duration-300", isCollapsed ? "w-20" : "w-64")}>
+    <div
+      className={cn(
+        "hidden lg:flex flex-col transition-all duration-300",
+        isCollapsed ? "w-20" : "w-64"
+      )}
+    >
       <SidebarContent />
     </div>
-  )
+  );
 }

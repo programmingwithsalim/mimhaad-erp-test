@@ -339,12 +339,12 @@ export function TopNavbar() {
           {userMenuOpen && (
             <div className="absolute right-0 top-full mt-1 w-56 rounded-md border bg-background p-1 shadow-lg z-50">
               <div className="border-b p-2">
-                <p className="font-medium">{user?.name || "User"}</p>
+                <p className="font-medium">{user?.firstName}</p>
                 <p className="text-xs text-muted-foreground">
-                  {user?.email || "user@example.com"}
+                  {user?.email}
                 </p>
                 <p className="text-xs text-muted-foreground capitalize">
-                  {user?.role || "User"}
+                  {user?.role}
                 </p>
               </div>
               <div className="p-1">

@@ -24,6 +24,7 @@ export interface MoMoTransaction {
   processedBy?: string;
   cashTillAffected?: number;
   floatAffected?: number;
+  deleted?: boolean;
 }
 
 export interface MoMoTransactionStatistics {
@@ -164,77 +165,46 @@ export async function getAllMoMoTransactions(userContext?: {
   branchId: string;
 }): Promise<MoMoTransaction[]> {
   try {
-    // Try database first
-    try {
-      let transactions;
-
-      if (
-        userContext &&
-        userContext.role !== "admin" &&
-        userContext.role !== "Admin"
-      ) {
-        // Filter by user's branch for non-admin users
-        transactions = await sql`
-          SELECT * FROM momo_transactions 
-          WHERE branch_id = ${userContext.branchId}::UUID
-          ORDER BY date DESC
-        `;
-      } else {
-        // Admin users see all transactions
-        transactions = await sql`
-          SELECT * FROM momo_transactions ORDER BY date DESC
-        `;
-      }
-
-      return transactions.map((t) => ({
-        id: t.id,
-        type: t.type,
-        amount: Number(t.amount),
-        fee: Number(t.fee),
-        phoneNumber: t.phone_number,
-        reference: t.reference,
-        status: t.status,
-        date: t.date,
-        branchId: t.branch_id,
-        userId: t.user_id, // This will be a proper UUID from database
-        provider: t.provider,
-        customerName: t.customer_name,
-        floatAccountId: t.float_account_id,
-        floatAccountName: t.float_account_name,
-        branchName: t.branch_name,
-        processedBy: t.processed_by,
-        cashTillAffected: Number(t.cash_till_affected || 0),
-        floatAffected: Number(t.float_affected || 0),
-        metadata: {},
-      }));
-    } catch (dbError) {
-      console.log("Database not available, using mock data");
+    let transactions;
+    if (
+      userContext &&
+      userContext.role !== "admin" &&
+      userContext.role !== "Admin"
+    ) {
+      // Filter by user's branch for non-admin users
+      transactions = await sql`
+        SELECT * FROM momo_transactions 
+        WHERE branch_id = ${userContext.branchId}::UUID AND deleted = false
+        ORDER BY date DESC
+      `;
+    } else {
+      // Admin users see all transactions
+      transactions = await sql`
+        SELECT * FROM momo_transactions WHERE deleted = false ORDER BY date DESC
+      `;
     }
-
-    // Fallback to mock data with proper UUIDs
-    return [
-      {
-        id: "momo-1234567890",
-        date: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(),
-        customerName: "John Doe",
-        phoneNumber: "0201234567",
-        amount: 100,
-        fee: 1,
-        type: "cash-in",
-        provider: "MTN Mobile Money",
-        reference: "Payment for services",
-        status: "completed",
-        branchId:
-          userContext?.branchId || "550e8400-e29b-41d4-a716-446655440000",
-        branchName: "Main Branch",
-        floatAccountId: "550e8400-e29b-41d4-a716-446655440001",
-        floatAccountName: "MTN Mobile Money - Main",
-        processedBy: "Admin User",
-        cashTillAffected: 100,
-        floatAffected: -100,
-        userId: userContext?.userId || "550e8400-e29b-41d4-a716-446655440002",
-      },
-    ];
+    return transactions.map((t) => ({
+      id: t.id,
+      type: t.type,
+      amount: Number(t.amount),
+      fee: Number(t.fee),
+      phoneNumber: t.phone_number,
+      reference: t.reference,
+      status: t.status,
+      date: t.date,
+      branchId: t.branch_id,
+      userId: t.user_id,
+      provider: t.provider,
+      customerName: t.customer_name,
+      floatAccountId: t.float_account_id,
+      floatAccountName: t.float_account_name,
+      branchName: t.branch_name,
+      processedBy: t.processed_by,
+      cashTillAffected: Number(t.cash_till_affected || 0),
+      floatAffected: Number(t.float_affected || 0),
+      metadata: {},
+      deleted: t.deleted,
+    }));
   } catch (error) {
     console.error("Error getting all MoMo transactions:", error);
     return [];
@@ -258,6 +228,8 @@ export async function getMoMoTransactions(
 ): Promise<MoMoTransaction[]> {
   try {
     let transactions = await getAllMoMoTransactions(userContext);
+    // Filter out deleted transactions (for mock data)
+    transactions = transactions.filter((t) => !t.deleted);
 
     // Apply filters if provided
     if (filters) {

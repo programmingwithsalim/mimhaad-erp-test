@@ -1,31 +1,31 @@
-import { neon } from "@neondatabase/serverless"
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export interface PowerTransaction {
-  id: string
-  reference: string
-  meterNumber: string
-  provider: string
-  amount: number
-  customerName?: string
-  customerPhone?: string
-  status: string
-  createdAt: string
-  branchId: string
-  userId: string
-  type: "sale" | "purchase"
+  id: string;
+  reference: string;
+  meterNumber: string;
+  provider: string;
+  amount: number;
+  customerName?: string;
+  customerPhone?: string;
+  status: string;
+  createdAt: string;
+  branchId: string;
+  userId: string;
+  type: "sale" | "purchase";
 }
 
 export interface CreatePowerSaleData {
-  meterNumber: string
-  provider: string
-  amount: number
-  customerName?: string
-  customerPhone?: string
-  branchId: string
-  userId: string
-  reference: string
+  meterNumber: string;
+  provider: string;
+  amount: number;
+  customerName?: string;
+  customerPhone?: string;
+  branchId: string;
+  userId: string;
+  reference: string;
 }
 
 // Ensure power transactions table exists
@@ -47,20 +47,22 @@ async function ensurePowerTransactionsTable() {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
-    `
-    console.log("Power transactions table ensured")
+    `;
+    console.log("Power transactions table ensured");
   } catch (error) {
-    console.error("Error creating power transactions table:", error)
-    throw error
+    console.error("Error creating power transactions table:", error);
+    throw error;
   }
 }
 
-export async function createPowerSale(data: CreatePowerSaleData): Promise<PowerTransaction> {
+export async function createPowerSale(
+  data: CreatePowerSaleData
+): Promise<PowerTransaction> {
   try {
-    console.log("🔄 [POWER] Creating power sale:", data)
+    console.log("🔄 [POWER] Creating power sale:", data);
 
     // Ensure table exists
-    await ensurePowerTransactionsTable()
+    await ensurePowerTransactionsTable();
 
     const result = await sql`
       INSERT INTO power_transactions (
@@ -86,15 +88,15 @@ export async function createPowerSale(data: CreatePowerSaleData): Promise<PowerT
         ${data.branchId},
         ${data.userId}
       ) RETURNING *
-    `
+    `;
 
     if (!result || result.length === 0) {
-      throw new Error("Failed to create power transaction")
+      throw new Error("Failed to create power transaction");
     }
 
-    const transaction = result[0]
+    const transaction = result[0];
 
-    console.log("✅ [POWER] Power sale created successfully:", transaction.id)
+    console.log("✅ [POWER] Power sale created successfully:", transaction.id);
 
     return {
       id: transaction.id,
@@ -109,29 +111,40 @@ export async function createPowerSale(data: CreatePowerSaleData): Promise<PowerT
       branchId: transaction.branch_id,
       userId: transaction.user_id,
       type: transaction.type,
-    }
+    };
   } catch (error) {
-    console.error("❌ [POWER] Error creating power sale:", error)
-    throw error
+    console.error("❌ [POWER] Error creating power sale:", error);
+    throw error;
   }
 }
 
 export async function getPowerTransactions(filters: {
-  branchId?: string
-  type?: "sale" | "purchase"
-  startDate?: string
-  endDate?: string
-  provider?: string
-  limit?: number
-  offset?: number
+  branchId?: string;
+  type?: "sale" | "purchase";
+  startDate?: string;
+  endDate?: string;
+  provider?: string;
+  limit?: number;
+  offset?: number;
 }): Promise<PowerTransaction[]> {
   try {
-    console.log("🔍 [POWER] Fetching power transactions with filters:", filters)
+    console.log(
+      "🔍 [POWER] Fetching power transactions with filters:",
+      filters
+    );
 
     // Ensure table exists
-    await ensurePowerTransactionsTable()
+    await ensurePowerTransactionsTable();
 
-    const { branchId, type, startDate, endDate, provider, limit = 50, offset = 0 } = filters
+    const {
+      branchId,
+      type,
+      startDate,
+      endDate,
+      provider,
+      limit = 50,
+      offset = 0,
+    } = filters;
 
     let query = sql`
       SELECT 
@@ -149,40 +162,44 @@ export async function getPowerTransactions(filters: {
         created_at
       FROM power_transactions 
       WHERE 1=1
-    `
+    `;
 
     // Apply filters
     if (branchId) {
-      query = sql`${query} AND branch_id = ${branchId}`
+      query = sql`${query} AND branch_id = ${branchId}`;
     }
 
     if (type) {
-      query = sql`${query} AND type = ${type}`
+      query = sql`${query} AND type = ${type}`;
     }
 
     if (provider) {
-      query = sql`${query} AND provider = ${provider}`
+      query = sql`${query} AND provider = ${provider}`;
     }
 
     if (startDate) {
-      query = sql`${query} AND created_at >= ${startDate}`
+      query = sql`${query} AND created_at >= ${startDate}`;
     }
 
     if (endDate) {
-      query = sql`${query} AND created_at <= ${endDate}`
+      query = sql`${query} AND created_at <= ${endDate}`;
     }
 
     // Add ordering and pagination
-    query = sql`${query} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`
+    query = sql`${query} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`;
 
-    const result = await query
+    const result = await query;
 
-    console.log(`✅ [POWER] Found ${Array.isArray(result) ? result.length : 0} power transactions`)
+    console.log(
+      `✅ [POWER] Found ${
+        Array.isArray(result) ? result.length : 0
+      } power transactions`
+    );
 
     // Ensure result is an array
     if (!Array.isArray(result)) {
-      console.error("❌ [POWER] Query result is not an array:", typeof result)
-      return []
+      console.error("❌ [POWER] Query result is not an array:", typeof result);
+      return [];
     }
 
     return result.map((row: any) => ({
@@ -198,18 +215,18 @@ export async function getPowerTransactions(filters: {
       branchId: row.branch_id,
       userId: row.user_id,
       type: row.type,
-    }))
+    }));
   } catch (error) {
-    console.error("❌ [POWER] Error fetching power transactions:", error)
-    return []
+    console.error("❌ [POWER] Error fetching power transactions:", error);
+    return [];
   }
 }
 
 export async function getPowerStatistics(branchId?: string) {
   try {
-    await ensurePowerTransactionsTable()
+    await ensurePowerTransactionsTable();
 
-    const today = new Date().toISOString().split("T")[0]
+    const today = new Date().toISOString().split("T")[0];
 
     let query = sql`
       SELECT 
@@ -220,7 +237,7 @@ export async function getPowerStatistics(branchId?: string) {
         COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount ELSE 0 END), 0) as today_volume,
         COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.02 ELSE 0 END), 0) as today_commission
       FROM power_transactions
-    `
+    `;
 
     if (branchId) {
       query = sql`
@@ -233,13 +250,13 @@ export async function getPowerStatistics(branchId?: string) {
           COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.02 ELSE 0 END), 0) as today_commission
         FROM power_transactions
         WHERE branch_id = ${branchId}
-      `
+      `;
     }
 
-    const result = await query
+    const result = await query;
 
     if (result && result.length > 0) {
-      const stats = result[0]
+      const stats = result[0];
       return {
         totalTransactions: Number(stats.total_transactions || 0),
         totalVolume: Number(stats.total_volume || 0),
@@ -247,7 +264,7 @@ export async function getPowerStatistics(branchId?: string) {
         todayTransactions: Number(stats.today_transactions || 0),
         todayVolume: Number(stats.today_volume || 0),
         todayCommission: Number(stats.today_commission || 0),
-      }
+      };
     }
 
     return {
@@ -257,9 +274,9 @@ export async function getPowerStatistics(branchId?: string) {
       todayTransactions: 0,
       todayVolume: 0,
       todayCommission: 0,
-    }
+    };
   } catch (error) {
-    console.error("Error getting power statistics:", error)
+    console.error("Error getting power statistics:", error);
     return {
       totalTransactions: 0,
       totalVolume: 0,
@@ -267,6 +284,51 @@ export async function getPowerStatistics(branchId?: string) {
       todayTransactions: 0,
       todayVolume: 0,
       todayCommission: 0,
-    }
+    };
   }
+}
+
+// Update a power transaction by id
+export async function updatePowerTransaction(
+  id: string,
+  updateData: Partial<PowerTransaction>
+): Promise<PowerTransaction> {
+  await ensurePowerTransactionsTable();
+  const setClauses = Object.keys(updateData)
+    .map(
+      (key, idx) =>
+        `${key.replace(/([A-Z])/g, "_$1").toLowerCase()} = $${idx + 2}`
+    )
+    .join(", ");
+  const values = [id, ...Object.values(updateData)];
+  const result = await sql.raw(
+    `UPDATE power_transactions SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *`,
+    values
+  );
+  if (!result || !result[0])
+    throw new Error("Failed to update power transaction");
+  const row = result[0];
+  return {
+    id: row.id,
+    reference: row.reference,
+    meterNumber: row.meter_number,
+    provider: row.provider,
+    amount: Number(row.amount),
+    customerName: row.customer_name || "",
+    customerPhone: row.customer_phone || "",
+    status: row.status,
+    createdAt: row.created_at,
+    branchId: row.branch_id,
+    userId: row.user_id,
+    type: row.type,
+  };
+}
+
+// Delete a power transaction by id (hard delete)
+export async function deletePowerTransaction(
+  id: string
+): Promise<{ id: string }> {
+  await ensurePowerTransactionsTable();
+  await sql`DELETE FROM power_transactions WHERE id = ${id}`;
+  return { id };
 }

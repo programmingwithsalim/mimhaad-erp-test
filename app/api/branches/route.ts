@@ -1,5 +1,3 @@
-"use server";
-
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 
@@ -7,7 +5,7 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = request.nextUrl;
+    const { searchParams } = new URL(request.url);
     const includeInactive = searchParams.get("includeInactive") === "true";
 
     let branches;
@@ -33,11 +31,21 @@ export async function GET(request: NextRequest) {
 
     console.log("Fetched branches:", branches);
 
-    return NextResponse.json(branches || []);
+    return NextResponse.json({
+      success: true,
+      data: branches || [],
+    });
   } catch (error) {
     console.error("Error fetching branches:", error);
 
-    return NextResponse.json([]);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to fetch branches",
+        data: [],
+      },
+      { status: 500 }
+    );
   }
 }
 

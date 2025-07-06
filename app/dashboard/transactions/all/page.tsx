@@ -1,16 +1,39 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Label } from "@/components/ui/label"
-import { Skeleton } from "@/components/ui/skeleton"
+import { useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Search,
   Filter,
@@ -22,13 +45,19 @@ import {
   Eye,
   FileText,
   X,
-} from "lucide-react"
-import { format } from "date-fns"
-import { useAllTransactions } from "@/hooks/use-all-transactions"
-import { useCurrentUser } from "@/hooks/use-current-user"
-import { useBranches } from "@/hooks/use-branches"
-import { cn } from "@/lib/utils"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+} from "lucide-react";
+import { format } from "date-fns";
+import { useAllTransactions } from "@/hooks/use-all-transactions";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { useBranches } from "@/hooks/use-branches";
+import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export default function AllTransactionsPage() {
   const {
@@ -45,74 +74,78 @@ export default function AllTransactionsPage() {
     prevPage,
     canViewAllBranches,
     isFiltered,
-  } = useAllTransactions()
+  } = useAllTransactions();
 
-  const { user } = useCurrentUser()
-  const { branches } = useBranches()
+  const { user } = useCurrentUser();
+  const { branches } = useBranches();
 
-  const [showFilters, setShowFilters] = useState(false)
-  const [dateFrom, setDateFrom] = useState<Date>()
-  const [dateTo, setDateTo] = useState<Date>()
-  const [showTransactionDetail, setShowTransactionDetail] = useState(false)
-  const [selectedTransaction, setSelectedTransaction] = useState(null)
+  const [showFilters, setShowFilters] = useState(false);
+  const [dateFrom, setDateFrom] = useState<Date>();
+  const [dateTo, setDateTo] = useState<Date>();
+  const [showTransactionDetail, setShowTransactionDetail] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
 
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case "completed":
       case "successful":
       case "success":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       case "pending":
       case "processing":
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-yellow-100 text-yellow-800";
       case "failed":
       case "error":
       case "cancelled":
-        return "bg-red-100 text-red-800"
+        return "bg-red-100 text-red-800";
+      case "reversed":
+        return "bg-red-100 text-red-800";
+      case "deleted":
+        return "bg-gray-200 text-gray-700 line-through";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const getServiceColor = (service: string) => {
     switch (service.toLowerCase()) {
       case "momo":
-        return "bg-blue-100 text-blue-800"
+        return "bg-blue-100 text-blue-800";
       case "agency banking":
-        return "bg-purple-100 text-purple-800"
+        return "bg-purple-100 text-purple-800";
       case "e-zwich":
-        return "bg-green-100 text-green-800"
+        return "bg-green-100 text-green-800";
       case "power":
-        return "bg-yellow-100 text-yellow-800"
+        return "bg-yellow-100 text-yellow-800";
       case "jumia":
-        return "bg-orange-100 text-orange-800"
+        return "bg-orange-100 text-orange-800";
       default:
-        return "bg-gray-100 text-gray-800"
+        return "bg-gray-100 text-gray-800";
     }
-  }
+  };
 
   const handleDateFromSelect = (date: Date | undefined) => {
-    setDateFrom(date)
-    updateFilters({ dateFrom: date ? format(date, "yyyy-MM-dd") : "" })
-  }
+    setDateFrom(date);
+    updateFilters({ dateFrom: date ? format(date, "yyyy-MM-dd") : "" });
+  };
 
   const handleDateToSelect = (date: Date | undefined) => {
-    setDateTo(date)
-    updateFilters({ dateTo: date ? format(date, "yyyy-MM-dd") : "" })
-  }
+    setDateTo(date);
+    updateFilters({ dateTo: date ? format(date, "yyyy-MM-dd") : "" });
+  };
 
   const handleClearFilters = () => {
-    clearFilters()
-    setDateFrom(undefined)
-    setDateTo(undefined)
-  }
+    clearFilters();
+    setDateFrom(undefined);
+    setDateTo(undefined);
+  };
 
-  const activeFiltersCount = Object.values(filters).filter(Boolean).length
+  const activeFiltersCount = Object.values(filters).filter(Boolean).length;
 
   const handleViewTransaction = (transaction: any) => {
-    setSelectedTransaction(transaction)
-    setShowTransactionDetail(true)
-  }
+    setSelectedTransaction(transaction);
+    setShowTransactionDetail(true);
+  };
 
   const exportTransactions = () => {
     const headers = [
@@ -127,7 +160,7 @@ export default function AllTransactionsPage() {
       "Reference",
       "Provider",
       "Branch",
-    ]
+    ];
 
     const csvContent = [
       headers.join(","),
@@ -144,23 +177,26 @@ export default function AllTransactionsPage() {
           `"${tx.reference || "N/A"}"`,
           tx.provider || "N/A",
           tx.branch_id || "N/A",
-        ].join(","),
+        ].join(",")
       ),
-    ].join("\n")
+    ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.setAttribute("href", url)
-    link.setAttribute("download", `all-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`)
-    link.style.visibility = "hidden"
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute(
+      "download",
+      `all-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`
+    );
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   return (
-    <div className="container mx-auto py-6">
+    <div className="mx-auto py-6">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold">All Transactions</h1>
@@ -177,7 +213,9 @@ export default function AllTransactionsPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="outline" onClick={refetch} disabled={loading}>
-            <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
+            <RefreshCw
+              className={cn("h-4 w-4 mr-2", loading && "animate-spin")}
+            />
             Refresh
           </Button>
           <Button variant="outline" onClick={exportTransactions}>
@@ -193,13 +231,23 @@ export default function AllTransactionsPage() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">Search & Filters</CardTitle>
             <div className="flex items-center gap-2">
-              {activeFiltersCount > 0 && <Badge variant="secondary">{activeFiltersCount} active</Badge>}
-              <Button variant="outline" size="sm" onClick={() => setShowFilters(!showFilters)}>
+              {activeFiltersCount > 0 && (
+                <Badge variant="secondary">{activeFiltersCount} active</Badge>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowFilters(!showFilters)}
+              >
                 <Filter className="h-4 w-4 mr-2" />
                 Filters
               </Button>
               {activeFiltersCount > 0 && (
-                <Button variant="outline" size="sm" onClick={handleClearFilters}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleClearFilters}
+                >
                   <X className="h-4 w-4 mr-2" />
                   Clear
                 </Button>
@@ -225,14 +273,19 @@ export default function AllTransactionsPage() {
               {/* Service Filter */}
               <div className="space-y-2">
                 <Label>Service</Label>
-                <Select value={filters.service} onValueChange={(value) => updateFilters({ service: value })}>
+                <Select
+                  value={filters.service}
+                  onValueChange={(value) => updateFilters({ service: value })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="All services" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All services</SelectItem>
                     <SelectItem value="momo">MoMo</SelectItem>
-                    <SelectItem value="agency-banking">Agency Banking</SelectItem>
+                    <SelectItem value="agency-banking">
+                      Agency Banking
+                    </SelectItem>
                     <SelectItem value="e-zwich">E-Zwich</SelectItem>
                     <SelectItem value="power">Power</SelectItem>
                     <SelectItem value="jumia">Jumia</SelectItem>
@@ -243,7 +296,10 @@ export default function AllTransactionsPage() {
               {/* Status Filter */}
               <div className="space-y-2">
                 <Label>Status</Label>
-                <Select value={filters.status} onValueChange={(value) => updateFilters({ status: value })}>
+                <Select
+                  value={filters.status}
+                  onValueChange={(value) => updateFilters({ status: value })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="All statuses" />
                   </SelectTrigger>
@@ -264,7 +320,10 @@ export default function AllTransactionsPage() {
               {/* Type Filter */}
               <div className="space-y-2">
                 <Label>Type</Label>
-                <Select value={filters.type} onValueChange={(value) => updateFilters({ type: value })}>
+                <Select
+                  value={filters.type}
+                  onValueChange={(value) => updateFilters({ type: value })}
+                >
                   <SelectTrigger>
                     <SelectValue placeholder="All types" />
                   </SelectTrigger>
@@ -284,7 +343,12 @@ export default function AllTransactionsPage() {
               {canViewAllBranches && (
                 <div className="space-y-2">
                   <Label>Branch</Label>
-                  <Select value={filters.branchId} onValueChange={(value) => updateFilters({ branchId: value })}>
+                  <Select
+                    value={filters.branchId}
+                    onValueChange={(value) =>
+                      updateFilters({ branchId: value })
+                    }
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="All branches" />
                     </SelectTrigger>
@@ -307,14 +371,22 @@ export default function AllTransactionsPage() {
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className={cn("w-full justify-start text-left font-normal", !dateFrom && "text-muted-foreground")}
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !dateFrom && "text-muted-foreground"
+                      )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {dateFrom ? format(dateFrom, "PPP") : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={dateFrom} onSelect={handleDateFromSelect} initialFocus />
+                    <Calendar
+                      mode="single"
+                      selected={dateFrom}
+                      onSelect={handleDateFromSelect}
+                      initialFocus
+                    />
                   </PopoverContent>
                 </Popover>
               </div>
@@ -326,14 +398,22 @@ export default function AllTransactionsPage() {
                   <PopoverTrigger asChild>
                     <Button
                       variant="outline"
-                      className={cn("w-full justify-start text-left font-normal", !dateTo && "text-muted-foreground")}
+                      className={cn(
+                        "w-full justify-start text-left font-normal",
+                        !dateTo && "text-muted-foreground"
+                      )}
                     >
                       <CalendarIcon className="mr-2 h-4 w-4" />
                       {dateTo ? format(dateTo, "PPP") : "Pick a date"}
                     </Button>
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0">
-                    <Calendar mode="single" selected={dateTo} onSelect={handleDateToSelect} initialFocus />
+                    <Calendar
+                      mode="single"
+                      selected={dateTo}
+                      onSelect={handleDateToSelect}
+                      initialFocus
+                    />
                   </PopoverContent>
                 </Popover>
               </div>
@@ -350,13 +430,16 @@ export default function AllTransactionsPage() {
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  Showing {transactions.length} of {pagination.totalCount} transactions
+                  Showing {transactions.length} of {pagination.totalCount}{" "}
+                  transactions
                 </span>
               </div>
               {loading && (
                 <div className="flex items-center gap-2">
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  <span className="text-sm text-muted-foreground">Loading...</span>
+                  <span className="text-sm text-muted-foreground">
+                    Loading...
+                  </span>
                 </div>
               )}
             </div>
@@ -373,7 +456,10 @@ export default function AllTransactionsPage() {
       <Card>
         <CardHeader>
           <CardTitle>Transactions</CardTitle>
-          <CardDescription>All transactions across services {!canViewAllBranches && "for your branch"}</CardDescription>
+          <CardDescription>
+            All transactions across services{" "}
+            {!canViewAllBranches && "for your branch"}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {error && (
@@ -394,7 +480,9 @@ export default function AllTransactionsPage() {
           ) : transactions.length === 0 ? (
             <div className="text-center py-8">
               <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No transactions found</h3>
+              <h3 className="text-lg font-medium mb-2">
+                No transactions found
+              </h3>
               <p className="text-muted-foreground mb-4">
                 {activeFiltersCount > 0
                   ? "Try adjusting your filters to see more results"
@@ -428,30 +516,59 @@ export default function AllTransactionsPage() {
                   </TableHeader>
                   <TableBody>
                     {transactions.map((transaction) => (
-                      <TableRow key={`${transaction.service_type}-${transaction.id}`}>
+                      <TableRow
+                        key={`${transaction.service_type}-${transaction.id}`}
+                      >
                         <TableCell className="font-mono text-sm">
-                          {format(new Date(transaction.created_at), "MMM dd, yyyy HH:mm")}
+                          {format(
+                            new Date(transaction.created_at),
+                            "MMM dd, yyyy HH:mm"
+                          )}
                         </TableCell>
                         <TableCell>
-                          <Badge className={getServiceColor(transaction.service_type)}>
+                          <Badge
+                            className={getServiceColor(
+                              transaction.service_type
+                            )}
+                          >
                             {transaction.service_type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-medium">{transaction.customer_name || "N/A"}</TableCell>
-                        <TableCell className="font-mono">{transaction.phone_number || "N/A"}</TableCell>
+                        <TableCell className="font-medium">
+                          {transaction.customer_name || "N/A"}
+                        </TableCell>
+                        <TableCell className="font-mono">
+                          {transaction.phone_number || "N/A"}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">{transaction.type}</Badge>
                         </TableCell>
-                        <TableCell className="font-mono">₵{transaction.amount.toLocaleString()}</TableCell>
-                        <TableCell className="font-mono">₵{transaction.fee.toLocaleString()}</TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(transaction.status)}>{transaction.status}</Badge>
+                        <TableCell className="font-mono">
+                          ₵{transaction.amount.toLocaleString()}
                         </TableCell>
-                        <TableCell className="font-mono text-sm">{transaction.reference || "N/A"}</TableCell>
-                        <TableCell>{transaction.provider || "N/A"}</TableCell>
-                        {canViewAllBranches && <TableCell>{transaction.branch_id || "N/A"}</TableCell>}
+                        <TableCell className="font-mono">
+                          ₵{transaction.fee.toLocaleString()}
+                        </TableCell>
                         <TableCell>
-                          <Button variant="ghost" size="sm" onClick={() => handleViewTransaction(transaction)}>
+                          <Badge className={getStatusColor(transaction.status)}>
+                            {transaction.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {transaction.reference || "N/A"}
+                        </TableCell>
+                        <TableCell>{transaction.provider || "N/A"}</TableCell>
+                        {canViewAllBranches && (
+                          <TableCell>
+                            {transaction.branch_id || "N/A"}
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleViewTransaction(transaction)}
+                          >
                             <Eye className="h-4 w-4" />
                           </Button>
                         </TableCell>
@@ -465,9 +582,13 @@ export default function AllTransactionsPage() {
               {pagination.totalPages > 1 && (
                 <div className="flex items-center justify-between mt-6">
                   <div className="text-sm text-muted-foreground">
-                    Showing {(pagination.currentPage - 1) * pagination.limit + 1} to{" "}
-                    {Math.min(pagination.currentPage * pagination.limit, pagination.totalCount)} of{" "}
-                    {pagination.totalCount} results
+                    Showing{" "}
+                    {(pagination.currentPage - 1) * pagination.limit + 1} to{" "}
+                    {Math.min(
+                      pagination.currentPage * pagination.limit,
+                      pagination.totalCount
+                    )}{" "}
+                    of {pagination.totalCount} results
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -482,22 +603,30 @@ export default function AllTransactionsPage() {
 
                     {/* Page numbers */}
                     <div className="flex items-center gap-1">
-                      {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
-                        const pageNum = Math.max(1, pagination.currentPage - 2) + i
-                        if (pageNum > pagination.totalPages) return null
+                      {Array.from(
+                        { length: Math.min(5, pagination.totalPages) },
+                        (_, i) => {
+                          const pageNum =
+                            Math.max(1, pagination.currentPage - 2) + i;
+                          if (pageNum > pagination.totalPages) return null;
 
-                        return (
-                          <Button
-                            key={pageNum}
-                            variant={pageNum === pagination.currentPage ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => goToPage(pageNum)}
-                            disabled={loading}
-                          >
-                            {pageNum}
-                          </Button>
-                        )
-                      })}
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={
+                                pageNum === pagination.currentPage
+                                  ? "default"
+                                  : "outline"
+                              }
+                              size="sm"
+                              onClick={() => goToPage(pageNum)}
+                              disabled={loading}
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        }
+                      )}
                     </div>
 
                     <Button
@@ -517,11 +646,16 @@ export default function AllTransactionsPage() {
         </CardContent>
       </Card>
       {/* Transaction Detail Dialog */}
-      <Dialog open={showTransactionDetail} onOpenChange={setShowTransactionDetail}>
+      <Dialog
+        open={showTransactionDetail}
+        onOpenChange={setShowTransactionDetail}
+      >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
-            <DialogDescription>Complete transaction information</DialogDescription>
+            <DialogDescription>
+              Complete transaction information
+            </DialogDescription>
           </DialogHeader>
           {selectedTransaction && (
             <div className="space-y-4">
@@ -536,19 +670,27 @@ export default function AllTransactionsPage() {
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Customer</Label>
-                  <p className="text-sm">{selectedTransaction.customer_name || "N/A"}</p>
+                  <p className="text-sm">
+                    {selectedTransaction.customer_name || "N/A"}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Phone</Label>
-                  <p className="text-sm">{selectedTransaction.phone_number || "N/A"}</p>
+                  <p className="text-sm">
+                    {selectedTransaction.phone_number || "N/A"}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Amount</Label>
-                  <p className="text-sm">₵{selectedTransaction.amount.toLocaleString()}</p>
+                  <p className="text-sm">
+                    ₵{selectedTransaction.amount.toLocaleString()}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Fee</Label>
-                  <p className="text-sm">₵{selectedTransaction.fee.toLocaleString()}</p>
+                  <p className="text-sm">
+                    ₵{selectedTransaction.fee.toLocaleString()}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Status</Label>
@@ -556,15 +698,24 @@ export default function AllTransactionsPage() {
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Date</Label>
-                  <p className="text-sm">{format(new Date(selectedTransaction.created_at), "MMM dd, yyyy HH:mm")}</p>
+                  <p className="text-sm">
+                    {format(
+                      new Date(selectedTransaction.created_at),
+                      "MMM dd, yyyy HH:mm"
+                    )}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Reference</Label>
-                  <p className="text-sm">{selectedTransaction.reference || "N/A"}</p>
+                  <p className="text-sm">
+                    {selectedTransaction.reference || "N/A"}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Provider</Label>
-                  <p className="text-sm">{selectedTransaction.provider || "N/A"}</p>
+                  <p className="text-sm">
+                    {selectedTransaction.provider || "N/A"}
+                  </p>
                 </div>
               </div>
             </div>
@@ -572,5 +723,5 @@ export default function AllTransactionsPage() {
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }

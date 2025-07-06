@@ -1,18 +1,27 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url)
-    const branchId = searchParams.get("branchId")
+    const { searchParams } = new URL(request.url);
+    const branchId = searchParams.get("branchId");
+    const userId = searchParams.get("userId");
 
-    if (!branchId) {
-      return NextResponse.json({ success: false, error: "Branch ID is required" }, { status: 400 })
+    // Get current user for role-based access
+    const user = await getCurrentUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User authentication required" },
+        { status: 401 }
+      );
     }
 
-    // Ensure card batches table exists
+    // Ensure card batches table exists with partner bank field
     await sql`
       CREATE TABLE IF NOT EXISTS ezwich_card_batches (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -20,54 +29,131 @@ export async function GET(request: NextRequest) {
         quantity_received INTEGER NOT NULL,
         quantity_issued INTEGER DEFAULT 0,
         quantity_available INTEGER GENERATED ALWAYS AS (quantity_received - quantity_issued) STORED,
-        card_type VARCHAR(50) DEFAULT 'Standard',
+        card_type VARCHAR(50) DEFAULT 'standard',
+        unit_cost DECIMAL(10,2) DEFAULT 0.00,
+        total_cost DECIMAL(10,2) DEFAULT 0.00,
+        partner_bank_id UUID,
+        partner_bank_name VARCHAR(100),
         expiry_date DATE,
-        status VARCHAR(20) DEFAULT 'received',
+        status VARCHAR(20) DEFAULT 'active',
         branch_id VARCHAR(100) NOT NULL,
+        branch_name VARCHAR(100),
         created_by VARCHAR(100) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         notes TEXT
       )
-    `
+    `;
 
-    const batches = await sql`
+    let batches;
+
+    // Admin can see all batches, others only see their branch
+    if (user.role === "Admin") {
+      if (branchId) {
+        // Admin filtering by specific branch
+        batches = await sql`
+          SELECT 
+            cb.*,
+            b.name as branch_name
+          FROM ezwich_card_batches cb
+          LEFT JOIN branches b ON cb.branch_id = b.id
+          WHERE cb.branch_id = ${branchId}
+          ORDER BY cb.created_at DESC
+        `;
+      } else {
+        // Admin seeing all batches
+        batches = await sql`
+          SELECT 
+            cb.*,
+            b.name as branch_name
+          FROM ezwich_card_batches cb
+          LEFT JOIN branches b ON cb.branch_id = b.id
+          ORDER BY cb.created_at DESC
+        `;
+      }
+    } else {
+      // Non-admin users only see their branch's batches
+      batches = await sql`
       SELECT 
-        id,
-        batch_code,
-        quantity_received,
-        quantity_issued,
-        quantity_available,
-        card_type,
-        expiry_date,
-        status,
-        created_by,
-        created_at,
-        notes
-      FROM ezwich_card_batches 
-      WHERE branch_id = ${branchId}
-      ORDER BY created_at DESC
-    `
+          cb.*,
+          b.name as branch_name
+        FROM ezwich_card_batches cb
+        LEFT JOIN branches b ON cb.branch_id = b.id
+        WHERE cb.branch_id = ${user.branchId}
+        ORDER BY cb.created_at DESC
+      `;
+    }
 
     return NextResponse.json({
       success: true,
       data: batches,
-    })
+    });
   } catch (error) {
-    console.error("Error fetching card batches:", error)
-    return NextResponse.json({ success: false, error: "Failed to fetch card batches" }, { status: 500 })
+    console.error("Error fetching card batches:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch card batches" },
+      { status: 500 }
+    );
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { batch_code, quantity_received, card_type, expiry_date, branch_id, created_by, notes } = body
+    const body = await request.json();
+    const {
+      batch_code,
+      quantity_received,
+      card_type,
+      unit_cost,
+      partner_bank_id,
+      partner_bank_name,
+      expiry_date,
+      branch_id,
+      created_by,
+      notes,
+    } = body;
 
-    if (!batch_code || !quantity_received || !branch_id || !created_by) {
-      return NextResponse.json({ success: false, error: "Missing required fields" }, { status: 400 })
+    // Get current user for role-based access
+    const user = await getCurrentUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User authentication required" },
+        { status: 401 }
+      );
     }
 
-    // Ensure table exists
+    // Validate required fields
+    if (!batch_code || !quantity_received || !partner_bank_id) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Missing required fields: batch_code, quantity_received, partner_bank_id",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Non-admin users can only create batches for their own branch
+    if (user.role !== "admin" && branch_id !== user.branchId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "You can only create batches for your own branch",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Use user's branch if not admin and no branch specified
+    const targetBranchId = user.role === "admin" ? branch_id : user.branchId;
+    const targetBranchName = user.role === "admin" ? "" : user.branchName;
+
+    // Calculate total cost
+    const totalCost = (unit_cost || 0) * quantity_received;
+
+    // Ensure table exists with partner bank field
     await sql`
       CREATE TABLE IF NOT EXISTS ezwich_card_batches (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -75,44 +161,464 @@ export async function POST(request: NextRequest) {
         quantity_received INTEGER NOT NULL,
         quantity_issued INTEGER DEFAULT 0,
         quantity_available INTEGER GENERATED ALWAYS AS (quantity_received - quantity_issued) STORED,
-        card_type VARCHAR(50) DEFAULT 'Standard',
+        card_type VARCHAR(50) DEFAULT 'standard',
+        unit_cost DECIMAL(10,2) DEFAULT 0.00,
+        total_cost DECIMAL(10,2) DEFAULT 0.00,
+        partner_bank_id UUID,
+        partner_bank_name VARCHAR(100),
         expiry_date DATE,
-        status VARCHAR(20) DEFAULT 'received',
+        status VARCHAR(20) DEFAULT 'active',
         branch_id VARCHAR(100) NOT NULL,
+        branch_name VARCHAR(100),
         created_by VARCHAR(100) NOT NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         notes TEXT
       )
-    `
+    `;
 
+    // Create the batch
     const result = await sql`
       INSERT INTO ezwich_card_batches (
         batch_code,
         quantity_received,
         card_type,
+        unit_cost,
+        total_cost,
+        partner_bank_id,
+        partner_bank_name,
         expiry_date,
         branch_id,
+        branch_name,
         created_by,
         notes
       ) VALUES (
         ${batch_code},
         ${quantity_received},
-        ${card_type || "Standard"},
+        ${card_type || "standard"},
+        ${unit_cost || 0},
+        ${totalCost},
+        ${partner_bank_id},
+        ${partner_bank_name || ""},
         ${expiry_date ? new Date(expiry_date) : null},
-        ${branch_id},
-        ${created_by},
+        ${targetBranchId},
+        ${targetBranchName},
+        ${created_by || user.username},
         ${notes || ""}
       )
       RETURNING *
-    `
+    `;
+
+    const batch = result[0];
+
+    // Create GL entries for inventory purchase
+    if (totalCost > 0) {
+      try {
+        const glResult =
+          await UnifiedGLPostingService.createInventoryPurchaseGLEntries({
+            transactionId: batch.id,
+            sourceModule: "e-zwich-inventory",
+            transactionType: "inventory_purchase",
+            amount: totalCost,
+            fee: 0,
+            customerName: partner_bank_name || "Partner Bank",
+            reference: batch_code,
+            processedBy: created_by || user.username,
+            branchId: targetBranchId,
+            branchName: targetBranchName || user.branchName,
+            metadata: {
+              batch_code: batch_code,
+              quantity: quantity_received,
+              unit_cost: unit_cost,
+              partner_bank_id: partner_bank_id,
+              partner_bank_name: partner_bank_name,
+            },
+          });
+
+        if (!glResult.success) {
+          console.error("GL posting failed:", glResult.error);
+          // Don't fail the entire transaction, just log the error
+        }
+      } catch (glError) {
+        console.error("Error creating GL entries:", glError);
+        // Don't fail the entire transaction, just log the error
+      }
+    }
+
+    // Create expense record for the purchase
+    if (totalCost > 0) {
+      try {
+        // First, ensure the expense head exists
+        const expenseHeadResult = await sql`
+          INSERT INTO expense_heads (name, category, description, gl_account_code, is_active)
+          VALUES ('Inventory Purchase', 'operational', 'E-Zwich card inventory purchases', '6000', true)
+          ON CONFLICT (name, branch_id) DO NOTHING
+          RETURNING id
+        `;
+
+        let expenseHeadId;
+        if (expenseHeadResult.length > 0) {
+          expenseHeadId = expenseHeadResult[0].id;
+        } else {
+          // Get existing expense head
+          const existingHead = await sql`
+            SELECT id FROM expense_heads 
+            WHERE name = 'Inventory Purchase' AND branch_id = ${targetBranchId}
+            LIMIT 1
+          `;
+          expenseHeadId = existingHead[0]?.id;
+        }
+
+        if (expenseHeadId) {
+          try {
+            // Try to create expense with branch_id column
+            const expenseResult = await sql`
+              INSERT INTO expenses (
+                expense_head_id,
+                amount,
+                description,
+                expense_date,
+                reference_number,
+                branch_id,
+                created_by,
+                status,
+                payment_source
+              ) VALUES (
+                ${expenseHeadId},
+                ${totalCost},
+                ${`E-Zwich card batch purchase: ${batch_code} - ${quantity_received} cards`},
+                CURRENT_DATE,
+                ${batch_code},
+                ${targetBranchId},
+                ${created_by || user.username},
+                'approved',
+                'bank_transfer'
+              )
+              RETURNING id
+            `;
+
+            if (expenseResult.length > 0) {
+              console.log(
+                "Expense recorded successfully:",
+                expenseResult[0].id
+              );
+            }
+          } catch (expenseError: any) {
+            // If branch_id column doesn't exist, try without it
+            if (expenseError.message?.includes("branch_id")) {
+              console.log(
+                "branch_id column not found, creating expense without branch info"
+              );
+              const expenseResult = await sql`
+                INSERT INTO expenses (
+                  expense_head_id,
+                  amount,
+                  description,
+                  expense_date,
+                  reference_number,
+                  created_by,
+                  status,
+                  payment_source
+                ) VALUES (
+                  ${expenseHeadId},
+                  ${totalCost},
+                  ${`E-Zwich card batch purchase: ${batch_code} - ${quantity_received} cards`},
+                  CURRENT_DATE,
+                  ${batch_code},
+                  ${created_by || user.username},
+                  'approved',
+                  'bank_transfer'
+                )
+                RETURNING id
+              `;
+
+              if (expenseResult.length > 0) {
+                console.log(
+                  "Expense recorded successfully (without branch):",
+                  expenseResult[0].id
+                );
+              }
+            } else {
+              throw expenseError;
+            }
+          }
+        } else {
+          console.log(
+            "Could not find or create expense head for inventory purchase"
+          );
+        }
+      } catch (expenseError) {
+        console.error("Error creating expense record:", expenseError);
+        // Don't fail the entire transaction, just log the error
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      data: result[0],
-      message: "Card batch added successfully",
-    })
+      data: batch,
+      message:
+        "Card batch added successfully with GL entries and expense record",
+    });
   } catch (error) {
-    console.error("Error creating card batch:", error)
-    return NextResponse.json({ success: false, error: "Failed to create card batch" }, { status: 500 })
+    console.error("Error creating card batch:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to create card batch" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const {
+      id,
+      batch_code,
+      quantity_received,
+      card_type,
+      unit_cost,
+      partner_bank_id,
+      partner_bank_name,
+      expiry_date,
+      branch_id,
+      created_by,
+      notes,
+    } = body;
+
+    // Get current user for role-based access
+    const user = await getCurrentUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Validate required fields
+    if (!id || !batch_code || !quantity_received || !partner_bank_id) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Missing required fields: id, batch_code, quantity_received, partner_bank_id",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Get the original batch to calculate cost differences
+    const originalBatch = await sql`
+      SELECT * FROM ezwich_card_batches WHERE id = ${id}
+    `;
+
+    if (originalBatch.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Batch not found" },
+        { status: 404 }
+      );
+    }
+
+    const original = originalBatch[0];
+
+    // Check permissions - non-admin users can only update their branch's batches
+    if (user.role !== "Admin" && original.branch_id !== user.branchId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "You can only update batches from your own branch",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Use user's branch if not admin and no branch specified
+    const targetBranchId = user.role === "Admin" ? branch_id : user.branchId;
+    const targetBranchName = user.role === "Admin" ? "" : user.branchName;
+
+    // Calculate total cost
+    const totalCost = (unit_cost || 0) * quantity_received;
+    const originalTotalCost =
+      (original.unit_cost || 0) * original.quantity_received;
+    const costDifference = totalCost - originalTotalCost;
+
+    // Update the batch
+    const result = await sql`
+      UPDATE ezwich_card_batches SET
+        batch_code = ${batch_code},
+        quantity_received = ${quantity_received},
+        card_type = ${card_type || "standard"},
+        unit_cost = ${unit_cost || 0},
+        total_cost = ${totalCost},
+        partner_bank_id = ${partner_bank_id},
+        partner_bank_name = ${partner_bank_name || ""},
+        expiry_date = ${expiry_date ? new Date(expiry_date) : null},
+        branch_id = ${targetBranchId},
+        branch_name = ${targetBranchName},
+        notes = ${notes || ""},
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ${id}
+      RETURNING *
+    `;
+
+    const batch = result[0];
+
+    // Create GL entries for cost adjustment if there's a difference
+    if (Math.abs(costDifference) > 0.01) {
+      try {
+        const glResult =
+          await UnifiedGLPostingService.createInventoryAdjustmentGLEntries({
+            transactionId: batch.id,
+            sourceModule: "e-zwich-inventory",
+            transactionType: "inventory_adjustment",
+            amount: Math.abs(costDifference),
+            fee: 0,
+            customerName: partner_bank_name || "Partner Bank",
+            reference: `${batch_code} - Adjustment`,
+            processedBy: created_by || user.id || user.username || "system",
+            branchId: targetBranchId,
+            branchName: targetBranchName || user.branchName,
+            metadata: {
+              batch_code: batch_code,
+              original_cost: originalTotalCost,
+              new_cost: totalCost,
+              cost_difference: costDifference,
+              partner_bank_id: partner_bank_id,
+              partner_bank_name: partner_bank_name,
+              adjustment_type: costDifference > 0 ? "increase" : "decrease",
+            },
+          });
+
+        if (!glResult.success) {
+          console.error("GL posting failed:", glResult.error);
+        }
+      } catch (glError) {
+        console.error("Error creating GL entries:", glError);
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: batch,
+      message: "Card batch updated successfully",
+    });
+  } catch (error) {
+    console.error("Error updating card batch:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update card batch" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const batchId = searchParams.get("id");
+
+    if (!batchId) {
+      return NextResponse.json(
+        { success: false, error: "Batch ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Get current user for role-based access
+    const user = await getCurrentUser(request);
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, error: "User authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // Get the batch to check permissions and get details for GL reversal
+    const batchResult = await sql`
+      SELECT * FROM ezwich_card_batches WHERE id = ${batchId}
+    `;
+
+    if (batchResult.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "Batch not found" },
+        { status: 404 }
+      );
+    }
+
+    const batch = batchResult[0];
+
+    // Check permissions - non-admin users can only delete their branch's batches
+    if (user.role !== "Admin" && batch.branch_id !== user.branchId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "You can only delete batches from your own branch",
+        },
+        { status: 403 }
+      );
+    }
+
+    // Check if batch has issued cards
+    if (batch.quantity_issued > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Cannot delete batch with issued cards. Please void the issued cards first.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Create GL reversal entries before deleting
+    if (batch.total_cost > 0) {
+      try {
+        const glResult =
+          await UnifiedGLPostingService.createInventoryReversalGLEntries({
+            transactionId: batch.id,
+            sourceModule: "e-zwich-inventory",
+            transactionType: "inventory_reversal",
+            amount: batch.total_cost,
+            fee: 0,
+            customerName: batch.partner_bank_name || "Partner Bank",
+            reference: `${batch.batch_code} - Deletion`,
+            processedBy: user.id || user.username || "system",
+            branchId: batch.branch_id,
+            branchName: batch.branch_name || user.branchName,
+            metadata: {
+              batch_code: batch.batch_code,
+              original_cost: batch.total_cost,
+              quantity_received: batch.quantity_received,
+              partner_bank_id: batch.partner_bank_id,
+              partner_bank_name: batch.partner_bank_name,
+              deletion_reason: "Batch deletion",
+            },
+          });
+
+        if (!glResult.success) {
+          console.error("GL reversal failed:", glResult.error);
+          // Continue with deletion even if GL reversal fails
+        }
+      } catch (glError) {
+        console.error("Error creating GL reversal entries:", glError);
+        // Continue with deletion even if GL reversal fails
+      }
+    }
+
+    // Delete the batch
+    await sql`
+      DELETE FROM ezwich_card_batches WHERE id = ${batchId}
+    `;
+
+    return NextResponse.json({
+      success: true,
+      message: "Card batch deleted successfully",
+    });
+  } catch (error) {
+    console.error("Error deleting card batch:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to delete card batch" },
+      { status: 500 }
+    );
   }
 }

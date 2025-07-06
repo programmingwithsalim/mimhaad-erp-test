@@ -1,192 +1,468 @@
-"use client"
+"use client";
 
-import type React from "react"
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { CalendarIcon, Loader2 } from "lucide-react";
+import { format } from "date-fns";
 
-import { useState, useEffect } from "react"
-import { Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useToast } from "@/hooks/use-toast"
-import { useCardBatches } from "@/hooks/use-e-zwich"
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { useToast } from "@/hooks/use-toast";
+import { useCardBatches } from "@/hooks/use-e-zwich";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { cn } from "@/lib/utils";
+
+const formSchema = z.object({
+  quantity_received: z.number().min(1, "Quantity must be at least 1"),
+  card_type: z.string().default("standard"),
+  unit_cost: z.number().min(0, "Unit cost must be 0 or greater"),
+  partner_bank_id: z.string().min(1, "Partner bank is required"),
+  partner_bank_name: z.string().min(1, "Partner bank name is required"),
+  expiry_date: z.date().optional(),
+  branch_id: z.string().min(1, "Branch is required"),
+  branch_name: z.string().min(1, "Branch name is required"),
+  notes: z.string().optional(),
+});
 
 interface EZwichEditBatchFormProps {
-  batch: any
-  onSuccess?: () => void
-  onCancel?: () => void
+  batch: any;
+  onSuccess?: () => void;
+  onCancel?: () => void;
 }
 
-export function EZwichEditBatchForm({ batch, onSuccess, onCancel }: EZwichEditBatchFormProps) {
-  const { toast } = useToast()
-  const { fetchBatches } = useCardBatches()
+export function EZwichEditBatchForm({
+  batch,
+  onSuccess,
+  onCancel,
+}: EZwichEditBatchFormProps) {
+  const { toast } = useToast();
+  const { updateBatch } = useCardBatches();
+  const { user } = useCurrentUser();
+  const [loading, setLoading] = useState(false);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [loadingBranches, setLoadingBranches] = useState(false);
+  const [partnerBanks, setPartnerBanks] = useState<any[]>([]);
+  const [branches, setBranches] = useState<any[]>([]);
 
-  const [formData, setFormData] = useState({
-    batch_code: "",
-    quantity_received: "",
-    card_type: "standard",
-    expiry_date: "",
-    notes: "",
-  })
-  const [isSubmitting, setIsSubmitting] = useState(false)
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      quantity_received: batch?.quantity_received || 0,
+      card_type: batch?.card_type || "standard",
+      unit_cost: batch?.unit_cost || 0,
+      partner_bank_id: batch?.partner_bank_id || "",
+      partner_bank_name: batch?.partner_bank_name || "",
+      expiry_date: batch?.expiry_date ? new Date(batch.expiry_date) : undefined,
+      branch_id: batch?.branch_id || user?.branchId || "",
+      branch_name: batch?.branch_name || user?.branchName || "",
+      notes: batch?.notes || "",
+    },
+  });
 
-  // Pre-populate form with batch data
+  // Fetch partner banks on component mount
   useEffect(() => {
-    if (batch) {
-      setFormData({
-        batch_code: batch.batch_code || "",
-        quantity_received: batch.quantity_received?.toString() || "",
-        card_type: batch.card_type || "standard",
-        expiry_date: batch.expiry_date ? batch.expiry_date.split("T")[0] : "",
-        notes: batch.notes || "",
-      })
-    }
-  }, [batch])
+    const fetchPartnerBanks = async () => {
+      try {
+        setLoadingBanks(true);
+        const response = await fetch(
+          "/api/float-accounts?isezwichpartner=true"
+        );
+        const data = await response.json();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (!formData.quantity_received || Number.parseInt(formData.quantity_received) <= 0) {
-      toast({
-        title: "Invalid quantity",
-        description: "Please enter a valid quantity greater than zero.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Check if new quantity is less than issued cards
-    const quantityIssued = batch.quantity_received - batch.quantity_available
-    if (Number.parseInt(formData.quantity_received) < quantityIssued) {
-      toast({
-        title: "Invalid quantity",
-        description: `Cannot reduce quantity below ${quantityIssued} (number of cards already issued).`,
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsSubmitting(true)
-
-    try {
-      const response = await fetch(`/api/e-zwich/batches/${batch.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          batch_code: formData.batch_code,
-          quantity_received: Number.parseInt(formData.quantity_received),
-          card_type: formData.card_type,
-          expiry_date: formData.expiry_date,
-          notes: formData.notes,
-        }),
-      })
-
-      const result = await response.json()
-
-      if (result.success) {
-        toast({
-          title: "Batch updated successfully",
-          description: `Updated batch ${formData.batch_code}.`,
-        })
-
-        // Refresh the batches list
-        await fetchBatches()
-
-        // Close the form
-        if (onSuccess) {
-          onSuccess()
+        if (data.success) {
+          setPartnerBanks(data.data || []);
+        } else {
+          console.error("Failed to fetch partner banks:", data.error);
+          toast({
+            title: "Error",
+            description: "Failed to load partner banks",
+            variant: "destructive",
+          });
         }
-      } else {
-        throw new Error(result.error || "Failed to update batch")
+      } catch (error) {
+        console.error("Error fetching partner banks:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load partner banks",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingBanks(false);
       }
-    } catch (error) {
+    };
+
+    fetchPartnerBanks();
+  }, [toast]);
+
+  // Fetch branches for admin users
+  useEffect(() => {
+    const fetchBranches = async () => {
+      if (user?.role !== "Admin") return;
+
+      try {
+        setLoadingBranches(true);
+        const response = await fetch("/api/branches");
+        const data = await response.json();
+
+        if (data.success) {
+          setBranches(data.data || []);
+        } else {
+          console.error("Failed to fetch branches:", data.error);
+          toast({
+            title: "Error",
+            description: "Failed to load branches",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching branches:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load branches",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingBranches(false);
+      }
+    };
+
+    fetchBranches();
+  }, [user?.role, toast]);
+
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    try {
+      setLoading(true);
+
+      const batchData = {
+        batch_code: batch.batch_code,
+        quantity_received: values.quantity_received,
+        card_type: values.card_type,
+        unit_cost: values.unit_cost,
+        partner_bank_id: values.partner_bank_id,
+        partner_bank_name: values.partner_bank_name,
+        expiry_date: values.expiry_date
+          ? format(values.expiry_date, "yyyy-MM-dd")
+          : undefined,
+        branch_id: values.branch_id,
+        notes: values.notes,
+      };
+
+      await updateBatch(batch.id, batchData);
+
       toast({
-        title: "Failed to update batch",
-        description: error instanceof Error ? error.message : "An unknown error occurred",
+        title: "Success",
+        description: "Card batch updated successfully",
+      });
+
+      onSuccess?.();
+    } catch (error) {
+      console.error("Error updating batch:", error);
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error ? error.message : "Failed to update batch",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsSubmitting(false)
+      setLoading(false);
     }
-  }
+  };
+
+  const handlePartnerBankChange = (bankId: string) => {
+    const selectedBank = partnerBanks.find((bank) => bank.id === bankId);
+    if (selectedBank) {
+      form.setValue("partner_bank_id", bankId);
+      form.setValue(
+        "partner_bank_name",
+        selectedBank.provider || selectedBank.account_number
+      );
+    }
+  };
+
+  const handleBranchChange = (branchId: string) => {
+    const selectedBranch = branches.find((branch) => branch.id === branchId);
+    if (selectedBranch) {
+      form.setValue("branch_id", branchId);
+      form.setValue("branch_name", selectedBranch.name);
+    }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="batch_code">Batch Code *</Label>
-          <Input
-            id="batch_code"
-            value={formData.batch_code}
-            onChange={(e) => setFormData({ ...formData, batch_code: e.target.value })}
-            required
-            disabled // Don't allow editing batch code
-            className="bg-gray-50"
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Batch Code (Read-only) */}
+          <FormField
+            control={form.control}
+            name="batch_code"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Batch Code</FormLabel>
+                <FormControl>
+                  <Input
+                    value={batch?.batch_code || ""}
+                    disabled
+                    className="bg-gray-50"
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-          <p className="text-xs text-muted-foreground">Batch code cannot be changed</p>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="quantity_received">Quantity Received *</Label>
-          <Input
-            id="quantity_received"
-            type="number"
-            value={formData.quantity_received}
-            onChange={(e) => setFormData({ ...formData, quantity_received: e.target.value })}
-            min={batch.quantity_received - batch.quantity_available} // Minimum is issued cards
-            required
+          {/* Quantity Received */}
+          <FormField
+            control={form.control}
+            name="quantity_received"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Quantity Received</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    placeholder="Enter quantity"
+                    {...field}
+                    onChange={(e) =>
+                      field.onChange(parseInt(e.target.value) || 0)
+                    }
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
           />
-          <p className="text-xs text-muted-foreground">
-            Minimum: {batch.quantity_received - batch.quantity_available} (cards already issued)
-          </p>
-        </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="card_type">Card Type</Label>
-          <Select value={formData.card_type} onValueChange={(value) => setFormData({ ...formData, card_type: value })}>
-            <SelectTrigger>
-              <SelectValue placeholder="Select card type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="standard">Standard</SelectItem>
-              <SelectItem value="premium">Premium</SelectItem>
-              <SelectItem value="corporate">Corporate</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          {/* Card Type */}
+          <FormField
+            control={form.control}
+            name="card_type"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Card Type</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select card type" />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    <SelectItem value="standard">Standard</SelectItem>
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
 
-        <div className="space-y-2">
-          <Label htmlFor="expiry_date">Expiry Date</Label>
-          <Input
-            id="expiry_date"
-            type="date"
-            value={formData.expiry_date}
-            onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
+          {/* Unit Cost */}
+          <FormField
+            control={form.control}
+            name="unit_cost"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Unit Cost (GHS)</FormLabel>
+                <FormControl>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    {...field}
+                    onChange={(e) =>
+                      field.onChange(parseFloat(e.target.value) || 0)
+                    }
+                  />
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Partner Bank */}
+          <FormField
+            control={form.control}
+            name="partner_bank_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Partner Bank</FormLabel>
+                <Select
+                  onValueChange={handlePartnerBankChange}
+                  disabled={loadingBanks}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          loadingBanks ? "Loading..." : "Select partner bank"
+                        }
+                      />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {partnerBanks.map((bank) => (
+                      <SelectItem key={bank.id} value={bank.id}>
+                        {bank.provider} - {bank.account_number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Branch Selection */}
+          <FormField
+            control={form.control}
+            name="branch_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Branch</FormLabel>
+                {user?.role === "Admin" ? (
+                  <Select
+                    onValueChange={handleBranchChange}
+                    disabled={loadingBranches}
+                  >
+                    <FormControl>
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            loadingBranches ? "Loading..." : "Select branch"
+                          }
+                        />
+                      </SelectTrigger>
+                    </FormControl>
+                    <SelectContent>
+                      {branches.map((branch) => (
+                        <SelectItem key={branch.id} value={branch.id}>
+                          {branch.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <FormControl>
+                    <Input
+                      value={field.value}
+                      disabled
+                      className="bg-gray-50"
+                    />
+                  </FormControl>
+                )}
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Expiry Date */}
+          <FormField
+            control={form.control}
+            name="expiry_date"
+            render={({ field }) => (
+              <FormItem className="flex flex-col">
+                <FormLabel>Expiry Date</FormLabel>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <FormControl>
+                      <Button
+                        variant={"outline"}
+                        className={cn(
+                          "w-full pl-3 text-left font-normal",
+                          !field.value && "text-muted-foreground"
+                        )}
+                      >
+                        {field.value ? (
+                          format(field.value, "PPP")
+                        ) : (
+                          <span>Pick a date</span>
+                        )}
+                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                      </Button>
+                    </FormControl>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={field.value}
+                      onSelect={field.onChange}
+                      disabled={(date) => date < new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+                <FormMessage />
+              </FormItem>
+            )}
           />
         </div>
-      </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="notes">Notes</Label>
-        <Textarea
-          id="notes"
-          value={formData.notes}
-          onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-          placeholder="Enter any additional information about this batch"
-          rows={3}
+        {/* Notes */}
+        <FormField
+          control={form.control}
+          name="notes"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Notes</FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder="Additional notes about this batch..."
+                  className="resize-none"
+                  {...field}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
         />
-      </div>
 
-      <div className="flex justify-end space-x-2">
-        <Button variant="outline" type="button" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button type="submit" disabled={isSubmitting}>
-          {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          {isSubmitting ? "Updating..." : "Update Batch"}
-        </Button>
-      </div>
-    </form>
-  )
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-4">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={loading}
+          >
+            Cancel
+          </Button>
+          <Button type="submit" disabled={loading} className="min-w-[120px]">
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Updating...
+              </>
+            ) : (
+              "Update Batch"
+            )}
+          </Button>
+        </div>
+      </form>
+    </Form>
+  );
 }

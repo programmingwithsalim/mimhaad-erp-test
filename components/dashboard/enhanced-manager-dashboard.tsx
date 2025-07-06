@@ -1,304 +1,377 @@
-"use client"
+"use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Progress } from "@/components/ui/progress"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import {
   TrendingUp,
   TrendingDown,
   DollarSign,
-  CreditCard,
   Users,
   Activity,
+  Building2,
   AlertTriangle,
-  Info,
   CheckCircle,
   Clock,
-} from "lucide-react"
-import type { EnhancedDashboardData } from "@/lib/services/enhanced-dashboard-service"
+  RefreshCw,
+  Target,
+  BarChart3,
+  FileText,
+} from "lucide-react";
 
-interface EnhancedManagerDashboardProps {
-  data: EnhancedDashboardData
+interface ServiceStats {
+  service: string;
+  todayTransactions: number;
+  todayVolume: number;
+  todayFees: number;
+  totalBalance: number;
+  weeklyGrowth: number;
+  monthlyGrowth: number;
 }
 
-export function EnhancedManagerDashboard({ data }: EnhancedManagerDashboardProps) {
-  // Create safe defaults for all data
-  const safeData = {
-    totalStats: {
-      totalRevenue: data?.totalStats?.totalRevenue ?? 0,
-      totalTransactions: data?.totalStats?.totalTransactions ?? 0,
-      totalBalance: data?.totalStats?.totalBalance ?? 0,
-      totalFees: data?.totalStats?.totalFees ?? 0,
-      revenueChange: data?.totalStats?.revenueChange ?? 0,
-      transactionChange: data?.totalStats?.transactionChange ?? 0,
-    },
-    serviceStats: data?.serviceStats ?? [],
-    recentTransactions: data?.recentTransactions ?? [],
-    alerts: data?.alerts ?? [],
-    userInfo: {
-      branchName: data?.userInfo?.branchName ?? "Unknown Branch",
-      ...data?.userInfo,
-    },
-  }
+interface DashboardStats {
+  totalTransactions: number;
+  totalVolume: number;
+  totalCommission: number;
+  activeUsers: number;
+  todayTransactions: number;
+  todayVolume: number;
+  todayCommission: number;
+  serviceBreakdown: Array<{
+    service: string;
+    transactions: number;
+    volume: number;
+    commission: number;
+  }>;
+  recentActivity: Array<{
+    id: string;
+    type: string;
+    service: string;
+    amount: number;
+    timestamp: string;
+    user: string;
+  }>;
+  floatAlerts: Array<{
+    id: string;
+    provider: string;
+    service: string;
+    current_balance: number;
+    threshold: number;
+    severity: "warning" | "critical";
+  }>;
+  chartData: Array<{
+    date: string;
+    transactions: number;
+    volume: number;
+    commission: number;
+  }>;
+}
 
-  const { totalStats, serviceStats, recentTransactions, alerts, userInfo } = safeData
+interface EnhancedManagerDashboardProps {
+  serviceStats: ServiceStats[];
+  totalStats: DashboardStats;
+  recentTransactions: Array<{
+    id: string;
+    type: string;
+    service: string;
+    amount: number;
+    timestamp: string;
+    user: string;
+  }>;
+}
+
+export function EnhancedManagerDashboard({
+  serviceStats,
+  totalStats,
+  recentTransactions,
+}: EnhancedManagerDashboardProps) {
+  const { user } = useCurrentUser();
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
 
   const formatCurrency = (amount: number | null | undefined) => {
-    const safeAmount = Number(amount) || 0
+    const safeAmount = Number(amount) || 0;
     return new Intl.NumberFormat("en-GH", {
       style: "currency",
       currency: "GHS",
       minimumFractionDigits: 2,
-    }).format(safeAmount)
-  }
+    }).format(safeAmount);
+  };
 
   const getGrowthIcon = (growth: number | null | undefined) => {
-    const safeGrowth = Number(growth) || 0
-    if (safeGrowth > 0) return <TrendingUp className="h-4 w-4 text-green-600" />
-    if (safeGrowth < 0) return <TrendingDown className="h-4 w-4 text-red-600" />
-    return <div className="h-4 w-4" />
-  }
+    const safeGrowth = Number(growth) || 0;
+    if (safeGrowth > 0)
+      return <TrendingUp className="h-4 w-4 text-green-600" />;
+    if (safeGrowth < 0)
+      return <TrendingDown className="h-4 w-4 text-red-600" />;
+    return <div className="h-4 w-4" />;
+  };
 
-  const getGrowthColor = (growth: number | null | undefined) => {
-    const safeGrowth = Number(growth) || 0
-    if (safeGrowth > 0) return "text-green-600"
-    if (safeGrowth < 0) return "text-red-600"
-    return "text-gray-600"
-  }
-
-  const getAlertIcon = (type: string) => {
-    switch (type) {
-      case "error":
-        return <AlertTriangle className="h-4 w-4 text-red-600" />
-      case "warning":
-        return <AlertTriangle className="h-4 w-4 text-yellow-600" />
-      case "info":
-        return <Info className="h-4 w-4 text-blue-600" />
+  const getServiceIcon = (service: string) => {
+    switch (service.toLowerCase()) {
+      case "momo":
+        return <Activity className="h-4 w-4" />;
+      case "power":
+        return <Activity className="h-4 w-4" />;
+      case "e-zwich":
+      case "ezwich":
+        return <Activity className="h-4 w-4" />;
+      case "agency-banking":
+      case "agency banking":
+        return <Building2 className="h-4 w-4" />;
+      case "jumia":
+        return <Activity className="h-4 w-4" />;
       default:
-        return <CheckCircle className="h-4 w-4 text-green-600" />
+        return <Activity className="h-4 w-4" />;
     }
-  }
+  };
 
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "completed":
-      case "success":
-        return <Badge className="bg-green-100 text-green-800">Completed</Badge>
-      case "pending":
-        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
-      case "failed":
-      case "error":
-        return <Badge className="bg-red-100 text-red-800">Failed</Badge>
-      default:
-        return <Badge variant="secondary">{status || "Unknown"}</Badge>
-    }
-  }
+  const handleRefresh = () => {
+    setLoading(true);
+    // Simulate refresh
+    setTimeout(() => {
+      setLoading(false);
+      toast({
+        title: "Dashboard Refreshed",
+        description: "Latest management data has been loaded.",
+      });
+    }, 1000);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Branch Info */}
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
-        <CardHeader>
-          <CardTitle className="text-blue-800">Branch Operations - {userInfo.branchName}</CardTitle>
-          <CardDescription className="text-blue-600">
-            Real-time operations and performance metrics for your branch
-          </CardDescription>
-        </CardHeader>
-      </Card>
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-3xl font-bold tracking-tight">
+            Manager Dashboard
+          </h2>
+          <p className="text-muted-foreground">
+            Welcome back, {user?.firstName || "Manager"}! Here's your
+            operational overview for {user?.branchName || "your branch"}.
+          </p>
+        </div>
+        <Button onClick={handleRefresh} disabled={loading}>
+          <RefreshCw
+            className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+          />
+          {loading ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
 
-      {/* Alerts Section */}
-      {alerts.length > 0 && (
+      {/* Float Alerts */}
+      {totalStats.floatAlerts && totalStats.floatAlerts.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Branch Alerts</h3>
-          {alerts.map((alert, index) => (
+          <h3 className="text-lg font-semibold">Operational Alerts</h3>
+          {totalStats.floatAlerts.map((alert) => (
             <Alert
-              key={index}
+              key={alert.id}
               className={`border-l-4 ${
-                alert.type === "error"
-                  ? "border-l-red-500"
-                  : alert.type === "warning"
-                    ? "border-l-yellow-500"
-                    : "border-l-blue-500"
+                alert.severity === "critical"
+                  ? "border-l-red-500 bg-red-50"
+                  : "border-l-yellow-500 bg-yellow-50"
               }`}
             >
-              <div className="flex items-center gap-2">
-                {getAlertIcon(alert.type)}
-                <AlertDescription>{alert.message}</AlertDescription>
-                <Badge variant={alert.priority === "high" ? "destructive" : "secondary"}>{alert.priority}</Badge>
-              </div>
+              <AlertTriangle
+                className={`h-4 w-4 ${
+                  alert.severity === "critical"
+                    ? "text-red-600"
+                    : "text-yellow-600"
+                }`}
+              />
+              <AlertDescription>
+                <span className="font-medium">
+                  {alert.service} - {alert.provider}
+                </span>{" "}
+                float balance is {alert.severity}:{" "}
+                {formatCurrency(alert.current_balance)}
+              </AlertDescription>
             </Alert>
           ))}
         </div>
       )}
 
-      {/* Overview Cards */}
+      {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card className="border-l-4 border-l-blue-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Revenue</CardTitle>
-            <DollarSign className="h-4 w-4 text-blue-600" />
+            <CardTitle className="text-sm font-medium">
+              Today's Transactions
+            </CardTitle>
+            <Activity className="h-4 w-4 text-blue-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{formatCurrency(totalStats.totalRevenue)}</div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {getGrowthIcon(totalStats.revenueChange)}
-              <span className={getGrowthColor(totalStats.revenueChange)}>
-                {totalStats.revenueChange > 0 ? "+" : ""}
-                {(totalStats.revenueChange || 0).toFixed(1)}%
-              </span>
-              <span>from yesterday</span>
+            <div className="text-2xl font-bold text-blue-600">
+              {totalStats.todayTransactions}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {totalStats.totalTransactions}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-green-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Transactions</CardTitle>
-            <CreditCard className="h-4 w-4 text-green-600" />
+            <CardTitle className="text-sm font-medium">
+              Today's Volume
+            </CardTitle>
+            <DollarSign className="h-4 w-4 text-green-600" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {(totalStats.totalTransactions || 0).toLocaleString()}
+              {formatCurrency(totalStats.todayVolume)}
             </div>
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {getGrowthIcon(totalStats.transactionChange)}
-              <span className={getGrowthColor(totalStats.transactionChange)}>
-                {totalStats.transactionChange > 0 ? "+" : ""}
-                {(totalStats.transactionChange || 0).toFixed(1)}%
-              </span>
-              <span>from yesterday</span>
-            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(totalStats.totalVolume)}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-purple-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Float Balance</CardTitle>
-            <Users className="h-4 w-4 text-purple-600" />
+            <CardTitle className="text-sm font-medium">
+              Today's Commission
+            </CardTitle>
+            <Target className="h-4 w-4 text-purple-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-purple-600">{formatCurrency(totalStats.totalBalance)}</div>
-            <p className="text-xs text-muted-foreground">Available balance</p>
+            <div className="text-2xl font-bold text-purple-600">
+              {formatCurrency(totalStats.todayCommission)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Total: {formatCurrency(totalStats.totalCommission)}
+            </p>
           </CardContent>
         </Card>
 
         <Card className="border-l-4 border-l-orange-500">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Today's Fees</CardTitle>
-            <Activity className="h-4 w-4 text-orange-600" />
+            <CardTitle className="text-sm font-medium">Active Staff</CardTitle>
+            <Users className="h-4 w-4 text-orange-600" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-orange-600">{formatCurrency(totalStats.totalFees)}</div>
-            <p className="text-xs text-muted-foreground">Fee earnings</p>
+            <div className="text-2xl font-bold text-orange-600">
+              {totalStats.activeUsers}
+            </div>
+            <p className="text-xs text-muted-foreground">Branch staff</p>
           </CardContent>
         </Card>
       </div>
 
-      <Tabs defaultValue="services" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="services">Service Performance</TabsTrigger>
-          <TabsTrigger value="transactions">Recent Transactions</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="services" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {serviceStats.map((service, index) => (
-              <Card key={service?.service || index} className="hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <CardTitle className="text-base capitalize flex items-center justify-between">
-                    {(service?.service || "Unknown").replace("-", " ")}
-                    <Badge variant={(service?.weeklyGrowth || 0) > 0 ? "default" : "secondary"}>
-                      {(service?.weeklyGrowth || 0) > 0 ? "+" : ""}
-                      {(service?.weeklyGrowth || 0).toFixed(1)}%
-                    </Badge>
-                  </CardTitle>
-                  <CardDescription>Branch performance</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Today's Transactions</span>
-                    <span className="font-semibold">{service?.todayTransactions || 0}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Volume</span>
-                    <span className="font-semibold">{formatCurrency(service?.todayVolume)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Fees</span>
-                    <span className="font-semibold">{formatCurrency(service?.todayFees)}</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Float Balance</span>
-                    <span className="font-semibold">{formatCurrency(service?.totalBalance)}</span>
-                  </div>
-                  <div className="pt-2">
-                    <div className="flex justify-between text-xs mb-1">
-                      <span>Balance Health</span>
-                      <span>{(service?.totalBalance || 0) > 10000 ? "Good" : "Low"}</span>
-                    </div>
-                    <Progress value={Math.min(((service?.totalBalance || 0) / 50000) * 100, 100)} className="h-2" />
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="transactions" className="space-y-4">
+      {/* Service Performance */}
+      {totalStats.serviceBreakdown &&
+        totalStats.serviceBreakdown.length > 0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Recent Transactions
-              </CardTitle>
-              <CardDescription>Latest transaction activity in your branch</CardDescription>
+              <CardTitle>Service Performance</CardTitle>
+              <CardDescription>
+                Today's performance by service type
+              </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {recentTransactions.length > 0 ? (
-                  recentTransactions.slice(0, 10).map((transaction, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between p-3 border rounded-lg hover:bg-gray-50"
-                    >
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium">{transaction?.customer_name || "Unknown Customer"}</span>
-                          <Badge variant="outline" className="text-xs">
-                            {transaction?.service_type || "Unknown"}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-muted-foreground">
-                          {transaction?.provider || "Unknown"} • {transaction?.type || "Unknown"}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {transaction?.created_at ? new Date(transaction.created_at).toLocaleString() : "Unknown time"}
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="font-semibold">{formatCurrency(transaction?.amount)}</div>
-                        <div className="text-sm text-muted-foreground">Fee: {formatCurrency(transaction?.fee)}</div>
-                        <div className="mt-1">{getStatusBadge(transaction?.status)}</div>
-                      </div>
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {totalStats.serviceBreakdown.map((service) => (
+                  <div
+                    key={service.service}
+                    className="flex items-center space-x-4 rounded-lg border p-4"
+                  >
+                    <div className="flex-shrink-0">
+                      {getServiceIcon(service.service)}
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Activity className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No recent transactions found</p>
-                    <p className="text-sm">Transactions will appear here as they are processed</p>
+                    <div className="flex-1 space-y-1">
+                      <p className="text-sm font-medium leading-none">
+                        {service.service.charAt(0).toUpperCase() +
+                          service.service.slice(1)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {service.transactions} transactions
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCurrency(service.volume)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        {formatCurrency(service.commission)} commission
+                      </p>
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        )}
+
+      {/* Recent Activity */}
+      {recentTransactions && recentTransactions.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>
+              Latest transactions and operational activities
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {recentTransactions.slice(0, 5).map((activity) => (
+                <div
+                  key={activity.id}
+                  className="flex items-center space-x-4 rounded-lg border p-4"
+                >
+                  <div className="flex-shrink-0">
+                    {getServiceIcon(activity.service)}
+                  </div>
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {activity.type} - {activity.service}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {formatCurrency(activity.amount)} by {activity.user}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(activity.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Empty State */}
+      {(!totalStats.serviceBreakdown ||
+        totalStats.serviceBreakdown.length === 0) &&
+        (!recentTransactions || recentTransactions.length === 0) && (
+          <Card>
+            <CardContent className="text-center py-8">
+              <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium mb-2">
+                No Operational Data Available
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                No transactions or operational activities found for the current
+                period.
+              </p>
+              <Button onClick={handleRefresh} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                Refresh Data
+              </Button>
+            </CardContent>
+          </Card>
+        )}
     </div>
-  )
+  );
 }
 
 // Export as both named and default export
-export default EnhancedManagerDashboard
+export default EnhancedManagerDashboard;

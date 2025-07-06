@@ -111,6 +111,13 @@ export class TransactionManagementService {
       if (!originalTransaction) {
         return { success: false, error: "Transaction not found" };
       }
+      // Prevent multiple deletions
+      if (
+        originalTransaction.deleted === true ||
+        originalTransaction.deleted === 1
+      ) {
+        return { success: false, error: "Transaction already deleted" };
+      }
 
       // Reverse float balances
       const floatReversalResult = await this.reverseFloatBalances(
@@ -120,6 +127,16 @@ export class TransactionManagementService {
 
       if (!floatReversalResult.success) {
         return floatReversalResult;
+      }
+
+      // Reverse cash till balances
+      const cashTillReversalResult = await this.reverseCashTillBalances(
+        sourceModule,
+        originalTransaction
+      );
+
+      if (!cashTillReversalResult.success) {
+        return cashTillReversalResult;
       }
 
       // Reverse GL entries
@@ -177,10 +194,13 @@ export class TransactionManagementService {
           `;
           break;
         case "e_zwich":
-          result = await sql`
-            SELECT * FROM e_zwich_transactions 
-            WHERE id = ${id}
-          `;
+          // Check both withdrawal and card issuance tables
+          result =
+            await sql`SELECT * FROM e_zwich_withdrawals WHERE id = ${id}`;
+          if (result.length === 0) {
+            result =
+              await sql`SELECT * FROM ezwich_card_issuance WHERE id = ${id}`;
+          }
           break;
         case "power":
           result = await sql`
@@ -220,11 +240,10 @@ export class TransactionManagementService {
             SET 
               amount = ${data.amount},
               fee = ${data.fee},
-              customer_name = ${data.customerName || null},
-              reference = ${data.reference || null},
-              metadata = ${
-                data.metadata ? JSON.stringify(data.metadata) : null
+              customer_name = ${
+                data.customerName || data.customer_name || null
               },
+              reference = ${data.reference || null},
               updated_at = NOW()
             WHERE id = ${id}
             RETURNING *
@@ -236,11 +255,11 @@ export class TransactionManagementService {
             SET 
               amount = ${data.amount},
               fee = ${data.fee},
-              customer_name = ${data.customerName || null},
-              reference = ${data.reference || null},
-              metadata = ${
-                data.metadata ? JSON.stringify(data.metadata) : null
+              customer_name = ${
+                data.customer_name || data.customerName || null
               },
+              account_number = ${data.account_number || null},
+              reference = ${data.reference || null},
               updated_at = NOW()
             WHERE id = ${id}
             RETURNING *
@@ -310,14 +329,36 @@ export class TransactionManagementService {
     }
   }
 
-  private static async adjustFloatBalances(
+  // Helper to determine if a transaction is inflow (returns true) or outflow (returns false)
+  private static isFloatInflow(
     sourceModule: string,
-    originalTransaction: any,
-    amountDifference: number,
-    feeDifference: number
+    transactionType: string
+  ): boolean {
+    switch (sourceModule) {
+      case "momo":
+        return transactionType === "cash-in";
+      case "agency_banking":
+        return transactionType === "deposit";
+      case "e_zwich":
+        return transactionType === "card_issuance"; // Example, adjust as needed
+      case "power":
+        return true; // Adjust as needed
+      case "jumia":
+        return true; // Adjust as needed
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Reverse the effect of a transaction on the float account (for deletion/reversal)
+   * This restores the float balance as if the transaction never happened.
+   */
+  private static async reverseFloatBalances(
+    sourceModule: string,
+    originalTransaction: any
   ) {
     try {
-      // Get the float account used for this transaction
       const floatAccount = await this.getFloatAccountForTransaction(
         sourceModule,
         originalTransaction
@@ -325,47 +366,150 @@ export class TransactionManagementService {
       if (!floatAccount) {
         return { success: false, error: "Float account not found" };
       }
-
-      // Adjust the float balance
-      const newBalance =
-        floatAccount.current_balance + amountDifference + feeDifference;
-
+      const amount = Number(originalTransaction.amount);
+      const fee = Number(
+        originalTransaction.fee || originalTransaction.commission || 0
+      );
+      if (isNaN(amount) || isNaN(fee)) {
+        return {
+          success: false,
+          error: "Invalid amount or fee for float reversal",
+        };
+      }
+      // Determine the effect direction based on module and transaction type
+      const effect = this.getFloatEffect(sourceModule, originalTransaction);
+      // To reverse, subtract the effect
+      const adjustment = -effect;
+      const currentBalance = Number(floatAccount.current_balance);
+      const newBalance = currentBalance + adjustment;
       await sql`
         UPDATE float_accounts
-        SET 
-          current_balance = ${newBalance},
-          updated_at = NOW()
+        SET current_balance = ${newBalance}, updated_at = NOW()
         WHERE id = ${floatAccount.id}
       `;
-
-      // Log the float adjustment - using correct column names from schema
       await sql`
         INSERT INTO float_transactions (
-          account_id,
-          transaction_type,
-          amount,
-          balance_before,
-          balance_after,
-          reference,
-          description,
-          created_at
+          account_id, transaction_type, amount, balance_before, balance_after, reference, description, created_at
+        ) VALUES (
+          ${floatAccount.id},
+          'reversal',
+          ${adjustment},
+          ${currentBalance},
+          ${newBalance},
+          ${`DELETE-${originalTransaction.id}`},
+          ${`Transaction deletion reversal for ${sourceModule} transaction ${originalTransaction.id}`},
+          NOW()
+        )
+      `;
+      return { success: true };
+    } catch (error) {
+      console.error("Error reversing float balances:", error);
+      return { success: false, error: "Failed to reverse float balances" };
+    }
+  }
+
+  /**
+   * Adjust the float balance for a transaction edit (undo old, apply new)
+   */
+  private static async adjustFloatBalances(
+    sourceModule: string,
+    originalTransaction: any,
+    amountDifference: number,
+    feeDifference: number,
+    newAmount?: number,
+    newFee?: number,
+    newType?: string
+  ) {
+    try {
+      const floatAccount = await this.getFloatAccountForTransaction(
+        sourceModule,
+        originalTransaction
+      );
+      if (!floatAccount) {
+        return { success: false, error: "Float account not found" };
+      }
+      // Calculate the effect of the original and new transaction
+      const oldEffect = this.getFloatEffect(sourceModule, originalTransaction);
+      const newEffect = this.getFloatEffect(sourceModule, {
+        ...originalTransaction,
+        amount:
+          typeof newAmount === "number"
+            ? newAmount
+            : originalTransaction.amount,
+        fee:
+          typeof newFee === "number"
+            ? newFee
+            : originalTransaction.fee || originalTransaction.commission || 0,
+        type:
+          newType ||
+          originalTransaction.type ||
+          originalTransaction.transaction_type,
+      });
+      const adjustment = newEffect - oldEffect;
+      const currentBalance = Number(floatAccount.current_balance);
+      const newBalance = currentBalance + adjustment;
+      await sql`
+        UPDATE float_accounts
+        SET current_balance = ${newBalance}, updated_at = NOW()
+        WHERE id = ${floatAccount.id}
+      `;
+      await sql`
+        INSERT INTO float_transactions (
+          account_id, transaction_type, amount, balance_before, balance_after, reference, description, created_at
         ) VALUES (
           ${floatAccount.id},
           'adjustment',
-          ${amountDifference + feeDifference},
-          ${floatAccount.current_balance},
+          ${adjustment},
+          ${currentBalance},
           ${newBalance},
           ${`EDIT-${originalTransaction.id}`},
           ${`Transaction edit adjustment for ${sourceModule} transaction ${originalTransaction.id}`},
           NOW()
         )
       `;
-
       return { success: true };
     } catch (error) {
       console.error("Error adjusting float balances:", error);
       return { success: false, error: "Failed to adjust float balances" };
     }
+  }
+
+  /**
+   * Get the effect of a transaction on the float account (positive=increase, negative=decrease)
+   */
+  private static getFloatEffect(
+    sourceModule: string,
+    transaction: any
+  ): number {
+    const amount = Number(transaction.amount);
+    const fee = Number(transaction.fee || transaction.commission || 0);
+    const type = (
+      transaction.type ||
+      transaction.transaction_type ||
+      ""
+    ).toLowerCase();
+    switch (sourceModule) {
+      case "momo":
+        if (type === "cash-in") return -(amount + fee); // float decreases
+        if (type === "cash-out") return amount + fee; // float increases
+        break;
+      case "agency_banking":
+        if (type === "deposit") return -(amount + fee); // float decreases
+        if (type === "withdrawal") return amount + fee; // float increases
+        if (type === "interbank transfer") return -(amount + fee); // float decreases
+        break;
+      case "e_zwich":
+        if (type === "withdrawal") return amount + fee; // float increases
+        if (type === "card issuance") return 0; // no float effect
+        break;
+      case "power":
+        return -(amount + fee); // float decreases on sale
+      case "jumia":
+        return -(amount + fee); // float decreases on sale
+      default:
+        return 0;
+    }
+    return 0;
   }
 
   private static async updateGLEntries(
@@ -420,78 +564,44 @@ export class TransactionManagementService {
     }
   }
 
-  private static async reverseFloatBalances(
-    sourceModule: string,
-    originalTransaction: any
-  ) {
-    try {
-      // Get the float account used for this transaction
-      const floatAccount = await this.getFloatAccountForTransaction(
-        sourceModule,
-        originalTransaction
-      );
-      if (!floatAccount) {
-        return { success: false, error: "Float account not found" };
-      }
-
-      // Calculate the reversal amount
-      const reversalAmount = -(
-        originalTransaction.amount +
-        (originalTransaction.fee || originalTransaction.commission || 0)
-      );
-      const newBalance = floatAccount.current_balance + reversalAmount;
-
-      // Update the float balance
-      await sql`
-        UPDATE float_accounts
-        SET 
-          current_balance = ${newBalance},
-          updated_at = NOW()
-        WHERE id = ${floatAccount.id}
-      `;
-
-      // Log the float reversal
-      await sql`
-        INSERT INTO float_transactions (
-          account_id,
-          transaction_type,
-          amount,
-          balance_before,
-          new_balance,
-          reference,
-          description,
-          created_at
-        ) VALUES (
-          ${floatAccount.id},
-          'reversal',
-          ${reversalAmount},
-          ${floatAccount.current_balance},
-          ${newBalance},
-          ${`DELETE-${originalTransaction.id}`},
-          ${`Transaction deletion reversal for ${sourceModule} transaction ${originalTransaction.id}`},
-          NOW()
-        )
-      `;
-
-      return { success: true };
-    } catch (error) {
-      console.error("Error reversing float balances:", error);
-      return { success: false, error: "Failed to reverse float balances" };
-    }
-  }
-
   private static async reverseGLEntries(
     sourceModule: string,
     originalTransaction: any
   ) {
     try {
+      // Get the original GL entries for this transaction
+      const transactionId =
+        originalTransaction.gl_transaction_id || originalTransaction.id;
+      const originalGLEntries = await sql`
+        SELECT * FROM gl_journal_entries
+        WHERE transaction_id = ${transactionId}
+      `;
+
+      if (originalGLEntries.length === 0) {
+        return { success: true }; // No GL entries to reverse
+      }
+
       // Create reversal entries
-      const reversalEntries = await this.createGLReversalEntries(
-        sourceModule,
-        originalTransaction
-      );
-      if (!reversalEntries.success) {
-        return reversalEntries;
+      for (const entry of originalGLEntries) {
+        await sql`
+          INSERT INTO gl_journal_entries (
+            account_id,
+            account_code,
+            debit,
+            credit,
+            description,
+            transaction_id,
+            created_at
+          ) VALUES (
+            ${entry.account_id},
+            ${entry.account_code},
+            ${entry.credit}, // Reverse debit/credit
+            ${entry.debit},
+            ${`Reversal: ${entry.description}`},
+            ${entry.transaction_id},
+            NOW()
+          )
+        `;
       }
 
       return { success: true };
@@ -507,11 +617,11 @@ export class TransactionManagementService {
   ) {
     try {
       // Get the original GL entries for this transaction
+      const transactionId =
+        originalTransaction.gl_transaction_id || originalTransaction.id;
       const originalGLEntries = await sql`
         SELECT * FROM gl_journal_entries
-        WHERE source_module = ${sourceModule}
-        AND source_transaction_id = ${originalTransaction.id}
-        AND is_reversal = false
+        WHERE transaction_id = ${transactionId}
       `;
 
       if (originalGLEntries.length === 0) {
@@ -523,29 +633,19 @@ export class TransactionManagementService {
         await sql`
           INSERT INTO gl_journal_entries (
             account_id,
-            debit_amount,
-            credit_amount,
+            account_code,
+            debit,
+            credit,
             description,
-            reference,
-            source_module,
-            source_transaction_id,
-            branch_id,
-            user_id,
-            is_reversal,
-            reversal_of_entry_id,
+            transaction_id,
             created_at
           ) VALUES (
             ${entry.account_id},
-            ${entry.credit_amount}, -- Reverse debit/credit
-            ${entry.debit_amount},
+            ${entry.account_code},
+            ${entry.credit}, // Reverse debit/credit
+            ${entry.debit},
             ${`Reversal: ${entry.description}`},
-            ${`REV-${entry.reference}`},
-            ${sourceModule},
-            ${originalTransaction.id},
-            ${entry.branch_id},
-            ${entry.user_id},
-            true,
-            ${entry.id},
+            ${entry.transaction_id},
             NOW()
           )
         `;
@@ -598,7 +698,7 @@ export class TransactionManagementService {
       }
 
       const result = await sql`
-        SELECT * FROM float_accounts WHERE id = ${floatAccountId}
+        SELECT * FROM float_accounts WHERE id = ${floatAccountId} AND is_active = true
       `;
 
       if (result.length === 0) {
@@ -614,5 +714,242 @@ export class TransactionManagementService {
       console.error("❌ [FLOAT] Error getting float account:", error);
       return null;
     }
+  }
+
+  static async findDefaultFloatAccount(sourceModule: string, branchId: string) {
+    try {
+      const result = await sql`
+        SELECT * FROM float_accounts
+        WHERE account_type = ${sourceModule}
+          AND branch_id = ${branchId}
+          AND is_active = true
+        LIMIT 1
+      `;
+      return result[0] || null;
+    } catch (error) {
+      console.error("Error finding default float account:", error);
+      return null;
+    }
+  }
+
+  static async markTransactionDeleted(
+    id: string,
+    sourceModule: string,
+    data: any
+  ) {
+    try {
+      switch (sourceModule) {
+        case "momo":
+          await sql`UPDATE momo_transactions SET deleted = true, updated_at = NOW() WHERE id = ${id}`;
+          break;
+        case "agency_banking":
+          await sql`UPDATE agency_banking_transactions SET deleted = true, updated_at = NOW() WHERE id = ${id}`;
+          break;
+        case "e_zwich":
+          // Check both withdrawal and card issuance tables
+          const withdrawal =
+            await sql`SELECT id FROM e_zwich_withdrawals WHERE id = ${id}`;
+          if (withdrawal.length > 0) {
+            await sql`UPDATE e_zwich_withdrawals SET deleted = true, updated_at = NOW() WHERE id = ${id}`;
+          } else {
+            await sql`UPDATE ezwich_card_issuance SET deleted = true, updated_at = NOW() WHERE id = ${id}`;
+          }
+          break;
+        case "power":
+          await sql`UPDATE power_transactions SET deleted = true, updated_at = NOW() WHERE id = ${id}`;
+          break;
+        case "jumia":
+          await sql`UPDATE jumia_transactions SET deleted = true, updated_at = NOW() WHERE id = ${id}`;
+          break;
+        default:
+          return {
+            success: false,
+            error: `Invalid source module: ${sourceModule}`,
+          };
+      }
+      return { success: true };
+    } catch (error) {
+      console.error("Error marking transaction deleted:", error);
+      return { success: false, error: "Failed to mark transaction deleted" };
+    }
+  }
+
+  /**
+   * Log a transaction deletion event for auditing
+   */
+  static async logTransactionDeletion(
+    deleteData: TransactionDeleteData,
+    originalTransaction: any
+  ) {
+    try {
+      // If you have an AuditLoggerService, use it here. Otherwise, log directly.
+      if (typeof AuditLoggerService?.log === "function") {
+        await AuditLoggerService.log({
+          action: "delete",
+          entity: "transaction",
+          entityId: deleteData.id,
+          userId: deleteData.processedBy,
+          branchId: deleteData.branchId,
+          details: {
+            sourceModule: deleteData.sourceModule,
+            reason: deleteData.reason,
+            originalTransaction,
+          },
+        });
+      } else {
+        // Fallback: insert into audit_logs table if exists
+        await sql`
+          INSERT INTO audit_logs (action, entity, entity_id, user_id, branch_id, details, created_at)
+          VALUES (
+            'delete',
+            'transaction',
+            ${deleteData.id},
+            ${deleteData.processedBy},
+            ${deleteData.branchId},
+            ${JSON.stringify({
+              sourceModule: deleteData.sourceModule,
+              reason: deleteData.reason,
+              originalTransaction,
+            })},
+            NOW()
+          )
+        `;
+      }
+    } catch (error) {
+      console.error("Error logging transaction deletion:", error);
+    }
+  }
+
+  /**
+   * Log a transaction edit event for auditing
+   */
+  static async logTransactionEdit(
+    editData: TransactionEditData,
+    originalTransaction: any
+  ) {
+    try {
+      if (typeof AuditLoggerService?.log === "function") {
+        await AuditLoggerService.log({
+          action: "edit",
+          entity: "transaction",
+          entityId: editData.id,
+          userId: originalTransaction.user_id,
+          branchId: originalTransaction.branch_id,
+          details: {
+            sourceModule: editData.sourceModule,
+            editData,
+            originalTransaction,
+          },
+        });
+      } else {
+        await sql`
+          INSERT INTO audit_logs (action, entity, entity_id, user_id, branch_id, details, created_at)
+          VALUES (
+            'edit',
+            'transaction',
+            ${editData.id},
+            ${originalTransaction.user_id},
+            ${originalTransaction.branch_id},
+            ${JSON.stringify({
+              sourceModule: editData.sourceModule,
+              editData,
+              originalTransaction,
+            })},
+            NOW()
+          )
+        `;
+      }
+    } catch (error) {
+      console.error("Error logging transaction edit:", error);
+    }
+  }
+
+  /**
+   * Reverse the effect of a transaction on the cash till (for deletion/reversal)
+   * This restores the cash till balance as if the transaction never happened.
+   */
+  private static async reverseCashTillBalances(
+    sourceModule: string,
+    originalTransaction: any
+  ) {
+    try {
+      // Only proceed if cash_till_id is present
+      const cashTillId = originalTransaction.cash_till_id;
+      if (!cashTillId) return { success: true };
+      // Get the cash till account
+      const cashTillResult =
+        await sql`SELECT * FROM cash_tills WHERE id = ${cashTillId}`;
+      if (!cashTillResult || cashTillResult.length === 0) {
+        return { success: false, error: "Cash till not found" };
+      }
+      const cashTill = cashTillResult[0];
+      // Determine the effect direction based on module and transaction type
+      const effect = this.getCashTillEffect(sourceModule, originalTransaction);
+      // To reverse, subtract the effect
+      const adjustment = -effect;
+      const currentBalance = Number(cashTill.current_balance);
+      const newBalance = currentBalance + adjustment;
+      await sql`
+        UPDATE cash_tills
+        SET current_balance = ${newBalance}, updated_at = NOW()
+        WHERE id = ${cashTill.id}
+      `;
+      await sql`
+        INSERT INTO cash_till_transactions (
+          cash_till_id, transaction_type, amount, balance_before, balance_after, reference, description, created_at
+        ) VALUES (
+          ${cashTill.id},
+          'reversal',
+          ${adjustment},
+          ${currentBalance},
+          ${newBalance},
+          ${`DELETE-${originalTransaction.id}`},
+          ${`Transaction deletion reversal for ${sourceModule} transaction ${originalTransaction.id}`},
+          NOW()
+        )
+      `;
+      return { success: true };
+    } catch (error) {
+      console.error("Error reversing cash till balances:", error);
+      return { success: false, error: "Failed to reverse cash till balances" };
+    }
+  }
+
+  /**
+   * Get the effect of a transaction on the cash till (positive=increase, negative=decrease)
+   */
+  private static getCashTillEffect(
+    sourceModule: string,
+    transaction: any
+  ): number {
+    const amount = Number(transaction.amount);
+    const fee = Number(transaction.fee || transaction.commission || 0);
+    const type = (
+      transaction.type ||
+      transaction.transaction_type ||
+      ""
+    ).toLowerCase();
+    switch (sourceModule) {
+      case "momo":
+        if (type === "cash-in") return amount + fee; // cash till increases
+        if (type === "cash-out") return -(amount + fee); // cash till decreases
+        break;
+      case "agency_banking":
+        if (type === "deposit") return amount + fee; // cash till increases
+        if (type === "withdrawal") return -(amount + fee); // cash till decreases
+        if (type === "interbank transfer") return amount + fee; // cash till increases
+        break;
+      case "e_zwich":
+        if (type === "withdrawal") return -(amount + fee); // cash till decreases
+        if (type === "card issuance") return amount + fee; // cash till increases
+        break;
+      case "power":
+        return amount + fee; // cash till increases on sale
+      case "jumia":
+        return amount + fee; // cash till increases on sale
+      default:
+        return 0;
+    }
+    return 0;
   }
 }
