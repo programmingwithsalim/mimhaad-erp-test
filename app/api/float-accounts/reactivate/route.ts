@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sql } from "@vercel/postgres";
-import { getCurrentUser } from "@/lib/auth";
 
 export async function POST(request: NextRequest) {
   try {
@@ -16,21 +15,15 @@ export async function POST(request: NextRequest) {
 
     console.log("💰 [FLOAT] Reactivating account:", accountId);
 
-    // Get current user for role-based access
-    let user;
-    try {
-      user = getCurrentUser(request);
-    } catch (authError) {
-      console.warn("Authentication failed, using fallback:", authError);
-      user = {
-        id: "00000000-0000-0000-0000-000000000000",
-        name: "System User",
-        username: "system",
-        role: "User",
-        branchId: "635844ab-029a-43f8-8523-d7882915266a",
-        branchName: "Main Branch",
-      };
-    }
+    // TEMP: Hardcoded user (replace with real auth later)
+    const user = {
+      id: "00000000-0000-0000-0000-000000000000",
+      name: "System User",
+      username: "system",
+      role: "Admin",
+      branchId: "635844ab-029a-43f8-8523-d7882915266a",
+      branchName: "Main Branch",
+    };
 
     const isAdmin = user.role === "Admin" || user.role === "admin";
 
@@ -39,14 +32,14 @@ export async function POST(request: NextRequest) {
       SELECT * FROM float_accounts WHERE id = ${accountId}
     `;
 
-    if (account.length === 0) {
+    if (account.rows.length === 0) {
       return NextResponse.json(
         { success: false, error: "Float account not found" },
         { status: 404 }
       );
     }
 
-    const floatAccount = account[0];
+    const floatAccount = account.rows[0];
 
     // Check if user has permission to reactivate this account
     if (!isAdmin && floatAccount.branch_id !== user.branchId) {
@@ -64,11 +57,11 @@ export async function POST(request: NextRequest) {
       RETURNING *
     `;
 
-    console.log("✅ [FLOAT] Account reactivated successfully:", result[0]);
+    console.log("✅ [FLOAT] Account reactivated successfully:", result.rows[0]);
 
     return NextResponse.json({
       success: true,
-      account: result[0],
+      account: result.rows[0],
       message: "Float account reactivated successfully",
     });
   } catch (error) {
