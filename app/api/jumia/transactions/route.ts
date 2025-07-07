@@ -39,7 +39,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: transactions,
+      data: transactions.map((tx) => ({
+        ...tx,
+        payment_method: tx.payment_method || null,
+      })),
       total: transactions.length,
     });
   } catch (error) {
@@ -70,6 +73,7 @@ export async function POST(request: NextRequest) {
     const newTransaction = await createJumiaTransaction({
       ...transactionData,
       transaction_id: transactionId,
+      payment_method: transactionData.payment_method,
     });
 
     console.log("Created new transaction:", newTransaction);

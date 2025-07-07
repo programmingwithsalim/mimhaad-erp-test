@@ -287,6 +287,42 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error("❌ [FLOAT] Error creating float account:", error);
+
+    // Handle unique constraint violations for float account types per branch
+    const uniqueConstraintMessage =
+      "A float account of this type already exists for this branch.";
+    if (
+      error &&
+      typeof error === "object" &&
+      (error.code === "23505" ||
+        (error.message &&
+          (error.message.includes("unique_cash_in_till_per_branch") ||
+            error.message.includes("unique_jumia_per_branch") ||
+            error.message.includes("unique_power_per_branch"))))
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: uniqueConstraintMessage,
+        },
+        { status: 400 }
+      );
+    }
+
+    // Fallback: check error message for unique/exists
+    if (
+      error instanceof Error &&
+      /unique|already exists|duplicate/i.test(error.message)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: uniqueConstraintMessage,
+        },
+        { status: 400 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,

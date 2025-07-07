@@ -305,7 +305,7 @@ export class UnifiedGLPostingService {
     let requiredMappings: string[] = [];
     switch (data.sourceModule) {
       case "momo":
-        requiredMappings = ["main", "fee"]; // Add more as needed (e.g., 'expense', 'commission')
+        requiredMappings = ["main", "fee"];
         break;
       case "agency_banking":
         requiredMappings = ["main", "fee"];
@@ -317,7 +317,15 @@ export class UnifiedGLPostingService {
         requiredMappings = ["main", "fee"];
         break;
       case "jumia":
-        requiredMappings = ["main", "fee"];
+        // Only require 'main' for package_receipt and pod_collection
+        if (
+          data.transactionType === "package_receipt" ||
+          data.transactionType === "pod_collection"
+        ) {
+          requiredMappings = ["main"];
+        } else {
+          requiredMappings = ["main", "fee"];
+        }
         break;
       case "expenses":
         requiredMappings = ["expense", "payment"];

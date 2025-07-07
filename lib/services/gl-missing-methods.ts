@@ -203,18 +203,8 @@ export class MissingGLMethods {
     branchId: string,
     data: UnifiedGLTransactionData
   ): Promise<Record<string, any>> {
-    // Extract the original transaction type (remove reversal_ or deletion_ prefix)
-    let originalTransactionType = transactionType;
-    if (transactionType.startsWith("reversal_")) {
-      originalTransactionType = transactionType.replace("reversal_", "");
-    } else if (transactionType.startsWith("deletion_")) {
-      originalTransactionType = transactionType.replace("deletion_", "");
-    } else if (transactionType.startsWith("adjustment_")) {
-      originalTransactionType = transactionType.replace("adjustment_", "");
-    }
-
-    // Map transaction types to GL mapping transaction types
-    let glMappingTransactionType = originalTransactionType;
+    let glMappingTransactionType = transactionType;
+    const originalTransactionType = transactionType;
 
     // Map service-specific transaction types to their GL mapping equivalents
     switch (sourceModule) {
@@ -266,8 +256,9 @@ export class MissingGLMethods {
     }
 
     // Get GL mappings for the mapped transaction type
+    // With the new single-float-per-branch approach, we don't need complex filtering
     const mappings = await sql`
-      SELECT mapping_type, gl_account_id
+      SELECT mapping_type, gl_account_id, float_account_id
       FROM gl_mappings
       WHERE transaction_type = ${glMappingTransactionType}
         AND branch_id = ${branchId}
@@ -287,14 +278,18 @@ export class MissingGLMethods {
       WHERE id = ANY(${accountIds})
     `;
 
-    // Build accounts mapping
+    // Build accounts mapping - with single-float-per-branch, this is much simpler
     const accountMap: Record<string, any> = {};
+    
     for (const mapping of mappings) {
       const account = accounts.find((a: any) => a.id === mapping.gl_account_id);
-      accountMap[mapping.mapping_type] = mapping.gl_account_id;
-      accountMap[`${mapping.mapping_type}Code`] = account?.code || "0000";
-      accountMap[`${mapping.mapping_type}Name`] =
-        account?.name || "Unknown Account";
+      
+      // Simply use the first mapping of each type (there should only be one per type now)
+      if (!accountMap[mapping.mapping_type]) {
+        accountMap[mapping.mapping_type] = mapping.gl_account_id;
+        accountMap[`${mapping.mapping_type}Code`] = account?.code || "0000";
+        accountMap[`${mapping.mapping_type}Name`] = account?.name || "Unknown Account";
+      }
     }
 
     // Validate required mappings based on source module and transaction type

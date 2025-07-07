@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     // Build WHERE conditions as template literals
     let whereClause = sql``;
     if (branchId && branchId !== "all") {
-      whereClause = sql`WHERE branch_id = ${branchId} AND (is_reversal IS NULL OR is_reversal = false)`;
+      whereClause = sql`WHERE branch_id::text = ${branchId} AND deleted = false`;
       if (dateFrom) {
         whereClause = sql`${whereClause} AND created_at >= ${dateFrom}`;
       }
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
       }
     } else if (dateFrom || dateTo) {
-      whereClause = sql`WHERE (is_reversal IS NULL OR is_reversal = false)`;
+      whereClause = sql`WHERE deleted = false`;
       if (dateFrom) {
         whereClause = sql`${whereClause} AND created_at >= ${dateFrom}`;
         if (dateTo) {
@@ -37,10 +37,10 @@ export async function GET(request: NextRequest) {
         whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
       }
     } else {
-      whereClause = sql`WHERE (is_reversal IS NULL OR is_reversal = false)`;
+      whereClause = sql`WHERE deleted = false`;
     }
 
-    // Get transaction statistics - focus on transaction types and amounts
+    // Get transaction statistics
     const statsResult = await sql`
       SELECT 
         COUNT(*) as total_count,
@@ -55,6 +55,24 @@ export async function GET(request: NextRequest) {
     `;
     const stats = statsResult[0] || {};
 
+    // Get today's statistics (exclude settlements)
+    const todayStats = await sql`
+      SELECT 
+        COUNT(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN 1 END) as today_count,
+        COALESCE(SUM(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_amount,
+        COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_pod_count,
+        COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_pod_amount
+      FROM jumia_transactions
+      WHERE created_at >= CURRENT_DATE 
+      AND deleted = false
+      ${
+        branchId && branchId !== "all"
+          ? sql`AND branch_id::text = ${branchId}`
+          : sql``
+      }
+    `;
+    const todayData = todayStats[0] || {};
+
     // Get daily breakdown for the last 30 days
     const dailyStats = await sql`
       SELECT 
@@ -63,9 +81,10 @@ export async function GET(request: NextRequest) {
         COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
       FROM jumia_transactions
       WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+      AND deleted = false
       ${
         branchId && branchId !== "all"
-          ? sql`AND branch_id = ${branchId}`
+          ? sql`AND branch_id::text = ${branchId}`
           : sql``
       }
       GROUP BY DATE(created_at)
@@ -84,7 +103,31 @@ export async function GET(request: NextRequest) {
       ORDER BY total_amount DESC
     `;
 
+    // Get Jumia float account balance for this branch
+    let float_balance = 0;
+    if (branchId && branchId !== "all") {
+      const floatResult = await sql`
+        SELECT current_balance FROM float_accounts WHERE branch_id = ${branchId} AND account_type = 'jumia' AND is_active = true LIMIT 1
+      `;
+      if (floatResult.length > 0 && floatResult[0].current_balance != null) {
+        float_balance = Number.parseFloat(floatResult[0].current_balance);
+      }
+    }
+
     const statistics = {
+      // Main statistics for frontend cards
+      todayTransactions: Number(todayData.today_count || 0),
+      totalTransactions: Number(stats.total_count || 0),
+      todayVolume: Number(todayData.today_amount || 0),
+      totalVolume: Number(stats.total_amount || 0),
+      todayCommission: Number(todayData.today_pod_amount || 0), // POD collections as commission
+      totalCommission: Number(stats.pod_amount || 0), // Total POD collections
+      activeProviders: 1, // Jumia is always active
+      floatBalance: float_balance, // Use backend-calculated float balance
+      lowFloatAlerts: 0, // Will be calculated by frontend
+      float_balance, // Also expose as float_balance for compatibility
+
+      // Additional detailed data
       summary: {
         totalCount: Number(stats.total_count || 0),
         totalAmount: Number(stats.total_amount || 0),
@@ -93,6 +136,10 @@ export async function GET(request: NextRequest) {
         podAmount: Number(stats.pod_amount || 0),
         settlementCount: Number(stats.settlement_count || 0),
         settlementAmount: Number(stats.settlement_amount || 0),
+        todayCount: Number(todayData.today_count || 0),
+        todayAmount: Number(todayData.today_amount || 0),
+        todayPodCount: Number(todayData.today_pod_count || 0),
+        todayPodAmount: Number(todayData.today_pod_amount || 0),
       },
       byType: typeStats.map((t: any) => ({
         type: t.transaction_type || "Unknown",

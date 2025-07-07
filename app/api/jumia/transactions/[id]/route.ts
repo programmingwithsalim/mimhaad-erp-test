@@ -1,5 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { UnifiedTransactionService } from "@/lib/services/unified-transaction-service";
+import {
+  getJumiaTransactionById,
+  updateJumiaTransaction,
+  deleteJumiaTransaction,
+} from "@/lib/jumia-service";
 import { getCurrentUser } from "@/lib/auth-utils";
 
 // GET - Get specific transaction
@@ -11,10 +15,7 @@ export async function GET(
     const transactionId = params.id;
     console.log("GET request for transaction ID:", transactionId);
 
-    const transaction = await UnifiedTransactionService.getTransactionById(
-      transactionId,
-      "jumia"
-    );
+    const transaction = await getJumiaTransactionById(transactionId);
 
     if (!transaction) {
       console.log("Transaction not found with ID:", transactionId);
@@ -27,7 +28,7 @@ export async function GET(
     console.log("Found transaction:", transaction);
     return NextResponse.json({
       success: true,
-      data: transaction,
+      data: { ...transaction, payment_method: transaction.payment_method || null },
     });
   } catch (error) {
     console.error("Error getting Jumia transaction:", error);
@@ -66,28 +67,42 @@ export async function PUT(
       body
     );
 
-    const result = await UnifiedTransactionService.editTransaction(
-      transactionId,
-      "jumia",
-      body,
-      currentUser.id,
-      currentUser.branchId,
-      currentUser.name || currentUser.username
-    );
+    // Accept payment_method in the request body for updates
+    const {
+      tracking_id,
+      customer_name,
+      customer_phone,
+      amount,
+      status,
+      delivery_status,
+      notes,
+      float_account_id,
+      payment_method,
+    } = body;
 
-    if (result.success) {
-      console.log("Updated transaction:", result.transaction);
-      return NextResponse.json({
-        success: true,
-        data: result.transaction,
-        message: result.message,
-      });
-    } else {
-      return NextResponse.json(
-        { success: false, error: result.error },
-        { status: 400 }
-      );
-    }
+    // Prepare update data
+    const updateData = {
+      tracking_id,
+      customer_name,
+      customer_phone,
+      amount,
+      status,
+      delivery_status,
+      notes,
+      float_account_id,
+      payment_method,
+      user_id: currentUser.id,
+      branch_id: currentUser.branchId,
+    };
+
+    const result = await updateJumiaTransaction(transactionId, updateData);
+
+    console.log("Updated transaction:", result);
+    return NextResponse.json({
+      success: true,
+      data: result,
+      message: "Transaction updated successfully",
+    });
   } catch (error) {
     console.error("Error updating Jumia transaction:", error);
 
@@ -127,29 +142,16 @@ export async function DELETE(
       );
     }
 
-    console.log("DELETE request for transaction ID:", transactionId);
+    console.log("🗑️ Deleting jumia transaction:", transactionId);
 
-    const result = await UnifiedTransactionService.deleteTransaction(
-      transactionId,
-      "jumia",
-      reason,
-      currentUser.id,
-      currentUser.branchId,
-      currentUser.name || currentUser.username
-    );
+    const deletedTransaction = await deleteJumiaTransaction(transactionId);
 
-    if (result.success) {
-      console.log("Deleted transaction successfully");
-      return NextResponse.json({
-        success: true,
-        message: result.message,
-      });
-    } else {
-      return NextResponse.json(
-        { success: false, error: result.error },
-        { status: 400 }
-      );
-    }
+    console.log("✅ Deleted transaction successfully:", deletedTransaction);
+    return NextResponse.json({
+      success: true,
+      message: `Transaction deleted successfully. Reason: ${reason}`,
+      data: deletedTransaction,
+    });
   } catch (error) {
     console.error("Error deleting Jumia transaction:", error);
 

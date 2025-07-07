@@ -58,16 +58,34 @@ export function TransactionActions({
   const [showReverseDialog, setShowReverseDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
   const [reverseReason, setReverseReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [receipt, setReceipt] = useState<string>("");
+  const [currentTransaction, setCurrentTransaction] = useState<any>(null);
 
   const canEdit =
     userRole === "Admin" || userRole === "Manager" || userRole === "Finance";
   const canDelete = userRole === "Admin" || userRole === "Finance";
   const canReverse =
     userRole === "Admin" || userRole === "Manager" || userRole === "Operations";
+
+  // Special handling for Jumia transactions
+  const isJumiaPackageReceipt =
+    sourceModule === "jumia" &&
+    transaction.transaction_type === "package_receipt";
+  const isJumiaPodCollection =
+    sourceModule === "jumia" &&
+    transaction.transaction_type === "pod_collection";
+  const isJumiaSettlement =
+    sourceModule === "jumia" && transaction.transaction_type === "settlement";
+
+  // Package receipts cannot be reversed, but can be edited/deleted without GL posting
+  const canReverseTransaction = canReverse && !isJumiaPackageReceipt;
+  // POD collections and settlements can be edited/deleted with GL posting
+  const canEditTransaction = canEdit;
+  const canDeleteTransaction = canDelete;
 
   const handleReverse = async () => {
     if (!reverseReason.trim()) {
@@ -81,19 +99,50 @@ export function TransactionActions({
 
     setIsProcessing(true);
     try {
-      const response = await fetch("/api/transactions/unified", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "reverse",
-          transactionId: transaction.id,
-          sourceModule: sourceModule,
-          reason: reverseReason,
-          userId: user?.id,
-          branchId: user?.branchId,
-          processedBy: user?.name || user?.username,
-        }),
-      });
+      // For Jumia package receipts, show error since they can't be reversed
+      if (isJumiaPackageReceipt) {
+        toast({
+          title: "Cannot Reverse Package Receipt",
+          description:
+            "Package receipts don't affect GL accounts and cannot be reversed",
+          variant: "destructive",
+        });
+        setShowReverseDialog(false);
+        setReverseReason("");
+        return;
+      }
+
+      let response;
+      if (sourceModule === "jumia") {
+        response = await fetch(
+          `/api/jumia/transactions/${transaction.transaction_id}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "reverse",
+              reason: reverseReason,
+              userId: user?.id,
+              branchId: user?.branchId,
+              processedBy: user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email,
+            }),
+          }
+        );
+      } else {
+        response = await fetch("/api/transactions/unified", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "reverse",
+            transactionId: transaction.id,
+            sourceModule: sourceModule,
+            reason: reverseReason,
+            userId: user?.id,
+            branchId: user?.branchId,
+            processedBy: user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email,
+          }),
+        });
+      }
 
       const result = await response.json();
 
@@ -133,19 +182,37 @@ export function TransactionActions({
 
     setIsProcessing(true);
     try {
-      const response = await fetch("/api/transactions/unified", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "delete",
-          transactionId: transaction.id,
-          sourceModule: sourceModule,
-          reason: deleteReason,
-          userId: user?.id,
-          branchId: user?.branchId,
-          processedBy: user?.name || user?.username,
-        }),
-      });
+      // For Jumia transactions, use the Jumia-specific API
+      let response;
+      if (sourceModule === "jumia") {
+        response = await fetch(
+          `/api/jumia/transactions/${transaction.transaction_id}`,
+          {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              reason: deleteReason,
+              userId: user?.id,
+              branchId: user?.branchId,
+              processedBy: user?.name || user?.username,
+            }),
+          }
+        );
+      } else {
+        response = await fetch("/api/transactions/unified", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "delete",
+            transactionId: transaction.id,
+            sourceModule: sourceModule,
+            reason: deleteReason,
+            userId: user?.id,
+            branchId: user?.branchId,
+            processedBy: user?.name || user?.username,
+          }),
+        });
+      }
 
       const result = await response.json();
 
@@ -210,6 +277,68 @@ export function TransactionActions({
     }
   };
 
+  const handleEditSubmit = async (updated: any) => {
+    if (!currentTransaction) return;
+    setIsProcessing(true);
+    try {
+      // For Jumia transactions, use the Jumia-specific API
+      let response;
+      if (sourceModule === "jumia") {
+        response = await fetch(
+          `/api/jumia/transactions/${currentTransaction.transaction_id}`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ...updated,
+              userId: user?.id,
+              branchId: user?.branchId,
+              processedBy: user?.name || user?.username,
+            }),
+          }
+        );
+      } else {
+        response = await fetch("/api/transactions/unified", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "edit",
+            transactionId: currentTransaction.id,
+            sourceModule: sourceModule,
+            updates: updated,
+            userId: user?.id,
+            branchId: user?.branchId,
+            processedBy: user?.name || user?.username,
+          }),
+        });
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Updated",
+          description:
+            result.message || "Transaction has been updated successfully",
+        });
+        setShowEditDialog(false);
+        setCurrentTransaction(null);
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || "Failed to update transaction");
+      }
+    } catch (error) {
+      toast({
+        title: "Update Failed",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -231,21 +360,26 @@ export function TransactionActions({
             Generate Receipt
           </DropdownMenuItem>
 
-          {canEdit && onEdit && (
-            <DropdownMenuItem onClick={() => onEdit(transaction)}>
+          {canEditTransaction && onEdit && (
+            <DropdownMenuItem
+              onClick={() => {
+                setCurrentTransaction(transaction);
+                setShowEditDialog(true);
+              }}
+            >
               <Edit className="mr-2 h-4 w-4" />
               Edit Transaction
             </DropdownMenuItem>
           )}
 
-          {canReverse && (
+          {canReverseTransaction && (
             <DropdownMenuItem onClick={() => setShowReverseDialog(true)}>
               <RotateCcw className="mr-2 h-4 w-4" />
               Reverse Transaction
             </DropdownMenuItem>
           )}
 
-          {canDelete && (
+          {canDeleteTransaction && (
             <DropdownMenuItem
               onClick={() => setShowDeleteDialog(true)}
               className="text-red-600"
@@ -263,8 +397,9 @@ export function TransactionActions({
           <DialogHeader>
             <DialogTitle>Reverse Transaction</DialogTitle>
             <DialogDescription>
-              This will create a reversal transaction and update float balances.
-              Please provide a reason for the reversal.
+              {isJumiaPackageReceipt
+                ? "Package receipts cannot be reversed as they don't affect GL accounts."
+                : "This will create a reversal transaction and update float balances. Please provide a reason for the reversal."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -303,9 +438,9 @@ export function TransactionActions({
           <DialogHeader>
             <DialogTitle>Delete Transaction</DialogTitle>
             <DialogDescription>
-              This will permanently delete the transaction and update float
-              balances. This action cannot be undone. Please provide a reason
-              for the deletion.
+              {isJumiaPackageReceipt
+                ? "This will permanently delete the package receipt. Package receipts don't affect GL accounts, so no GL entries will be reversed."
+                : "This will permanently delete the transaction and update float balances. This action cannot be undone. Please provide a reason for the deletion."}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -366,6 +501,108 @@ export function TransactionActions({
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Transaction Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Jumia Transaction</DialogTitle>
+            <DialogDescription>
+              {isJumiaPackageReceipt
+                ? "Update package receipt details. Package receipts don't affect GL accounts."
+                : "Update transaction details. This will update GL entries if applicable."}
+            </DialogDescription>
+          </DialogHeader>
+          {currentTransaction && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.currentTarget);
+                const updated = {
+                  tracking_id: formData.get("tracking_id"),
+                  customer_name: formData.get("customer_name"),
+                  customer_phone: formData.get("customer_phone"),
+                  amount: Number(formData.get("amount")),
+                  status: formData.get("status"),
+                  delivery_status: formData.get("delivery_status"),
+                  payment_method: formData.get("payment_method"),
+                  notes: formData.get("notes"),
+                };
+                handleEditSubmit(updated);
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <Label>Tracking ID</Label>
+                <Input
+                  name="tracking_id"
+                  defaultValue={currentTransaction.tracking_id}
+                />
+              </div>
+              <div>
+                <Label>Customer Name</Label>
+                <Input
+                  name="customer_name"
+                  defaultValue={currentTransaction.customer_name}
+                />
+              </div>
+              <div>
+                <Label>Customer Phone</Label>
+                <Input
+                  name="customer_phone"
+                  defaultValue={currentTransaction.customer_phone}
+                />
+              </div>
+              <div>
+                <Label>Amount</Label>
+                <Input
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  defaultValue={currentTransaction.amount}
+                />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Input name="status" defaultValue={currentTransaction.status} />
+              </div>
+              <div>
+                <Label>Delivery Status</Label>
+                <Input
+                  name="delivery_status"
+                  defaultValue={currentTransaction.delivery_status}
+                />
+              </div>
+              <div>
+                <Label>Payment Method</Label>
+                <Input
+                  name="payment_method"
+                  defaultValue={currentTransaction.payment_method}
+                />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  name="notes"
+                  defaultValue={currentTransaction.notes}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEditDialog(false)}
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isProcessing}>
+                  {isProcessing ? "Updating..." : "Update Transaction"}
+                </Button>
+              </div>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </>

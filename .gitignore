@@ -30,6 +30,13 @@ yarn-error.log*
 .env*.local
 .env
 
+# Database
+db_dump.sql
+gl_accounts.json
+gl_mappings.json
+float_accounts.json
+helpers
+
 # vercel
 .vercel
 

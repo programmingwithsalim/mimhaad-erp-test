@@ -31,8 +31,8 @@ export async function PUT(
     );
 
     if (result.success) {
-      return NextResponse.json({
-        success: true,
+    return NextResponse.json({
+      success: true,
         transaction: result.transaction,
         message: result.message,
       });
@@ -91,8 +91,8 @@ export async function DELETE(
     );
 
     if (result.success) {
-      return NextResponse.json({
-        success: true,
+    return NextResponse.json({
+      success: true,
         message: result.message,
       });
     } else {

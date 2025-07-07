@@ -431,13 +431,54 @@ export default function PowerPageEnhancedFixed() {
     printWindow.close();
   };
 
+  const getStatusBadge = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case "completed":
+        return (
+          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-700">
+            Completed
+          </span>
+        );
+      case "pending":
+        return (
+          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-700">
+            Pending
+          </span>
+        );
+      case "failed":
+        return (
+          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700">
+            Failed
+          </span>
+        );
+      case "reversed":
+        return (
+          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-800">
+            Reversed
+          </span>
+        );
+      case "deleted":
+        return (
+          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-gray-200 text-gray-700 line-through">
+            Deleted
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-block px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
+            {status || "Unknown"}
+          </span>
+        );
+    }
+  };
+
   return (
     <div className="container mx-auto py-6">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <Zap className="h-8 w-8" />
-            Power Services - Fixed
+            Power Services
           </h1>
           <p className="text-muted-foreground">
             Manage electricity bill payments and power services
@@ -825,15 +866,7 @@ export default function PowerPageEnhancedFixed() {
                             {tx.customer_name || "-"}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            <span
-                              className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                                tx.status === "completed"
-                                  ? "bg-green-100 text-green-700"
-                                  : "bg-yellow-100 text-yellow-700"
-                              }`}
-                            >
-                              {tx.status || "-"}
-                            </span>
+                            {getStatusBadge(tx.status)}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-right">
                             <TransactionActions

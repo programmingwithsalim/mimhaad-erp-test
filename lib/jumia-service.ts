@@ -20,6 +20,7 @@ export interface JumiaTransaction {
   delivery_status?: string;
   notes?: string;
   float_account_id?: string; // For settlements - which account was used to pay
+  payment_method?: string; // NEW: payment method used for pod_collection/settlement
   created_at?: string;
   updated_at?: string;
 }
@@ -45,9 +46,9 @@ async function tablesExist(): Promise<boolean> {
       SELECT table_name 
       FROM information_schema.tables 
       WHERE table_schema = 'public' 
-      AND table_name IN ('jumia_transactions', 'jumia_liability')
+      AND table_name = 'jumia_transactions'
     `;
-    return Array.isArray(result) && result.length >= 2;
+    return Array.isArray(result) && result.length === 1;
   } catch (error) {
     console.error("Error checking Jumia tables:", error);
     return false;
@@ -257,7 +258,7 @@ export async function createJumiaTransaction(
         transaction_id, branch_id, user_id, transaction_type,
         tracking_id, customer_name, customer_phone, amount,
         settlement_reference, settlement_from_date, settlement_to_date,
-        status, delivery_status, notes, float_account_id
+        status, delivery_status, notes, float_account_id, payment_method
       ) VALUES (
         ${transaction.transaction_id}, ${transaction.branch_id}, ${
       transaction.user_id
@@ -270,7 +271,9 @@ export async function createJumiaTransaction(
     }, ${transaction.settlement_to_date || null},
         ${transaction.status}, ${transaction.delivery_status || null}, ${
       transaction.notes || null
-    }, ${transaction.float_account_id || null}
+    }, ${transaction.float_account_id || null}, ${
+      transaction.payment_method || null
+    }
       )
       RETURNING *
     `;
@@ -338,61 +341,61 @@ export async function createJumiaTransaction(
 // Handle float account updates for transactions
 async function handleFloatAccountUpdates(
   transaction: JumiaTransaction,
-  operation: "create" | "delete"
+  operation: "create" | "delete" | "reverse"
 ): Promise<void> {
   try {
+    // Always use the Jumia float account for all POD, reversal, and settlement logic
+    // Find the Jumia float account for the branch
+    const jumiaFloatResult = await sql`
+      SELECT id FROM float_accounts 
+      WHERE branch_id = ${transaction.branch_id} 
+      AND account_type = 'jumia'
+      AND is_active = true
+      LIMIT 1
+    `;
+    const jumiaFloatId =
+      Array.isArray(jumiaFloatResult) && jumiaFloatResult.length > 0
+        ? jumiaFloatResult[0].id
+        : null;
+    if (!jumiaFloatId) {
+      throw new Error(
+        `No active Jumia float account found for branch ${transaction.branch_id}`
+      );
+    }
+
     if (
       transaction.transaction_type === "pod_collection" &&
       transaction.amount > 0
     ) {
-      // POD Collection: Credit the selected payment method (float account)
-      const accountId =
-        transaction.float_account_id ||
-        (await findCashInTillAccount(transaction.branch_id));
-      if (accountId) {
-        const amount =
-          operation === "create" ? transaction.amount : -transaction.amount;
-        await updateFloatAccountBalance(
-          accountId,
-          amount,
-          "jumia_pod_collection",
-          `Jumia POD collection - ${transaction.transaction_id}`
-        );
+      // POD Collection: Credit the Jumia float account only
+      let amount = 0;
+      if (operation === "create") {
+        amount = transaction.amount;
+      } else if (operation === "delete" || operation === "reverse") {
+        amount = -transaction.amount; // Debit the float account after reversal or deletion
       }
-
-      const liabilityAmount =
-        operation === "create" ? transaction.amount : -transaction.amount;
-      await updateJumiaLiability(
-        transaction.branch_id,
-        liabilityAmount,
-        operation === "create" ? "increase" : "decrease"
+      await updateFloatAccountBalance(
+        jumiaFloatId,
+        amount,
+        "jumia_pod_collection",
+        `Jumia POD collection - ${transaction.transaction_id}`
       );
     } else if (
       transaction.transaction_type === "settlement" &&
       transaction.amount > 0
     ) {
-      // Settlement: Use specified float account or default to cash-in-till
-      const accountId =
-        transaction.float_account_id ||
-        (await findCashInTillAccount(transaction.branch_id));
-
-      if (accountId) {
-        const amount =
-          operation === "create" ? -transaction.amount : transaction.amount;
-        await updateFloatAccountBalance(
-          accountId,
-          amount,
-          "jumia_settlement",
-          `Jumia settlement - ${transaction.transaction_id}`
-        );
+      // Settlement: Debit the Jumia float account only
+      let amount = 0;
+      if (operation === "create") {
+        amount = -transaction.amount;
+      } else if (operation === "delete" || operation === "reverse") {
+        amount = transaction.amount; // Credit the float account after reversal or deletion
       }
-
-      const liabilityAmount =
-        operation === "create" ? transaction.amount : -transaction.amount;
-      await updateJumiaLiability(
-        transaction.branch_id,
-        liabilityAmount,
-        operation === "create" ? "decrease" : "increase"
+      await updateFloatAccountBalance(
+        jumiaFloatId,
+        amount,
+        "jumia_settlement",
+        `Jumia settlement - ${transaction.transaction_id}`
       );
     }
   } catch (error) {
@@ -574,6 +577,8 @@ export async function updateJumiaTransaction(
       notes: updateData.notes ?? currentTransaction.notes,
       float_account_id:
         updateData.float_account_id ?? currentTransaction.float_account_id,
+      payment_method:
+        updateData.payment_method ?? currentTransaction.payment_method,
     };
 
     const result = await sql`
@@ -593,6 +598,7 @@ export async function updateJumiaTransaction(
         delivery_status = ${updatedTransaction.delivery_status},
         notes = ${updatedTransaction.notes},
         float_account_id = ${updatedTransaction.float_account_id},
+        payment_method = ${updatedTransaction.payment_method},
         updated_at = CURRENT_TIMESTAMP
       WHERE transaction_id = ${transactionId}
       RETURNING *
@@ -648,7 +654,7 @@ export async function deleteJumiaTransaction(
 // Get Jumia statistics - Fixed to handle proper UUID format
 export async function getJumiaStatistics(
   branchId: string
-): Promise<JumiaStatistics> {
+): Promise<JumiaStatistics & { float_balance?: number }> {
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
@@ -684,19 +690,36 @@ export async function getJumiaStatistics(
         COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as packages_collected,
         COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount END), 0) as total_pod_amount,
         COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' AND status = 'active' THEN amount END), 0) as unsettled_amount,
-        COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as total_settlements
+        COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as total_settlements,
+        COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount END), 0) as total_settlement_amount
       FROM jumia_transactions 
       WHERE branch_id = ${actualBranchId}
     `;
 
+    // Fetch Jumia float account balance for this branch
+    const floatResult = await sql`
+      SELECT current_balance FROM float_accounts WHERE branch_id = ${actualBranchId} AND account_type = 'jumia' AND is_active = true LIMIT 1
+    `;
+    const float_balance =
+      floatResult.length > 0 && floatResult[0].current_balance != null
+        ? Number.parseFloat(floatResult[0].current_balance)
+        : 0;
+
     if (Array.isArray(result) && result.length > 0) {
       const stats = result[0] as any;
+      const liability =
+        (Number.parseFloat(stats.total_pod_amount) || 0) -
+        (Number.parseFloat(stats.total_settlement_amount) || 0);
       return {
         total_packages: Number.parseInt(stats.total_packages) || 0,
         packages_collected: Number.parseInt(stats.packages_collected) || 0,
         total_pod_amount: Number.parseFloat(stats.total_pod_amount) || 0,
         unsettled_amount: Number.parseFloat(stats.unsettled_amount) || 0,
         total_settlements: Number.parseInt(stats.total_settlements) || 0,
+        total_settlement_amount:
+          Number.parseFloat(stats.total_settlement_amount) || 0,
+        float_balance,
+        liability,
       };
     }
 
@@ -706,61 +729,12 @@ export async function getJumiaStatistics(
       total_pod_amount: 0,
       unsettled_amount: 0,
       total_settlements: 0,
+      total_settlement_amount: 0,
+      float_balance,
+      liability: 0,
     };
   } catch (error) {
     console.error("Error getting Jumia statistics from database:", error);
-    throw error;
-  }
-}
-
-// Update Jumia liability
-async function updateJumiaLiability(
-  branchId: string,
-  amount: number,
-  operation: "increase" | "decrease"
-): Promise<void> {
-  const useDatabase = await tablesExist();
-
-  if (useDatabase) {
-    try {
-      const adjustedAmount = operation === "increase" ? amount : -amount;
-
-      await sql`
-        INSERT INTO jumia_liability (branch_id, amount, last_updated)
-        VALUES (${branchId}, ${adjustedAmount}, CURRENT_TIMESTAMP)
-        ON CONFLICT (branch_id)
-        DO UPDATE SET 
-          amount = jumia_liability.amount + ${adjustedAmount},
-          last_updated = CURRENT_TIMESTAMP
-      `;
-    } catch (error) {
-      console.error("Error updating Jumia liability:", error);
-    }
-  }
-}
-
-// Get Jumia liability
-export async function getJumiaLiability(branchId: string): Promise<number> {
-  const useDatabase = await tablesExist();
-
-  if (!useDatabase) {
-    throw new Error(
-      "Jumia database tables not found. Please initialize the database first."
-    );
-  }
-
-  try {
-    const result = await sql`
-      SELECT amount FROM jumia_liability WHERE branch_id = ${branchId}
-    `;
-
-    if (Array.isArray(result) && result.length > 0) {
-      return Number.parseFloat(result[0].amount) || 0;
-    }
-
-    return 0;
-  } catch (error) {
-    console.error("Error getting Jumia liability:", error);
     throw error;
   }
 }

@@ -1518,7 +1518,7 @@ export class UnifiedTransactionService {
         result = await sql`
           INSERT INTO jumia_transactions (
             branch_id, user_id, transaction_type, tracking_id, customer_name, 
-            customer_phone, amount, status, delivery_status, payment_method, 
+            customer_phone, amount, status, delivery_status, 
             reference, notes, is_reversal, original_transaction_id
           ) VALUES (
             ${branchId}, ${userId}, ${
@@ -1532,7 +1532,6 @@ export class UnifiedTransactionService {
               originalTransaction.phone_number
             }, 
             ${originalTransaction.amount}, 'completed', 'delivered', 
-            ${originalTransaction.payment_method || "cash"}, 
             ${`REV-${
               originalTransaction.reference || originalTransaction.id
             }`}, ${reason}, true, ${originalTransaction.id}
@@ -1555,23 +1554,51 @@ export class UnifiedTransactionService {
     sourceModule: string,
     transactionId: string
   ) {
-    // Reverse the float balance changes based on the original transaction
-    const amount = Number(transaction.amount) + Number(transaction.fee || 0);
+    // Parse and fix the amount to handle malformed values
+    const parseAmount = (amount: any): number => {
+      if (typeof amount === "string") {
+        // Remove any commas
+        let cleanAmount = amount.replace(/,/g, "");
+
+        // Handle multiple decimal points (e.g., "100.000.00" -> "100000.00")
+        if (cleanAmount.includes(".")) {
+          const parts = cleanAmount.split(".");
+          if (parts.length > 2) {
+            // If we have multiple decimal points, treat all but the last as thousands separators
+            const lastPart = parts.pop(); // Remove the last part (decimal places)
+            const wholePart = parts.join(""); // Join all other parts
+            cleanAmount = `${wholePart}.${lastPart}`;
+          }
+        }
+
+        return Number(cleanAmount);
+      }
+      return Number(amount) || 0;
+    };
+
+    // Parse amounts safely
+    const amount = parseAmount(transaction.amount);
+    const fee = parseAmount(transaction.fee || 0);
+    const commission = parseAmount(transaction.commission || 0);
+    const totalAmount = amount + fee;
+
+    console.log(
+      `🔄 [${sourceModule.toUpperCase()}] Parsed amounts - Amount: ${amount}, Fee: ${fee}, Commission: ${commission}, Total: ${totalAmount}`
+    );
 
     // Handle cash in till reversal for all service types
     if (transaction.cash_till_affected) {
+      const cashTillAmount = parseAmount(transaction.cash_till_affected);
       await sql`
         UPDATE float_accounts 
-        SET current_balance = current_balance - ${transaction.cash_till_affected}, 
+        SET current_balance = current_balance - ${cashTillAmount}, 
             updated_at = NOW()
         WHERE branch_id = ${transaction.branch_id}
         AND account_type = 'cash-in-till'
         AND is_active = true
       `;
       console.log(
-        `🔄 [${sourceModule.toUpperCase()}] Reversed cash till balance by ${
-          transaction.cash_till_affected
-        }`
+        `🔄 [${sourceModule.toUpperCase()}] Reversed cash till balance by ${cashTillAmount}`
       );
     }
 
@@ -1580,16 +1607,15 @@ export class UnifiedTransactionService {
       case "momo":
         // Handle MoMo float account reversal
         if (transaction.float_affected) {
+          const floatAmount = parseAmount(transaction.float_affected);
           await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance - ${transaction.float_affected}, 
+            SET current_balance = current_balance - ${floatAmount}, 
                 updated_at = NOW()
             WHERE id = ${transaction.float_account_id}
           `;
           console.log(
-            `🔄 [${sourceModule.toUpperCase()}] Reversed MoMo float balance by ${
-              transaction.float_affected
-            }`
+            `🔄 [${sourceModule.toUpperCase()}] Reversed MoMo float balance by ${floatAmount}`
           );
         }
         break;
@@ -1597,6 +1623,7 @@ export class UnifiedTransactionService {
       case "agency_banking":
         // Handle agency banking float account reversal
         if (transaction.float_affected) {
+          const floatAmount = parseAmount(transaction.float_affected);
           // Find the agency banking float account for this provider
           const agencyAccount = await sql`
             SELECT * FROM float_accounts 
@@ -1610,14 +1637,12 @@ export class UnifiedTransactionService {
           if (agencyAccount.length > 0) {
             await sql`
               UPDATE float_accounts 
-              SET current_balance = current_balance - ${transaction.float_affected}, 
+              SET current_balance = current_balance - ${floatAmount}, 
                   updated_at = NOW()
               WHERE id = ${agencyAccount[0].id}
             `;
             console.log(
-              `🔄 [${sourceModule.toUpperCase()}] Reversed agency banking float balance by ${
-                transaction.float_affected
-              } for provider: ${
+              `🔄 [${sourceModule.toUpperCase()}] Reversed agency banking float balance by ${floatAmount} for provider: ${
                 transaction.partner_bank || transaction.provider
               }`
             );
@@ -1633,9 +1658,6 @@ export class UnifiedTransactionService {
 
       case "e_zwich":
         // Handle E-Zwich float account reversal based on transaction type
-        const amount =
-          Number(transaction.amount) + Number(transaction.fee || 0);
-
         // Check if it's a withdrawal or card issuance
         const withdrawal = await sql`
           SELECT id FROM e_zwich_withdrawals WHERE id = ${transaction.id}
@@ -1663,12 +1685,12 @@ export class UnifiedTransactionService {
           // Reverse E-Zwich settlement balance (decrease)
           await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance - ${amount}, 
+            SET current_balance = current_balance - ${totalAmount}, 
                 updated_at = NOW()
             WHERE id = ${ezwichSettlementAccount[0].id}
           `;
           console.log(
-            `🔄 [${sourceModule.toUpperCase()}] Reversed E-Zwich settlement balance by ${amount}`
+            `🔄 [${sourceModule.toUpperCase()}] Reversed E-Zwich settlement balance by ${totalAmount}`
           );
 
           // Get cash in till account
@@ -1687,12 +1709,12 @@ export class UnifiedTransactionService {
           // Reverse cash in till balance (increase)
           await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance + ${amount}, 
+            SET current_balance = current_balance + ${totalAmount}, 
                 updated_at = NOW()
             WHERE id = ${cashTillAccount[0].id}
           `;
           console.log(
-            `🔄 [${sourceModule.toUpperCase()}] Reversed cash in till balance by ${amount}`
+            `🔄 [${sourceModule.toUpperCase()}] Reversed cash in till balance by ${totalAmount}`
           );
         } else {
           // Card issuance reversal: Cash in till decreases
@@ -1710,12 +1732,12 @@ export class UnifiedTransactionService {
             // Reverse cash in till balance (decrease)
             await sql`
               UPDATE float_accounts 
-              SET current_balance = current_balance - ${amount}, 
+              SET current_balance = current_balance - ${totalAmount}, 
                   updated_at = NOW()
               WHERE id = ${cashTillAccount[0].id}
             `;
             console.log(
-              `🔄 [${sourceModule.toUpperCase()}] Reversed cash in till balance by ${amount}`
+              `🔄 [${sourceModule.toUpperCase()}] Reversed cash in till balance by ${totalAmount}`
             );
           }
         }
@@ -1724,19 +1746,16 @@ export class UnifiedTransactionService {
       case "power":
         // Handle Power float account reversal
         if (transaction.float_account_id) {
+          const powerAmount = amount + commission;
           // Reverse power float balance (increase - since original transaction decreased it)
           await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance + ${
-              transaction.amount + (transaction.commission || 0)
-            }, 
+            SET current_balance = current_balance + ${powerAmount}, 
                 updated_at = NOW()
             WHERE id = ${transaction.float_account_id}
           `;
           console.log(
-            `🔄 [${sourceModule.toUpperCase()}] Reversed Power float balance by ${
-              transaction.amount + (transaction.commission || 0)
-            }`
+            `🔄 [${sourceModule.toUpperCase()}] Reversed Power float balance by ${powerAmount}`
           );
         }
 
@@ -1752,16 +1771,12 @@ export class UnifiedTransactionService {
         if (cashTillAccount.length > 0) {
           await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance - ${
-              transaction.amount + (transaction.commission || 0)
-            }, 
+            SET current_balance = current_balance - ${totalAmount}, 
                 updated_at = NOW()
             WHERE id = ${cashTillAccount[0].id}
           `;
           console.log(
-            `🔄 [${sourceModule.toUpperCase()}] Reversed cash in till balance by ${
-              transaction.amount + (transaction.commission || 0)
-            }`
+            `🔄 [${sourceModule.toUpperCase()}] Reversed cash in till balance by ${totalAmount}`
           );
         }
         break;
@@ -1769,25 +1784,23 @@ export class UnifiedTransactionService {
       case "jumia":
         // Handle Jumia float account reversal
         if (transaction.float_affected) {
+          const floatAmount = parseAmount(transaction.float_affected);
           await sql`
             UPDATE float_accounts 
-            SET current_balance = current_balance - ${transaction.float_affected}, 
+            SET current_balance = current_balance - ${floatAmount}, 
                 updated_at = NOW()
             WHERE id = ${transaction.float_account_id}
           `;
           console.log(
-            `🔄 [${sourceModule.toUpperCase()}] Reversed Jumia float balance by ${
-              transaction.float_affected
-            }`
+            `🔄 [${sourceModule.toUpperCase()}] Reversed Jumia float balance by ${floatAmount}`
           );
         }
         break;
 
       default:
-        console.log(
-          `🔄 [${sourceModule.toUpperCase()}] No specific float adjustment for service type: ${sourceModule}`
+        console.warn(
+          `🔄 [${sourceModule.toUpperCase()}] No float reversal logic for source module: ${sourceModule}`
         );
-        break;
     }
   }
 

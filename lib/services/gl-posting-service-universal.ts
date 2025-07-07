@@ -1,16 +1,28 @@
-import { sql } from "@/lib/db"
+import { sql } from "@/lib/db";
 
 export class GLPostingService {
   static async createMoMoGLEntries(transactionData: any) {
     try {
-      console.log("🔄 Creating MoMo GL entries for transaction:", transactionData.id)
+      console.log(
+        "🔄 Creating MoMo GL entries for transaction:",
+        transactionData.id
+      );
 
-      const { id: transactionId, type, amount, fee, branchId, userId, provider, customerName } = transactionData
+      const {
+        id: transactionId,
+        type,
+        amount,
+        fee,
+        branchId,
+        userId,
+        provider,
+        customerName,
+      } = transactionData;
 
       // Get GL account mappings
-      const glAccounts = await this.getGLAccountMappings()
+      const glAccounts = await this.getGLAccountMappings();
 
-      const entries = []
+      const entries = [];
 
       if (type === "cash-in") {
         // Cash In: Customer gives cash, we credit their mobile wallet
@@ -21,14 +33,14 @@ export class GLPostingService {
           debit_amount: amount,
           credit_amount: 0,
           description: `Cash in for ${customerName} via ${provider}`,
-        })
+        });
 
         entries.push({
           account_id: glAccounts.momoFloat,
           debit_amount: 0,
           credit_amount: amount,
           description: `Cash in for ${customerName} via ${provider}`,
-        })
+        });
       } else if (type === "cash-out") {
         // Cash Out: Customer withdraws cash from mobile wallet
         // Dr. MoMo Float (Liability)
@@ -38,14 +50,14 @@ export class GLPostingService {
           debit_amount: amount,
           credit_amount: 0,
           description: `Cash out for ${customerName} via ${provider}`,
-        })
+        });
 
         entries.push({
           account_id: glAccounts.cashInTill,
           debit_amount: 0,
           credit_amount: amount,
           description: `Cash out for ${customerName} via ${provider}`,
-        })
+        });
 
         // Record fee income if applicable
         if (fee > 0) {
@@ -54,14 +66,14 @@ export class GLPostingService {
             debit_amount: fee,
             credit_amount: 0,
             description: `Fee for cash out - ${customerName} via ${provider}`,
-          })
+          });
 
           entries.push({
             account_id: glAccounts.feeIncome,
             debit_amount: 0,
             credit_amount: fee,
             description: `Fee for cash out - ${customerName} via ${provider}`,
-          })
+          });
         }
       }
 
@@ -86,9 +98,9 @@ export class GLPostingService {
           ${userId},
           'posted'
         ) RETURNING id
-      `
+      `;
 
-      const journalEntryId = journalEntry[0].id
+      const journalEntryId = journalEntry[0].id;
 
       // Insert each GL entry line separately to avoid constraint issues
       for (const entry of entries) {
@@ -110,42 +122,45 @@ export class GLPostingService {
             CURRENT_DATE,
             ${branchId}
           )
-        `
+        `;
       }
 
-      console.log("✅ MoMo GL entries created successfully")
-      return { success: true, journalEntryId }
+      console.log("✅ MoMo GL entries created successfully");
+      return { success: true, journalEntryId };
     } catch (error) {
-      console.error("❌ Error creating MoMo GL entries:", error)
-      throw error
+      console.error("❌ Error creating MoMo GL entries:", error);
+      throw error;
     }
   }
 
   static async createEZwichGLEntries(data: {
-    transactionId: string
-    type: string
-    amount: number
-    fee: number
-    provider?: string
-    cardNumber?: string
-    customerName?: string
-    reference: string
-    processedBy: string
-    branchId: string
-    branchName: string
+    transactionId: string;
+    type: string;
+    amount: number;
+    fee: number;
+    provider?: string;
+    cardNumber?: string;
+    customerName?: string;
+    reference: string;
+    processedBy: string;
+    branchId: string;
+    branchName: string;
   }) {
     try {
-      console.log("🔄 [GL] Creating E-Zwich GL entries:", data)
+      console.log("🔄 [GL] Creating E-Zwich GL entries:", data);
 
       // Skip GL posting if amounts are zero or invalid
       if (data.amount <= 0 && data.fee <= 0) {
-        console.log("⚠️ [GL] Skipping GL posting - no valid amounts")
-        return { success: true, message: "No GL posting needed for zero amounts" }
+        console.log("⚠️ [GL] Skipping GL posting - no valid amounts");
+        return {
+          success: true,
+          message: "No GL posting needed for zero amounts",
+        };
       }
 
       // Generate proper UUID for GL transaction
-      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`
-      const glTransactionId = glTransactionIdResult[0].id
+      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
+      const glTransactionId = glTransactionIdResult[0].id;
 
       // Create GL transaction record with all required fields
       await sql`
@@ -168,7 +183,9 @@ export class GLPostingService {
           ${data.transactionId},
           ${data.type},
           ${data.reference},
-          ${`E-Zwich ${data.type} - ${data.customerName || data.cardNumber || "Unknown"}`},
+          ${`E-Zwich ${data.type} - ${
+            data.customerName || data.cardNumber || "Unknown"
+          }`},
           ${data.amount + data.fee},
           CURRENT_DATE,
           CURRENT_DATE,
@@ -188,15 +205,27 @@ export class GLPostingService {
             reference: data.reference,
           })}
         )
-      `
+      `;
 
       // Get or create GL accounts based on transaction type
-      let cashAccount, revenueAccount, settlementAccount
+      let cashAccount, revenueAccount, settlementAccount;
 
       if (data.type === "withdrawal") {
-        cashAccount = await this.ensureGLAccount("1002", "Cash - E-Zwich Float", "Asset")
-        revenueAccount = await this.ensureGLAccount("4002", "E-Zwich Fee Revenue", "Revenue")
-        settlementAccount = await this.ensureGLAccount("2002", "E-Zwich Settlement Payable", "Liability")
+        cashAccount = await this.ensureGLAccount(
+          "1002",
+          "Cash - E-Zwich Float",
+          "Asset"
+        );
+        revenueAccount = await this.ensureGLAccount(
+          "4002",
+          "E-Zwich Fee Revenue",
+          "Revenue"
+        );
+        settlementAccount = await this.ensureGLAccount(
+          "2002",
+          "E-Zwich Settlement Payable",
+          "Liability"
+        );
 
         // For withdrawals: Customer withdraws from card, we give cash
         // Credit: Cash (amount + fee paid out)
@@ -215,7 +244,7 @@ export class GLPostingService {
               ${data.amount + data.fee},
               ${`E-Zwich withdrawal - Cash paid out`}
             )
-          `
+          `;
 
           await sql`
             INSERT INTO gl_journal_entries (
@@ -229,7 +258,7 @@ export class GLPostingService {
               0,
               ${`E-Zwich withdrawal - Settlement receivable`}
             )
-          `
+          `;
 
           if (data.fee > 0) {
             await sql`
@@ -244,12 +273,20 @@ export class GLPostingService {
                 ${data.fee},
                 ${`E-Zwich withdrawal - Fee revenue`}
               )
-            `
+            `;
           }
         }
       } else if (data.type === "card_issuance") {
-        cashAccount = await this.ensureGLAccount("1002", "Cash - E-Zwich Float", "Asset")
-        revenueAccount = await this.ensureGLAccount("4003", "E-Zwich Card Issuance Revenue", "Revenue")
+        cashAccount = await this.ensureGLAccount(
+          "1002",
+          "Cash - E-Zwich Float",
+          "Asset"
+        );
+        revenueAccount = await this.ensureGLAccount(
+          "4003",
+          "E-Zwich Card Issuance Revenue",
+          "Revenue"
+        );
 
         // For card issuance: Customer pays for card
         // Debit: Cash (amount received)
@@ -267,7 +304,7 @@ export class GLPostingService {
               0,
               ${`E-Zwich card issuance - Cash received`}
             )
-          `
+          `;
 
           await sql`
             INSERT INTO gl_journal_entries (
@@ -281,15 +318,18 @@ export class GLPostingService {
               ${data.amount},
               ${`E-Zwich card issuance - Revenue`}
             )
-          `
+          `;
         }
       }
 
-      console.log("✅ [GL] E-Zwich GL entries created successfully")
-      return { success: true }
+      console.log("✅ [GL] E-Zwich GL entries created successfully");
+      return { success: true };
     } catch (error) {
-      console.error("❌ [GL] Error creating E-Zwich GL entries:", error)
-      return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+      console.error("❌ [GL] Error creating E-Zwich GL entries:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   }
 
@@ -297,10 +337,10 @@ export class GLPostingService {
     // Check if account exists
     const existing = await sql`
       SELECT * FROM gl_accounts WHERE code = ${code}
-    `
+    `;
 
     if (existing.length > 0) {
-      return existing[0]
+      return existing[0];
     }
 
     // Create new account
@@ -316,9 +356,9 @@ export class GLPostingService {
         CURRENT_TIMESTAMP
       )
       RETURNING *
-    `
+    `;
 
-    return newAccount[0]
+    return newAccount[0];
   }
 
   static async getGLAccountMappings() {
@@ -328,25 +368,25 @@ export class GLPostingService {
         SELECT account_code, id, name
         FROM gl_accounts 
         WHERE account_code IN ('1001', '2001', '4001', '1002')
-      `
+      `;
 
-      const accountMap: any = {}
+      const accountMap: any = {};
       accounts.forEach((account: any) => {
         switch (account.account_code) {
           case "1001":
-            accountMap.cashInTill = account.id
-            break
+            accountMap.cashInTill = account.id;
+            break;
           case "2001":
-            accountMap.momoFloat = account.id
-            break
+            accountMap.momoFloat = account.id;
+            break;
           case "4001":
-            accountMap.feeIncome = account.id
-            break
+            accountMap.feeIncome = account.id;
+            break;
           case "1002":
-            accountMap.agencyFloat = account.id
-            break
+            accountMap.agencyFloat = account.id;
+            break;
         }
-      })
+      });
 
       // Create missing accounts if needed
       if (!accountMap.cashInTill) {
@@ -354,8 +394,8 @@ export class GLPostingService {
           INSERT INTO gl_accounts (account_code, name, account_type, parent_id, is_active)
           VALUES ('1001', 'Cash in Till', 'asset', NULL, true)
           RETURNING id
-        `
-        accountMap.cashInTill = result[0].id
+        `;
+        accountMap.cashInTill = result[0].id;
       }
 
       if (!accountMap.momoFloat) {
@@ -363,8 +403,8 @@ export class GLPostingService {
           INSERT INTO gl_accounts (account_code, name, account_type, parent_id, is_active)
           VALUES ('2001', 'MoMo Float', 'liability', NULL, true)
           RETURNING id
-        `
-        accountMap.momoFloat = result[0].id
+        `;
+        accountMap.momoFloat = result[0].id;
       }
 
       if (!accountMap.feeIncome) {
@@ -372,8 +412,8 @@ export class GLPostingService {
           INSERT INTO gl_accounts (account_code, name, account_type, parent_id, is_active)
           VALUES ('4001', 'Fee Income', 'revenue', NULL, true)
           RETURNING id
-        `
-        accountMap.feeIncome = result[0].id
+        `;
+        accountMap.feeIncome = result[0].id;
       }
 
       if (!accountMap.agencyFloat) {
@@ -381,17 +421,65 @@ export class GLPostingService {
           INSERT INTO gl_accounts (account_code, name, account_type, parent_id, is_active)
           VALUES ('1002', 'Agency Banking Float', 'asset', NULL, true)
           RETURNING id
-        `
-        accountMap.agencyFloat = result[0].id
+        `;
+        accountMap.agencyFloat = result[0].id;
       }
 
-      return accountMap
+      return accountMap;
     } catch (error) {
-      console.error("Error getting GL account mappings:", error)
-      throw error
+      console.error("Error getting GL account mappings:", error);
+      throw error;
     }
+  }
+
+  // Add this function to handle Jumia pod_collection reversal GL entries
+  static async createJumiaPODReversalGLEntries(
+    originalTransaction: any,
+    reversalTransactionId: string
+  ) {
+    // This function assumes the caller has already checked that the transaction is not already reversed
+    // and that reversal is allowed.
+    // Reverse the original GL: Debit Jumia Receivables, Credit payment method account
+    const { amount, tracking_id, customer_name, payment_method, branch_id } =
+      originalTransaction;
+
+    // Lookup GL account IDs for Jumia Receivables and the payment method
+    // (You may need to adjust this logic to match your actual account lookup)
+    const jumiaReceivables =
+      await sql`SELECT id FROM gl_accounts WHERE code = '1200-001' LIMIT 1`;
+    let paymentAccount;
+    if (payment_method === "cash") {
+      paymentAccount =
+        await sql`SELECT id FROM gl_accounts WHERE code = '1010-001' LIMIT 1`;
+    } else if (payment_method === "momo") {
+      paymentAccount =
+        await sql`SELECT id FROM gl_accounts WHERE code = '2001' LIMIT 1`;
+    } else if (payment_method === "agency-banking") {
+      paymentAccount =
+        await sql`SELECT id FROM gl_accounts WHERE code = '1002' LIMIT 1`;
+    } else {
+      throw new Error("Unknown payment method for Jumia POD reversal");
+    }
+
+    if (!jumiaReceivables[0]?.id || !paymentAccount[0]?.id) {
+      throw new Error("Missing GL account for Jumia POD reversal");
+    }
+
+    // Insert reversal GL entries
+    await sql`
+      INSERT INTO gl_journal_entries (id, transaction_id, account_id, debit, credit, description, branch_id)
+      VALUES (gen_random_uuid(), ${reversalTransactionId}, ${
+      jumiaReceivables[0].id
+    }, ${amount}, 0, ${`Jumia POD reversal - ${tracking_id} - ${customer_name}`}, ${branch_id})
+    `;
+    await sql`
+      INSERT INTO gl_journal_entries (id, transaction_id, account_id, debit, credit, description, branch_id)
+      VALUES (gen_random_uuid(), ${reversalTransactionId}, ${
+      paymentAccount[0].id
+    }, 0, ${amount}, ${`Jumia POD reversal - ${tracking_id} - ${customer_name}`}, ${branch_id})
+    `;
   }
 }
 
 // Export as UniversalGLPostingService for backward compatibility
-export const UniversalGLPostingService = GLPostingService
+export const UniversalGLPostingService = GLPostingService;

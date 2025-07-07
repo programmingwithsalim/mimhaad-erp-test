@@ -187,14 +187,14 @@ export async function POST(request: Request) {
       `;
 
     // 5. Update float and cash till balances
-    if (floatAffected !== 0) {
+      if (floatAffected !== 0) {
       await sql`
             UPDATE float_accounts 
         SET current_balance = current_balance + ${floatAffected}, updated_at = NOW()
         WHERE id = ${partnerBank.id}
       `;
     }
-    if (cashTillAffected !== 0) {
+      if (cashTillAffected !== 0) {
       await sql`
             UPDATE float_accounts 
         SET current_balance = current_balance + ${cashTillAffected}, updated_at = NOW()
@@ -209,21 +209,21 @@ export async function POST(request: Request) {
       transactionType: type,
       amount,
       fee,
-      customerName: customer_name,
+                customerName: customer_name,
       reference: reference || `AGENCY-${Date.now()}`,
       processedBy: user.id,
-      branchId: user.branchId,
+          branchId: user.branchId,
       branchName: user.branchName || "",
-      metadata: {
+          metadata: {
         partnerBank: partnerBank.account_name || partnerBank.provider || "",
         partnerBankCode: partnerBank.account_number || "",
-        customerName: customer_name,
-        accountNumber: account_number,
+            customerName: customer_name,
+            accountNumber: account_number,
         amount,
         fee,
-        reference: reference || `AGENCY-${Date.now()}`,
-      },
-    });
+            reference: reference || `AGENCY-${Date.now()}`,
+          },
+        });
 
     // 7. Return response
     return NextResponse.json({
@@ -281,7 +281,7 @@ export async function GET(request: NextRequest) {
         )
       `;
     } catch (tableError) {
-      console.error(
+        console.error(
         "Error creating agency_banking_transactions table:",
         tableError
       );

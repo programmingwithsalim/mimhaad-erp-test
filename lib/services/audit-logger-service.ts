@@ -70,6 +70,10 @@ async function getUserFullName(userId: string): Promise<string> {
       const { first_name, last_name, email } = users[0]
       if (first_name && last_name) {
         return `${first_name} ${last_name}`
+      } else if (first_name) {
+        return first_name
+      } else if (last_name) {
+        return last_name
       } else if (email) {
         return email
       }

@@ -49,6 +49,7 @@ import {
   Trash2,
   Printer,
   Eye,
+  AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -108,7 +109,7 @@ export default function JumiaPage() {
   const [settlementForm, setSettlementForm] = useState({
     amount: "",
     reference: "",
-    float_account_id: "",
+    float_account_id: "none",
     notes: "",
   });
 
@@ -168,12 +169,9 @@ export default function JumiaPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success && Array.isArray(data.accounts)) {
-          // Filter for active accounts that can be used for settlements
-          const activeAccounts = data.accounts.filter(
-            (account: any) =>
-              account.is_active && account.account_type !== "cash-in-till"
+          setFloatAccounts(
+            data.accounts.filter((account: any) => account.is_active)
           );
-          setFloatAccounts(activeAccounts);
         } else {
           setFloatAccounts([]);
         }
@@ -280,32 +278,35 @@ export default function JumiaPage() {
       return;
     }
 
+    if (!podForm.float_account_id) {
+      toast({
+        title: "Missing Float Account",
+        description: "Please select a float account for payment",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const response = await fetch("/api/transactions/unified", {
+      const response = await fetch("/api/jumia/transactions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          serviceType: "jumia",
-          transactionType: "pod_payment",
+          transaction_type: "pod_collection",
+          tracking_id: podForm.tracking_id,
           amount: Number(podForm.amount),
-          fee: 0, // No fee for POD payment
-          customerName: podForm.customer_name,
-          phoneNumber: podForm.customer_phone,
-          provider: "Jumia",
-          reference: podForm.tracking_id,
+          customer_name: podForm.customer_name,
+          customer_phone: podForm.customer_phone,
+          delivery_status: podForm.delivery_status,
+          payment_method: podForm.payment_method,
+          float_account_id: podForm.float_account_id,
           notes: podForm.notes,
-          branchId: user.branchId,
-          userId: user.id,
-          processedBy: user.name || user.username,
-          metadata: {
-            delivery_status: podForm.delivery_status,
-            payment_method: podForm.payment_method,
-            float_account_id: podForm.float_account_id,
-          },
+          branch_id: user.branchId,
+          user_id: user.id,
         }),
       });
 
@@ -314,11 +315,9 @@ export default function JumiaPage() {
       if (result.success) {
         toast({
           title: "Payment Collection Recorded",
-          description:
-            result.message ||
-            `Payment of ${formatCurrency(
-              Number(podForm.amount)
-            )} collected for tracking ID ${podForm.tracking_id}.`,
+          description: `Payment of ${formatCurrency(
+            Number(podForm.amount)
+          )} collected for tracking ID ${podForm.tracking_id}.`,
         });
 
         // Reset form
@@ -362,26 +361,52 @@ export default function JumiaPage() {
       });
       return;
     }
-
+    if (!settlementForm.amount || !settlementForm.reference) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (
+      !settlementForm.float_account_id ||
+      settlementForm.float_account_id === "none"
+    ) {
+      toast({
+        title: "Missing Float Account",
+        description: "Please select a float account for settlement",
+        variant: "destructive",
+      });
+      return;
+    }
+    const selectedFloat = floatAccounts.find(
+      (a) => a.id === settlementForm.float_account_id
+    );
+    if (!selectedFloat) {
+      toast({
+        title: "Invalid Float Account",
+        description: "Selected float account is invalid.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setSubmitting(true);
     try {
-      setSubmitting(true);
-
       const response = await fetch("/api/jumia/transactions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           transaction_type: "settlement",
           ...settlementForm,
           amount: Number.parseFloat(settlementForm.amount),
           branch_id: user.branchId,
           user_id: user.id,
+          paymentAccountCode: selectedFloat.gl_account_code,
+          paymentAccountName: selectedFloat.provider,
         }),
       });
-
       const result = await response.json();
-
       if (result.success) {
         toast({
           title: "Settlement Processed",
@@ -392,10 +417,9 @@ export default function JumiaPage() {
         setSettlementForm({
           amount: "",
           reference: "",
-          float_account_id: "",
+          float_account_id: "none",
           notes: "",
         });
-        // Refresh data
         loadTransactions();
         loadFloatAccounts();
         refreshStatistics();
@@ -422,7 +446,7 @@ export default function JumiaPage() {
     const headers = [
       "Date",
       "Type",
-      "Tracking ID",
+      "Tracking ID/Reference",
       "Customer",
       "Phone",
       "Amount",
@@ -435,7 +459,9 @@ export default function JumiaPage() {
         "yyyy-MM-dd HH:mm:ss"
       ),
       transaction.transaction_type?.replace("_", " ") || "",
-      transaction.tracking_id || "",
+      transaction.transaction_type === "settlement"
+        ? transaction.settlement_reference || transaction.tracking_id || ""
+        : transaction.tracking_id || "",
       transaction.customer_name || "",
       transaction.customer_phone || "",
       transaction.amount
@@ -656,6 +682,32 @@ export default function JumiaPage() {
     printWindow.close();
   };
 
+  const getStatusText = (status: string) => {
+    if (!status) return "-";
+    const map: Record<string, string> = {
+      active: "Active",
+      completed: "Completed",
+      reversed: "Reversed",
+      deleted: "Deleted",
+      pending: "Pending",
+      delivered: "Delivered",
+      returned: "Returned",
+      partial: "Partial Delivery",
+      unknown: "Unknown",
+    };
+    return (
+      map[status.toLowerCase()] ||
+      status.charAt(0).toUpperCase() + status.slice(1)
+    );
+  };
+
+  const shouldShowPaymentMethod = (transaction: any) => {
+    return (
+      transaction.transaction_type === "pod_collection" ||
+      transaction.transaction_type === "settlement"
+    );
+  };
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
@@ -709,7 +761,7 @@ export default function JumiaPage() {
       )}
 
       {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -747,32 +799,59 @@ export default function JumiaPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Today's Commission
+              Total Collections
             </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(statistics.todayCommission)}
+              {formatCurrency(statistics.totalCommission || 0)}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(statistics.totalCommission)}
-            </p>
+            <p className="text-xs text-muted-foreground">All POD collections</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Unsettled Amount
+              Total Settlements
             </CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(statistics.floatBalance)}
+              {formatCurrency(
+                statistics.summary?.settlementAmount ||
+                  statistics.total_settlement_amount ||
+                  0
+              )}
             </div>
-            <p className="text-xs text-muted-foreground">Pending settlement</p>
+            <p className="text-xs text-muted-foreground">
+              Amount settled to Jumia
+            </p>
+          </CardContent>
+        </Card>
+
+        {/* Jumia Liability Card (was: Float Balance) */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Jumia Liability
+            </CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(
+                statistics.liability ??
+                  statistics.float_balance ??
+                  statistics.floatBalance ??
+                  0
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              True Jumia liability (POD collections minus settlements)
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -1064,12 +1143,31 @@ export default function JumiaPage() {
                               </SelectTrigger>
                               <SelectContent>
                                 {floatAccounts
-                                  .filter((account) =>
-                                    podForm.payment_method === ""
-                                      ? true
-                                      : account.account_type ===
-                                        podForm.payment_method
-                                  )
+                                  .filter((account) => {
+                                    if (podForm.payment_method === "")
+                                      return true;
+                                    if (podForm.payment_method === "cash") {
+                                      return (
+                                        account.account_type === "cash-in-till"
+                                      );
+                                    }
+                                    if (podForm.payment_method === "momo") {
+                                      return account.account_type === "momo";
+                                    }
+                                    if (
+                                      podForm.payment_method ===
+                                      "agency-banking"
+                                    ) {
+                                      return (
+                                        account.account_type ===
+                                        "agency-banking"
+                                      );
+                                    }
+                                    if (podForm.payment_method === "jumia") {
+                                      return account.account_type === "jumia";
+                                    }
+                                    return false;
+                                  })
                                   .map((account) => (
                                     <SelectItem
                                       key={account.id}
@@ -1171,7 +1269,13 @@ export default function JumiaPage() {
                               Float Account
                             </Label>
                             <Select
-                              value={settlementForm.float_account_id}
+                              value={
+                                floatAccounts.length === 0
+                                  ? "none"
+                                  : settlementForm.float_account_id ||
+                                    floatAccounts[0]?.id ||
+                                    "none"
+                              }
                               onValueChange={(value) => {
                                 setSettlementForm({
                                   ...settlementForm,
@@ -1182,7 +1286,9 @@ export default function JumiaPage() {
                                   null;
                                 setSelectedSettlementFloat(selected);
                               }}
-                              disabled={loadingFloats}
+                              disabled={
+                                loadingFloats || floatAccounts.length === 0
+                              }
                             >
                               <SelectTrigger>
                                 <SelectValue
@@ -1194,12 +1300,15 @@ export default function JumiaPage() {
                                 />
                               </SelectTrigger>
                               <SelectContent>
-                                {floatAccounts.length === 0 ? (
-                                  <SelectItem value="none" disabled>
-                                    No float accounts found
-                                  </SelectItem>
-                                ) : (
-                                  floatAccounts.map((account) => (
+                                {floatAccounts
+                                  .filter(
+                                    (account) =>
+                                      account.account_type !== "power-float" &&
+                                      account.account_type !==
+                                        "ezwich-settlement" &&
+                                      account.account_type !== "jumia"
+                                  )
+                                  .map((account) => (
                                     <SelectItem
                                       key={account.id}
                                       value={account.id}
@@ -1211,8 +1320,7 @@ export default function JumiaPage() {
                                       ).toFixed(2)}
                                       )
                                     </SelectItem>
-                                  ))
-                                )}
+                                  ))}
                               </SelectContent>
                             </Select>
                             {/* Dynamic balance display */}
@@ -1327,7 +1435,7 @@ export default function JumiaPage() {
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead>Tracking ID</TableHead>
+                      <TableHead>Tracking ID/Reference</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Phone</TableHead>
                       <TableHead>Amount</TableHead>
@@ -1349,7 +1457,13 @@ export default function JumiaPage() {
                           {transaction.transaction_type?.replace("_", " ") ||
                             "-"}
                         </TableCell>
-                        <TableCell>{transaction.tracking_id || "-"}</TableCell>
+                        <TableCell>
+                          {transaction.transaction_type === "settlement"
+                            ? transaction.settlement_reference ||
+                              transaction.tracking_id ||
+                              "-"
+                            : transaction.tracking_id || "-"}
+                        </TableCell>
                         <TableCell>
                           {transaction.customer_name || "-"}
                         </TableCell>
@@ -1360,12 +1474,15 @@ export default function JumiaPage() {
                           {formatCurrency(transaction.amount || 0)}
                         </TableCell>
                         <TableCell>
-                          {getStatusBadge(
-                            transaction.delivery_status || transaction.status
+                          {getStatusText(
+                            transaction.status || transaction.delivery_status
                           )}
                         </TableCell>
                         <TableCell className="capitalize">
-                          {transaction.payment_method?.replace("_", " ") || "-"}
+                          {shouldShowPaymentMethod(transaction)
+                            ? transaction.payment_method?.replace("_", " ") ||
+                              "-"
+                            : "-"}
                         </TableCell>
                         <TableCell>
                           <TransactionActions
