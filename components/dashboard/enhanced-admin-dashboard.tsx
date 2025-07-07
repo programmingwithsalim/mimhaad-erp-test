@@ -313,12 +313,15 @@ export function EnhancedAdminDashboard({
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatNumber(branchStats?.length || 0)}
+              {formatNumber(
+                (Array.isArray(branchStats) ? branchStats : []).length || 0
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
               {formatNumber(
-                branchStats?.filter((b: any) => b.status === "active")
-                  ?.length || 0
+                (Array.isArray(branchStats) ? branchStats : []).filter(
+                  (b: any) => b.status === "active"
+                )?.length || 0
               )}{" "}
               active branches
             </p>
