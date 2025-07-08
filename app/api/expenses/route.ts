@@ -6,8 +6,7 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    // Get current user for authentication and branch filtering
-    const currentUser = getCurrentUser(request);
+    const currentUser = await getCurrentUser(request);
     console.log("Current user for expenses API:", currentUser);
 
     const { searchParams } = new URL(request.url);
@@ -168,8 +167,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    // Get current user for authentication and branch validation
-    const currentUser = getCurrentUser(request);
+    const currentUser = await getCurrentUser(request);
     console.log("Current user for expense creation:", currentUser);
 
     const body = await request.json();

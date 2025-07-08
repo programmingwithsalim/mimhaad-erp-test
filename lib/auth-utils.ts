@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import jwt from "jsonwebtoken";
+import { getDatabaseSession } from "@/lib/database-session-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -14,7 +14,9 @@ export interface CurrentUser {
   branchName: string;
 }
 
-export function getCurrentUser(request: NextRequest): CurrentUser {
+export async function getCurrentUser(
+  request: NextRequest
+): Promise<CurrentUser> {
   try {
     // Check if request is valid
     if (!request || typeof request !== "object") {
@@ -68,102 +70,42 @@ export function getCurrentUser(request: NextRequest): CurrentUser {
       };
     }
 
-    // Try to get from cookies/session
-    const sessionCookie = request.cookies?.get("session")?.value;
-    if (sessionCookie) {
+    // Try to get from database session
+    const sessionToken = request.cookies?.get("session_token")?.value;
+    if (sessionToken) {
       try {
-        // Check if it's a JWT token (starts with eyJ)
-        if (sessionCookie.startsWith("eyJ")) {
+        console.log(
+          "🔍 [AUTH-UTILS] Found session token, validating with database..."
+        );
+
+        const session = await getDatabaseSession(request);
+
+        if (session && session.user) {
           console.log(
-            "Found JWT token in session cookie, attempting to decode..."
+            "✅ [AUTH-UTILS] Valid database session found for user:",
+            session.user.email
           );
 
-          try {
-            // Decode JWT token (without verification for now)
-            const decoded = jwt.decode(sessionCookie) as any;
-
-            if (
-              decoded &&
-              decoded.user &&
-              decoded.user.id &&
-              uuidRegex.test(decoded.user.id)
-            ) {
-              console.log("Successfully decoded JWT token:", decoded.user);
-              return {
-                id: decoded.user.id,
-                name: decoded.user.name || decoded.user.username,
-                username: decoded.user.username,
-                email: decoded.user.email,
-                role: decoded.user.role,
-                branchId: decoded.user.branchId,
-                branchName: decoded.user.branchName || "Unknown Branch",
-              };
-            } else {
-              console.log("JWT token decoded but no valid user data found");
-            }
-          } catch (jwtError) {
-            console.error("Error decoding JWT token:", jwtError);
-          }
-        } else {
-          // Try to parse as JSON (for non-JWT session data)
-          const sessionData = JSON.parse(sessionCookie);
-          if (
-            sessionData.user &&
-            sessionData.user.id !== "System" &&
-            uuidRegex.test(sessionData.user.id)
-          ) {
-            console.log(
-              "Got valid user from session cookie:",
-              sessionData.user
-            );
-            return {
-              id: sessionData.user.id,
-              name: sessionData.user.name || sessionData.user.username,
-              username: sessionData.user.username,
-              email: sessionData.user.email,
-              role: sessionData.user.role,
-              branchId: sessionData.user.branchId,
-              branchName: sessionData.user.branchName || "Unknown Branch",
-            };
-          }
-        }
-      } catch (error) {
-        console.error("Error parsing session cookie:", error);
-      }
-    }
-
-    // Try to get from authorization header (JWT token)
-    const authHeader = request.headers?.get("authorization");
-    if (authHeader && authHeader.startsWith("Bearer ")) {
-      try {
-        const token = authHeader.substring(7);
-        console.log("Found Bearer token, attempting to decode...");
-
-        const decoded = jwt.decode(token) as any;
-
-        if (
-          decoded &&
-          decoded.user &&
-          decoded.user.id &&
-          uuidRegex.test(decoded.user.id)
-        ) {
-          console.log("Successfully decoded Bearer token:", decoded.user);
           return {
-            id: decoded.user.id,
-            name: decoded.user.name || decoded.user.username,
-            username: decoded.user.username,
-            email: decoded.user.email,
-            role: decoded.user.role,
-            branchId: decoded.user.branchId,
-            branchName: decoded.user.branchName || "Unknown Branch",
+            id: session.user.id,
+            name: `${session.user.firstName} ${session.user.lastName}`,
+            username: session.user.email,
+            email: session.user.email,
+            role: session.user.role,
+            branchId: session.user.branchId || "635844ab-029a-43f8-8523-d7882915266a",
+            branchName: session.user.branchName || "Unknown Branch",
           };
+        } else {
+          console.log("❌ [AUTH-UTILS] Invalid or expired session token");
         }
       } catch (error) {
-        console.error("Error processing auth token:", error);
+        console.error("Error validating session token:", error);
       }
+    } else {
+      console.log("🔍 [AUTH-UTILS] No session token found in cookies");
     }
 
-    // Return a fallback user instead of throwing error for expenses route
+    // Return a fallback user instead of throwing error
     console.warn("No valid user authentication found, using fallback");
     return {
       id: "00000000-0000-0000-0000-000000000000", // Use a valid UUID format

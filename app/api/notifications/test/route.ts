@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server"
 import { NotificationService } from "@/lib/services/notification-service"
-import { getSession } from "@/lib/auth-service"
+import { getSession } from "@/lib/auth-service-db"
 
 export async function POST(request: Request) {
   try {
-    const session = await getSession()
+    const session = await getSession(request)
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }

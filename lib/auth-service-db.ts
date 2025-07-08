@@ -1,5 +1,5 @@
-import bcrypt from "bcryptjs"
-import { neon } from "@neondatabase/serverless"
+import bcrypt from "bcryptjs";
+import { neon } from "@neondatabase/serverless";
 import {
   createDatabaseSession,
   getDatabaseSession,
@@ -7,10 +7,10 @@ import {
   updateSessionActivity,
   type SessionUser,
   type DatabaseSession,
-} from "./database-session-service"
-import type { NextRequest } from "next/server"
+} from "./database-session-service";
+import type { NextRequest } from "next/server";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 // Get user by email with branch information
 export async function getUserByEmail(email: string) {
@@ -31,18 +31,17 @@ export async function getUserByEmail(email: string) {
         u.updated_at as "updatedAt", 
         u.avatar,
         b.name as "primaryBranchName",
-        b.type as "branchType",
         b.address as "branchAddress"
       FROM users u
       LEFT JOIN branches b ON u.primary_branch_id = b.id
       WHERE u.email = ${email} AND u.status = 'active'
       LIMIT 1
-    `
+    `;
 
-    return users[0] || null
+    return users[0] || null;
   } catch (error) {
-    console.error("Error getting user by email:", error)
-    throw error
+    console.error("Error getting user by email:", error);
+    throw error;
   }
 }
 
@@ -64,44 +63,46 @@ export async function getUserById(userId: string) {
         u.updated_at as "updatedAt", 
         u.avatar,
         b.name as "primaryBranchName",
-        b.type as "branchType",
         b.address as "branchAddress"
       FROM users u
       LEFT JOIN branches b ON u.primary_branch_id = b.id
       WHERE u.id = ${userId} AND u.status = 'active'
       LIMIT 1
-    `
+    `;
 
-    return users[0] || null
+    return users[0] || null;
   } catch (error) {
-    console.error("Error getting user by ID:", error)
-    throw error
+    console.error("Error getting user by ID:", error);
+    throw error;
   }
 }
 
 // Verify password
-export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-  return await bcrypt.compare(password, hashedPassword)
+export async function verifyPassword(
+  password: string,
+  hashedPassword: string
+): Promise<boolean> {
+  return await bcrypt.compare(password, hashedPassword);
 }
 
 // Authenticate user and create session
 export async function authenticate(
   email: string,
   password: string,
-  request?: NextRequest,
+  request?: NextRequest
 ): Promise<SessionUser | null> {
   try {
-    console.log("Authenticating user:", email)
-    const user = await getUserByEmail(email)
+    console.log("Authenticating user:", email);
+    const user = await getUserByEmail(email);
     if (!user) {
-      console.log("User not found")
-      return null
+      console.log("User not found");
+      return null;
     }
 
-    const isValidPassword = await verifyPassword(password, user.passwordHash)
+    const isValidPassword = await verifyPassword(password, user.passwordHash);
     if (!isValidPassword) {
-      console.log("Invalid password")
-      return null
+      console.log("Invalid password");
+      return null;
     }
 
     const sessionUser: SessionUser = {
@@ -116,26 +117,28 @@ export async function authenticate(
       branchType: user.branchType,
       phone: user.phone,
       avatar: user.avatar,
-    }
+    };
 
     // Create database session
-    await createDatabaseSession(sessionUser, request)
+    await createDatabaseSession(sessionUser, request);
 
-    console.log("Authentication successful")
-    return sessionUser
+    console.log("Authentication successful");
+    return sessionUser;
   } catch (error) {
-    console.error("Authentication error:", error)
-    return null
+    console.error("Authentication error:", error);
+    return null;
   }
 }
 
 // Get current session with full user data
-export async function getSession(request?: NextRequest): Promise<DatabaseSession | null> {
-  const session = await getDatabaseSession(request)
+export async function getSession(
+  request?: NextRequest
+): Promise<DatabaseSession | null> {
+  const session = await getDatabaseSession(request);
 
   if (session && session.userId) {
     // Get fresh user data from database
-    const userData = await getUserById(session.userId)
+    const userData = await getUserById(session.userId);
     if (userData) {
       // Update session with fresh user data
       session.user = {
@@ -150,20 +153,20 @@ export async function getSession(request?: NextRequest): Promise<DatabaseSession
         branchType: userData.branchType,
         phone: userData.phone,
         avatar: userData.avatar,
-      }
+      };
     }
 
     // Update session activity
-    await updateSessionActivity(session.sessionToken)
+    await updateSessionActivity(session.sessionToken);
   }
 
-  return session
+  return session;
 }
 
 // Logout and delete session
 export async function logout(): Promise<void> {
-  await deleteDatabaseSession()
+  await deleteDatabaseSession();
 }
 
 // Export types
-export type { SessionUser, DatabaseSession }
+export type { SessionUser, DatabaseSession };

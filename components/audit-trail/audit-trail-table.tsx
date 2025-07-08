@@ -106,6 +106,9 @@ export function AuditLogTable({
     };
   };
 
+  // Ensure logs is always an array
+  const safeLogs = Array.isArray(logs) ? logs : [];
+
   if (loading) {
     return (
       <div className="space-y-4">
@@ -122,7 +125,7 @@ export function AuditLogTable({
     );
   }
 
-  if (logs.length === 0) {
+  if (safeLogs.length === 0) {
     return (
       <div className="text-center py-12">
         <AlertCircle className="mx-auto h-12 w-12 text-muted-foreground" />
@@ -151,7 +154,7 @@ export function AuditLogTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {logs.map((log) => {
+            {safeLogs.map((log) => {
               const { date, time } = formatTimestamp(log.timestamp);
               return (
                 <TableRow key={log.id} className="hover:bg-muted/50 group">

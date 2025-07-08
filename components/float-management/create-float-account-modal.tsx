@@ -372,7 +372,7 @@ export function CreateFloatAccountModal({
                               </SelectItem>
                             ))
                           ) : (
-                            <SelectItem value="" disabled>
+                            <SelectItem value="no-branches" disabled>
                               No branches available
                             </SelectItem>
                           )}

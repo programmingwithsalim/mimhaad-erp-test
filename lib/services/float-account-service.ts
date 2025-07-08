@@ -11,11 +11,17 @@ export interface FloatAccount {
     | "power"
     | "jumia";
   provider?: string; // For power (NEDCo, ECG), momo (MTN, Telecel, etc.)
-  account_name: string;
-  balance: number;
+  account_number: string;
+  current_balance: number;
+  min_threshold: number;
+  max_threshold: number;
   is_active: boolean;
+  created_by: string;
   created_at: string;
   updated_at: string;
+  last_updated: string;
+  isezwichpartner: boolean;
+  name: string;
 }
 
 export class FloatAccountService {
@@ -32,14 +38,14 @@ export class FloatAccountService {
       | "power"
       | "jumia";
     provider?: string;
-    account_name: string;
+    account_number: string;
     initial_balance?: number;
   }): Promise<FloatAccount> {
     const {
       branch_id,
       account_type,
       provider,
-      account_name,
+      account_number,
       initial_balance = 0,
     } = data;
 
@@ -80,21 +86,31 @@ export class FloatAccountService {
         branch_id,
         account_type,
         provider,
-        account_name,
-        balance,
+        account_number,
+        current_balance,
+        min_threshold,
+        max_threshold,
         is_active,
+        created_by,
         created_at,
-        updated_at
+        updated_at,
+        last_updated,
+        isezwichpartner
       ) VALUES (
         gen_random_uuid(),
         ${branch_id},
         ${account_type},
         ${provider || null},
-        ${account_name},
+        ${account_number},
         ${initial_balance},
+        ${0},
+        ${0},
         true,
+        ${"system"},
         NOW(),
-        NOW()
+        NOW(),
+        NOW(),
+        false
       ) RETURNING *
     `;
 
@@ -108,11 +124,14 @@ export class FloatAccountService {
     // Automatically create GL mappings for this float account
     await this.createGLMappingsForFloatAccount(newFloatAccount, glAccount.id);
 
-    console.log(`✅ Created float account: ${account_name} with GL mappings`);
+    // After creating the float account, add:
+    await this.createAllGLAccountsAndMappingsForFloatAccount(newFloatAccount);
+
+    console.log(`✅ Created float account: ${account_number} with GL mappings`);
 
     return {
       ...newFloatAccount,
-      balance: Number(newFloatAccount.balance),
+      current_balance: Number(newFloatAccount.current_balance),
     };
   }
 
@@ -123,7 +142,7 @@ export class FloatAccountService {
     floatAccount: any
   ): Promise<any> {
     const glAccountCode = this.generateGLAccountCode(floatAccount);
-    const glAccountName = `${floatAccount.account_name} GL Account`;
+    const glAccountName = `${floatAccount.name} GL Account`;
 
     const glAccount = await sql`
       INSERT INTO gl_accounts (
@@ -342,7 +361,7 @@ export class FloatAccountService {
 
     return {
       ...result.rows[0],
-      balance: Number(result.rows[0].balance),
+      current_balance: Number(result.rows[0].current_balance),
     };
   }
 
@@ -360,7 +379,7 @@ export class FloatAccountService {
 
     return result.rows.map((row) => ({
       ...row,
-      balance: Number(row.balance),
+      current_balance: Number(row.current_balance),
     }));
   }
 
@@ -373,7 +392,7 @@ export class FloatAccountService {
   ): Promise<void> {
     await sql`
       UPDATE float_accounts 
-      SET balance = ${newBalance}, updated_at = NOW()
+      SET current_balance = ${newBalance}, updated_at = NOW()
       WHERE id = ${id}
     `;
   }
@@ -387,5 +406,132 @@ export class FloatAccountService {
       SET is_active = false, updated_at = NOW()
       WHERE id = ${id}
     `;
+  }
+
+  private static async createAllGLAccountsAndMappingsForFloatAccount(
+    floatAccount: any
+  ): Promise<void> {
+    // Define the GL account types and mapping types needed for each float account type
+    const glTypes = [
+      { type: "Asset", suffix: "", mapping: "main" },
+      { type: "Revenue", suffix: "-REV", mapping: "revenue" },
+      { type: "Expense", suffix: "-EXP", mapping: "expense" },
+      { type: "Expense", suffix: "-COM", mapping: "commission" },
+      { type: "Revenue", suffix: "-FEE", mapping: "fee" },
+    ];
+    const branchCode = floatAccount.branch_id.substring(0, 6);
+    const provider = floatAccount.provider
+      ? `-${floatAccount.provider.toUpperCase().replace(/\s/g, "")}`
+      : "";
+    const baseCode = (() => {
+      switch (floatAccount.account_type) {
+        case "cash_till":
+          return `CASH-${branchCode}`;
+        case "momo":
+          return `MOMO-${branchCode}${provider}`;
+        case "agency_banking":
+          return `AGB-${branchCode}${provider}`;
+        case "e_zwich":
+          return `EZWICH-${branchCode}`;
+        case "power":
+          return `PWR-${branchCode}${provider}`;
+        case "jumia":
+          return `JUMIA-${branchCode}`;
+        default:
+          return `FLOAT-${branchCode}-${floatAccount.account_type.toUpperCase()}`;
+      }
+    })();
+    // For each GL type, create if not exists
+    const glAccounts: Record<string, any> = {};
+    for (const { type, suffix, mapping } of glTypes) {
+      const code = baseCode + suffix;
+      // Check if GL account exists
+      const existing =
+        await sql`SELECT * FROM gl_accounts WHERE code = ${code} AND branch_id = ${floatAccount.branch_id}`;
+      let glAccount;
+      if (existing.rows.length > 0) {
+        glAccount = existing.rows[0];
+      } else {
+        const name = this.generateGLAccountName(floatAccount, type, mapping);
+        const result = await sql`
+          INSERT INTO gl_accounts (id, code, name, type, branch_id, is_active, created_at, updated_at)
+          VALUES (gen_random_uuid(), ${code}, ${name}, ${type}, ${floatAccount.branch_id}, true, NOW(), NOW())
+          RETURNING *
+        `;
+        glAccount = result.rows[0];
+      }
+      glAccounts[mapping] = glAccount;
+    }
+    // Now create mappings for each
+    for (const mapping of Object.keys(glAccounts)) {
+      // Check if mapping exists
+      const exists = await sql`
+        SELECT * FROM gl_mappings WHERE float_account_id = ${floatAccount.id} AND mapping_type = ${mapping} AND is_active = true
+      `;
+      if (exists.rows.length === 0) {
+        await sql`
+          INSERT INTO gl_mappings (
+            id, branch_id, transaction_type, gl_account_id, float_account_id, mapping_type, is_active, created_at, updated_at
+          ) VALUES (
+            gen_random_uuid(),
+            ${floatAccount.branch_id},
+            ${floatAccount.account_type + "_float"},
+            ${glAccounts[mapping].id},
+            ${floatAccount.id},
+            ${mapping},
+            true,
+            NOW(),
+            NOW()
+          )
+        `;
+      }
+    }
+  }
+
+  private static generateGLAccountName(
+    floatAccount: any,
+    type: string,
+    mapping: string
+  ): string {
+    const provider = floatAccount.provider ? ` - ${floatAccount.provider}` : "";
+    switch (mapping) {
+      case "main":
+        return `${this.prettyType(floatAccount.account_type)} Float${provider}`;
+      case "revenue":
+        return `${this.prettyType(
+          floatAccount.account_type
+        )} Revenue${provider}`;
+      case "expense":
+        return `${this.prettyType(
+          floatAccount.account_type
+        )} Expense${provider}`;
+      case "commission":
+        return `${this.prettyType(
+          floatAccount.account_type
+        )} Commission${provider}`;
+      case "fee":
+        return `${this.prettyType(floatAccount.account_type)} Fee${provider}`;
+      default:
+        return `${this.prettyType(floatAccount.account_type)} GL${provider}`;
+    }
+  }
+
+  private static prettyType(type: string): string {
+    switch (type) {
+      case "cash_till":
+        return "Cash in Till";
+      case "momo":
+        return "MoMo";
+      case "agency_banking":
+        return "Agency Banking";
+      case "e_zwich":
+        return "E-Zwich";
+      case "power":
+        return "Power";
+      case "jumia":
+        return "Jumia";
+      default:
+        return type.charAt(0).toUpperCase() + type.slice(1);
+    }
   }
 }

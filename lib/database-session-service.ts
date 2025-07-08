@@ -1,45 +1,49 @@
-import { neon } from "@neondatabase/serverless"
-import { cookies } from "next/headers"
-import type { NextRequest } from "next/server"
-import crypto from "crypto"
+import { neon } from "@neondatabase/serverless";
+import { cookies } from "next/headers";
+import type { NextRequest } from "next/server";
+import crypto from "crypto";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export interface SessionUser {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  role: string
-  branchId?: string
-  branchName?: string
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  branchId?: string;
+  branchName?: string;
 }
 
 export interface DatabaseSession {
-  id: string
-  userId: string
-  sessionToken: string
-  expiresAt: Date
-  createdAt: Date
-  updatedAt: Date
-  ipAddress?: string
-  userAgent?: string
-  isActive: boolean
-  user?: SessionUser
+  id: string;
+  userId: string;
+  sessionToken: string;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  ipAddress?: string;
+  userAgent?: string;
+  isActive: boolean;
+  user?: SessionUser;
 }
 
 // Generate a secure session token
 function generateSessionToken(): string {
-  return crypto.randomBytes(32).toString("hex")
+  return crypto.randomBytes(32).toString("hex");
 }
 
 // Create a new session in the database
-export async function createDatabaseSession(user: SessionUser, request?: NextRequest): Promise<DatabaseSession> {
-  const sessionToken = generateSessionToken()
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+export async function createDatabaseSession(
+  user: SessionUser,
+  request?: NextRequest
+): Promise<DatabaseSession> {
+  const sessionToken = generateSessionToken();
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-  const ipAddress = request?.ip || request?.headers.get("x-forwarded-for") || null
-  const userAgent = request?.headers.get("user-agent") || null
+  const ipAddress =
+    request?.ip || request?.headers.get("x-forwarded-for") || null;
+  const userAgent = request?.headers.get("user-agent") || null;
 
   try {
     const sessions = await sql`
@@ -67,42 +71,43 @@ export async function createDatabaseSession(user: SessionUser, request?: NextReq
         ip_address as "ipAddress",
         user_agent as "userAgent",
         is_active as "isActive"
-    `
+    `;
 
-    const session = sessions[0] as DatabaseSession
-    session.user = user
+    const session = sessions[0] as DatabaseSession;
+    session.user = user;
 
-    // Set the session cookie
-    cookies().set("session_token", sessionToken, {
-      expires: expiresAt,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-    })
-
-    console.log("Database session created for user:", user.email)
-    return session
+    console.log("Database session created for user:", user.email);
+    return session;
   } catch (error) {
-    console.error("Error creating database session:", error)
-    throw error
+    console.error("Error creating database session:", error);
+    throw error;
   }
 }
 
 // Get session from database by token
-export async function getDatabaseSession(request?: NextRequest): Promise<DatabaseSession | null> {
-  let sessionToken: string | undefined
+export async function getDatabaseSession(
+  request?: NextRequest
+): Promise<DatabaseSession | null> {
+  let sessionToken: string | undefined;
 
   try {
     if (request) {
-      sessionToken = request.cookies.get("session_token")?.value
+      sessionToken = request.cookies.get("session_token")?.value;
     } else {
-      sessionToken = cookies().get("session_token")?.value
+      sessionToken = cookies().get("session_token")?.value;
+    }
+
+    console.log(
+      "🔍 Looking for session token:",
+      sessionToken ? "Found" : "Not found"
+    );
+    if (sessionToken) {
+      console.log("🔍 Session token length:", sessionToken.length);
     }
 
     if (!sessionToken) {
-      console.log("No session token found")
-      return null
+      console.log("No session token found");
+      return null;
     }
 
     const sessions = await sql`
@@ -131,14 +136,16 @@ export async function getDatabaseSession(request?: NextRequest): Promise<Databas
         AND s.is_active = true
         AND u.status = 'active'
       LIMIT 1
-    `
+    `;
+
+    console.log("🔍 Database query returned", sessions.length, "sessions");
 
     if (sessions.length === 0) {
-      console.log("No valid session found")
-      return null
+      console.log("No valid session found");
+      return null;
     }
 
-    const sessionData = sessions[0]
+    const sessionData = sessions[0];
     const session: DatabaseSession = {
       id: sessionData.id,
       userId: sessionData.userId,
@@ -158,18 +165,20 @@ export async function getDatabaseSession(request?: NextRequest): Promise<Databas
         branchId: sessionData.user_branchId,
         branchName: sessionData.user_branchName,
       },
-    }
+    };
 
-    console.log("Valid database session found for user:", session.user?.email)
-    return session
+    console.log("Valid database session found for user:", session.user?.email);
+    return session;
   } catch (error) {
-    console.error("Error getting database session:", error)
-    return null
+    console.error("Error getting database session:", error);
+    return null;
   }
 }
 
 // Update session last activity
-export async function updateSessionActivity(sessionToken: string): Promise<void> {
+export async function updateSessionActivity(
+  sessionToken: string
+): Promise<void> {
   try {
     await sql`
       UPDATE user_sessions 
@@ -177,42 +186,31 @@ export async function updateSessionActivity(sessionToken: string): Promise<void>
       WHERE session_token = ${sessionToken}
         AND expires_at > NOW()
         AND is_active = true
-    `
+    `;
   } catch (error) {
-    console.error("Error updating session activity:", error)
+    console.error("Error updating session activity:", error);
   }
 }
 
 // Delete a specific session
-export async function deleteDatabaseSession(sessionToken?: string): Promise<void> {
+export async function deleteDatabaseSession(
+  sessionToken?: string
+): Promise<void> {
   if (!sessionToken) {
-    sessionToken = cookies().get("session_token")?.value
-  }
-
-  if (!sessionToken) {
-    console.log("No session token to delete")
-    return
+    console.log("No session token to delete");
+    return;
   }
 
   try {
     await sql`
       UPDATE user_sessions 
-      SET is_active = false
+      SET is_active = false, updated_at = NOW()
       WHERE session_token = ${sessionToken}
-    `
+    `;
 
-    // Clear the cookie
-    cookies().set("session_token", "", {
-      expires: new Date(0),
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-    })
-
-    console.log("Database session deleted")
+    console.log("Database session deleted");
   } catch (error) {
-    console.error("Error deleting database session:", error)
+    console.error("Error deleting database session:", error);
   }
 }
 
@@ -223,16 +221,18 @@ export async function deleteAllUserSessions(userId: string): Promise<void> {
       UPDATE user_sessions 
       SET is_active = false
       WHERE user_id = ${userId}
-    `
+    `;
 
-    console.log("All sessions deleted for user:", userId)
+    console.log("All sessions deleted for user:", userId);
   } catch (error) {
-    console.error("Error deleting all user sessions:", error)
+    console.error("Error deleting all user sessions:", error);
   }
 }
 
 // Get all active sessions for a user
-export async function getUserSessions(userId: string): Promise<DatabaseSession[]> {
+export async function getUserSessions(
+  userId: string
+): Promise<DatabaseSession[]> {
   try {
     const sessions = await sql`
       SELECT 
@@ -250,17 +250,17 @@ export async function getUserSessions(userId: string): Promise<DatabaseSession[]
         AND expires_at > NOW()
         AND is_active = true
       ORDER BY updated_at DESC
-    `
+    `;
 
     return sessions.map((session) => ({
       ...session,
       expiresAt: new Date(session.expiresAt),
       createdAt: new Date(session.createdAt),
       updatedAt: new Date(session.updatedAt),
-    }))
+    }));
   } catch (error) {
-    console.error("Error getting user sessions:", error)
-    return []
+    console.error("Error getting user sessions:", error);
+    return [];
   }
 }
 
@@ -270,9 +270,9 @@ export async function cleanupExpiredSessions(): Promise<void> {
     await sql`
       DELETE FROM user_sessions 
       WHERE expires_at < NOW() OR is_active = false
-    `
-    console.log("Expired sessions cleaned up")
+    `;
+    console.log("Expired sessions cleaned up");
   } catch (error) {
-    console.error("Error cleaning up expired sessions:", error)
+    console.error("Error cleaning up expired sessions:", error);
   }
 }

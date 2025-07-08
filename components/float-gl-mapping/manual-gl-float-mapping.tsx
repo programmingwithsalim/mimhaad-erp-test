@@ -83,17 +83,15 @@ export function ManualGLFloatMapping() {
   const [loading, setLoading] = useState(true);
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isGuideDialogOpen, setIsGuideDialogOpen] = useState(false);
-  const [isDebugDialogOpen, setIsDebugDialogOpen] = useState(false);
   const [selectedFloatAccount, setSelectedFloatAccount] = useState("");
   const [selectedGLAccount, setSelectedGLAccount] = useState("");
   const [mappingType, setMappingType] = useState("main_account");
-  const [debugInfo, setDebugInfo] = useState<any>(null);
   const [floatSearch, setFloatSearch] = useState("");
   const [glSearch, setGLSearch] = useState("");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [totalPages, setTotalPages] = useState(1);
   const [totalMappings, setTotalMappings] = useState(0);
+  const [mappingSearch, setMappingSearch] = useState("");
 
   const mappingTypeOptions = [
     {
@@ -129,70 +127,46 @@ export function ManualGLFloatMapping() {
   ];
 
   useEffect(() => {
-    fetchData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize]);
-
-  const fetchData = async () => {
-    try {
+    const fetchAll = async () => {
       setLoading(true);
-      console.log("🔄 Fetching mapping data...");
-
       const response = await fetch(
-        `/api/float-gl-mapping/manual?page=${page}&pageSize=${pageSize}`
+        `/api/float-gl-mapping/manual?page=1&pageSize=1000`
       );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
       const data = await response.json();
-      setDebugInfo(data);
-
       if (data.success) {
+        setMappings(Array.isArray(data.mappings) ? data.mappings : []);
         setFloatAccounts(
           Array.isArray(data.floatAccounts) ? data.floatAccounts : []
         );
         setGLAccounts(Array.isArray(data.glAccounts) ? data.glAccounts : []);
-        setMappings(Array.isArray(data.mappings) ? data.mappings : []);
-        setTotalMappings(data.totalMappings || 0);
-        setTotalPages(data.totalPages || 1);
-        if (data.glAccounts?.length === 0) {
-          toast({
-            title: "No GL Accounts Found",
-            description:
-              "GL accounts have been automatically created. Please refresh the page.",
-            variant: "default",
-          });
-        }
       } else {
-        if (data.schemaIssue) {
-          toast({
-            title: "Schema Issue Detected",
-            description:
-              "GL accounts table needs to be fixed. Basic accounts have been created.",
-            variant: "default",
-          });
-        } else {
-          throw new Error(data.error || "Failed to fetch data");
-        }
+        setMappings([]);
         setFloatAccounts([]);
         setGLAccounts([]);
-        setMappings([]);
       }
-    } catch (error) {
-      console.error("❌ Error fetching data:", error);
-      toast({
-        title: "Error",
-        description:
-          error instanceof Error
-            ? error.message
-            : "Failed to load mapping data",
-        variant: "destructive",
-      });
-    } finally {
       setLoading(false);
+    };
+    fetchAll();
+  }, []);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const response = await fetch(
+      `/api/float-gl-mapping/manual?page=1&pageSize=1000`
+    );
+    const data = await response.json();
+    if (data.success) {
+      setMappings(Array.isArray(data.mappings) ? data.mappings : []);
+      setFloatAccounts(
+        Array.isArray(data.floatAccounts) ? data.floatAccounts : []
+      );
+      setGLAccounts(Array.isArray(data.glAccounts) ? data.glAccounts : []);
+    } else {
+      setMappings([]);
+      setFloatAccounts([]);
+      setGLAccounts([]);
     }
+    setLoading(false);
   };
 
   const getAvailableFloatAccounts = () => {
@@ -360,23 +334,38 @@ export function ManualGLFloatMapping() {
     );
   });
 
+  const filteredMappings = mappings.filter((mapping) => {
+    const search = mappingSearch.toLowerCase();
+    return (
+      (mapping.float_account?.branch_name?.toLowerCase() || "").includes(
+        search
+      ) ||
+      (mapping.float_account?.account_type?.toLowerCase() || "").includes(
+        search
+      ) ||
+      (mapping.float_account?.provider?.toLowerCase() || "").includes(search) ||
+      (mapping.float_account?.account_number?.toLowerCase() || "").includes(
+        search
+      ) ||
+      (mapping.gl_account?.account_code?.toLowerCase() || "").includes(
+        search
+      ) ||
+      (mapping.gl_account?.account_name?.toLowerCase() || "").includes(search)
+    );
+  });
+
+  const paginatedMappings = filteredMappings.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
+  const totalPages = Math.max(1, Math.ceil(filteredMappings.length / pageSize));
+
+  useEffect(() => {
+    setPage(1);
+  }, [mappingSearch]);
+
   return (
     <div className="space-y-6">
-      {/* Debug Dialog */}
-      <Dialog open={isDebugDialogOpen} onOpenChange={setIsDebugDialogOpen}>
-        <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Debug Information
-            </DialogTitle>
-          </DialogHeader>
-          <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto">
-            {JSON.stringify(debugInfo, null, 2)}
-          </pre>
-        </DialogContent>
-      </Dialog>
-
       {/* GL-Float Mapping Guide */}
       <Dialog open={isGuideDialogOpen} onOpenChange={setIsGuideDialogOpen}>
         <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
@@ -459,14 +448,6 @@ export function ManualGLFloatMapping() {
             </CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button
-              onClick={() => setIsDebugDialogOpen(true)}
-              variant="outline"
-              size="sm"
-            >
-              <Database className="h-4 w-4 mr-2" />
-              Debug
-            </Button>
             <Button
               onClick={() => setIsGuideDialogOpen(true)}
               variant="outline"
@@ -701,6 +682,16 @@ export function ManualGLFloatMapping() {
                 </Alert>
               )}
 
+              <div className="mb-4 flex items-center gap-2">
+                <Input
+                  type="search"
+                  placeholder="Search mappings (branch, float, GL, provider, etc.)..."
+                  value={mappingSearch}
+                  onChange={(e) => setMappingSearch(e.target.value)}
+                  className="w-96"
+                />
+              </div>
+
               <Table id="manual-gl-float-mapping-table">
                 <TableHeader>
                   <TableRow>
@@ -716,7 +707,7 @@ export function ManualGLFloatMapping() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mappings.map((mapping) => (
+                  {paginatedMappings.map((mapping) => (
                     <TableRow key={mapping.id}>
                       <TableCell className="font-medium">
                         {mapping.float_account?.branch_name || "Unknown Branch"}
@@ -833,7 +824,7 @@ export function ManualGLFloatMapping() {
                     <AlertDescription>
                       <strong>Missing GL Accounts:</strong> Basic GL accounts
                       should have been created automatically. Try refreshing the
-                      page or check the debug information.
+                      page.
                     </AlertDescription>
                   </Alert>
                 </div>

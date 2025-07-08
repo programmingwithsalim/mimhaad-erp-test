@@ -1,136 +1,176 @@
-"use client"
+"use client";
 
-import { useState, useCallback } from "react"
-import { useAuth } from "@/lib/auth-context"
-import { useToast } from "@/hooks/use-toast"
+import { useState, useCallback, useEffect } from "react";
+import { useAuth } from "@/lib/auth-context";
+import { useToast } from "@/hooks/use-toast";
 
 export interface NotificationPreferences {
-  emailNotifications: boolean
-  emailAddress: string
-  smsNotifications: boolean
-  phoneNumber: string
-  pushNotifications: boolean
-  transactionAlerts: boolean
-  floatThresholdAlerts: boolean
-  systemUpdates: boolean
-  securityAlerts: boolean
-  dailyReports: boolean
-  weeklyReports: boolean
-  loginAlerts: boolean
-  marketingEmails: boolean
-  quietHoursEnabled: boolean
-  quietHoursStart: string
-  quietHoursEnd: string
-  alertFrequency: "immediate" | "hourly" | "daily"
-  reportFrequency: "daily" | "weekly" | "monthly"
+  emailNotifications: boolean;
+  emailAddress: string;
+  smsNotifications: boolean;
+  phoneNumber: string;
+  pushNotifications: boolean;
+  transactionAlerts: boolean;
+  floatThresholdAlerts: boolean;
+  systemUpdates: boolean;
+  securityAlerts: boolean;
+  dailyReports: boolean;
+  weeklyReports: boolean;
+  loginAlerts: boolean;
+  marketingEmails: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  alertFrequency: "immediate" | "hourly" | "daily";
+  reportFrequency: "daily" | "weekly" | "monthly";
 }
 
 export interface NotificationData {
-  userName?: string
+  userName?: string;
   transactionDetails?: {
-    amount: number
-    type: string
-    reference: string
-    timestamp: string
-  }
-  accountType?: string
-  currentBalance?: number
-  threshold?: number
-  resetLink?: string
-  message?: string
+    amount: number;
+    type: string;
+    reference: string;
+    timestamp: string;
+  };
+  accountType?: string;
+  currentBalance?: number;
+  threshold?: number;
+  resetLink?: string;
+  message?: string;
 }
 
 export interface NotificationRecipient {
-  email?: string
-  phone?: string
-  userId?: string
+  email?: string;
+  phone?: string;
+  userId?: string;
 }
 
 export interface Notification {
-  id: string
-  type: "success" | "error" | "warning" | "info"
-  title: string
-  message: string
-  timestamp: Date
+  id: string;
+  type: "success" | "error" | "warning" | "info";
+  title: string;
+  message: string;
+  timestamp: Date;
 }
 
 export function useNotifications() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [preferences, setPreferences] = useState<NotificationPreferences | null>(null)
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const { user } = useAuth()
-  const { toast } = useToast()
+  const [isLoading, setIsLoading] = useState(false);
+  const [preferences, setPreferences] =
+    useState<NotificationPreferences | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const { user } = useAuth();
+  const { toast } = useToast();
+
+  // Fetch notifications for the current user on mount
+  useEffect(() => {
+    async function fetchNotifications() {
+      setIsLoading(true);
+      try {
+        const response = await fetch("/api/notifications", {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && Array.isArray(result.data)) {
+            setNotifications(result.data);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching notifications:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    if (user?.id) fetchNotifications();
+  }, [user?.id]);
 
   // Load user notification preferences
   const loadPreferences = useCallback(
     async (userId?: string) => {
-      if (!userId && !user?.id) return null
+      if (!userId && !user?.id) return null;
 
       try {
-        setIsLoading(true)
-        const response = await fetch(`/api/users/${userId || user?.id}/notification-settings`)
+        setIsLoading(true);
+        const response = await fetch(
+          `/api/users/${userId || user?.id}/notification-settings`
+        );
 
         if (response.ok) {
-          const result = await response.json()
+          const result = await response.json();
           if (result.success) {
-            setPreferences(result.data)
-            return result.data
+            setPreferences(result.data);
+            return result.data;
           }
         }
-        return null
+        return null;
       } catch (error) {
-        console.error("Error loading notification preferences:", error)
-        return null
+        console.error("Error loading notification preferences:", error);
+        return null;
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
     },
-    [user?.id],
-  )
+    [user?.id]
+  );
 
   // Save user notification preferences
   const savePreferences = useCallback(
-    async (newPreferences: Partial<NotificationPreferences>, userId?: string) => {
-      if (!userId && !user?.id) return false
+    async (
+      newPreferences: Partial<NotificationPreferences>,
+      userId?: string
+    ) => {
+      if (!userId && !user?.id) return false;
 
       try {
-        setIsLoading(true)
-        const response = await fetch(`/api/users/${userId || user?.id}/notification-settings`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(newPreferences),
-        })
+        setIsLoading(true);
+        const response = await fetch(
+          `/api/users/${userId || user?.id}/notification-settings`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(newPreferences),
+          }
+        );
 
         if (response.ok) {
-          const result = await response.json()
+          const result = await response.json();
           if (result.success) {
-            setPreferences((prev) => (prev ? { ...prev, ...newPreferences } : null))
-            return true
+            setPreferences((prev) =>
+              prev ? { ...prev, ...newPreferences } : null
+            );
+            return true;
           }
         }
-        return false
+        return false;
       } catch (error) {
-        console.error("Error saving notification preferences:", error)
-        return false
+        console.error("Error saving notification preferences:", error);
+        return false;
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
     },
-    [user?.id],
-  )
+    [user?.id]
+  );
 
   // Send notification based on user preferences
   const sendNotification = useCallback(
     async (
-      type: "welcome" | "password-reset" | "transaction-alert" | "low-balance" | "security-alert" | "system-update",
+      type:
+        | "welcome"
+        | "password-reset"
+        | "transaction-alert"
+        | "low-balance"
+        | "security-alert"
+        | "system-update",
       recipient: NotificationRecipient,
-      data: NotificationData = {},
+      data: NotificationData = {}
     ) => {
       try {
         // Load recipient preferences if userId is provided
-        let recipientPrefs = preferences
+        let recipientPrefs = preferences;
         if (recipient.userId && recipient.userId !== user?.id) {
-          recipientPrefs = await loadPreferences(recipient.userId)
+          recipientPrefs = await loadPreferences(recipient.userId);
         }
 
         // Check if user wants this type of notification
@@ -140,48 +180,66 @@ export function useNotifications() {
             (type === "transaction-alert"
               ? recipientPrefs.transactionAlerts
               : type === "security-alert"
-                ? recipientPrefs.securityAlerts
-                : type === "system-update"
-                  ? recipientPrefs.systemUpdates
-                  : true)
+              ? recipientPrefs.securityAlerts
+              : type === "system-update"
+              ? recipientPrefs.systemUpdates
+              : true);
 
           const shouldSendSms =
             recipientPrefs.smsNotifications &&
             (type === "transaction-alert"
               ? recipientPrefs.transactionAlerts
               : type === "security-alert"
-                ? recipientPrefs.securityAlerts
-                : false) // SMS only for critical alerts
+              ? recipientPrefs.securityAlerts
+              : false); // SMS only for critical alerts
 
           // Override recipient contact info with preferences if available
-          if (!shouldSendEmail) recipient.email = undefined
-          if (!shouldSendSms) recipient.phone = undefined
+          if (!shouldSendEmail) recipient.email = undefined;
+          if (!shouldSendSms) recipient.phone = undefined;
 
-          if (recipientPrefs.emailAddress) recipient.email = recipientPrefs.emailAddress
-          if (recipientPrefs.phoneNumber) recipient.phone = recipientPrefs.phoneNumber
+          if (recipientPrefs.emailAddress)
+            recipient.email = recipientPrefs.emailAddress;
+          if (recipientPrefs.phoneNumber)
+            recipient.phone = recipientPrefs.phoneNumber;
         }
 
         // Don't send if no contact method is available
         if (!recipient.email && !recipient.phone) {
-          return { success: false, message: "No contact method available or notifications disabled" }
+          return {
+            success: false,
+            message: "No contact method available or notifications disabled",
+          };
         }
 
         // Check quiet hours
-        if (recipientPrefs?.quietHoursEnabled && (type === "transaction-alert" || type === "low-balance")) {
-          const now = new Date()
-          const currentTime = now.getHours() * 100 + now.getMinutes()
-          const quietStart = Number.parseInt(recipientPrefs.quietHoursStart.replace(":", ""))
-          const quietEnd = Number.parseInt(recipientPrefs.quietHoursEnd.replace(":", ""))
+        if (
+          recipientPrefs?.quietHoursEnabled &&
+          (type === "transaction-alert" || type === "low-balance")
+        ) {
+          const now = new Date();
+          const currentTime = now.getHours() * 100 + now.getMinutes();
+          const quietStart = Number.parseInt(
+            recipientPrefs.quietHoursStart.replace(":", "")
+          );
+          const quietEnd = Number.parseInt(
+            recipientPrefs.quietHoursEnd.replace(":", "")
+          );
 
           if (quietStart > quietEnd) {
             // Quiet hours span midnight
             if (currentTime >= quietStart || currentTime <= quietEnd) {
-              return { success: false, message: "Notification suppressed due to quiet hours" }
+              return {
+                success: false,
+                message: "Notification suppressed due to quiet hours",
+              };
             }
           } else {
             // Normal quiet hours
             if (currentTime >= quietStart && currentTime <= quietEnd) {
-              return { success: false, message: "Notification suppressed due to quiet hours" }
+              return {
+                success: false,
+                message: "Notification suppressed due to quiet hours",
+              };
             }
           }
         }
@@ -190,81 +248,95 @@ export function useNotifications() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ type, recipient, data }),
-        })
+        });
 
         if (response.ok) {
-          const result = await response.json()
-          return result
+          const result = await response.json();
+          return result;
         } else {
-          throw new Error("Failed to send notification")
+          throw new Error("Failed to send notification");
         }
       } catch (error) {
-        console.error("Error sending notification:", error)
-        return { success: false, error: error instanceof Error ? error.message : "Unknown error" }
+        console.error("Error sending notification:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
       }
     },
-    [preferences, user?.id, loadPreferences],
-  )
+    [preferences, user?.id, loadPreferences]
+  );
 
   // Convenience methods for common notifications
   const sendTransactionAlert = useCallback(
-    (recipient: NotificationRecipient, transactionDetails: NotificationData["transactionDetails"]) => {
+    (
+      recipient: NotificationRecipient,
+      transactionDetails: NotificationData["transactionDetails"]
+    ) => {
       return sendNotification("transaction-alert", recipient, {
         userName: recipient.userId ? "User" : "Customer",
         transactionDetails,
-      })
+      });
     },
-    [sendNotification],
-  )
+    [sendNotification]
+  );
 
   const sendLowBalanceAlert = useCallback(
-    (recipient: NotificationRecipient, accountType: string, currentBalance: number, threshold: number) => {
+    (
+      recipient: NotificationRecipient,
+      accountType: string,
+      currentBalance: number,
+      threshold: number
+    ) => {
       return sendNotification("low-balance", recipient, {
         userName: recipient.userId ? "User" : "Customer",
         accountType,
         currentBalance,
         threshold,
-      })
+      });
     },
-    [sendNotification],
-  )
+    [sendNotification]
+  );
 
   const sendSecurityAlert = useCallback(
     (recipient: NotificationRecipient, message: string) => {
       return sendNotification("security-alert", recipient, {
         userName: recipient.userId ? "User" : "Customer",
         message,
-      })
+      });
     },
-    [sendNotification],
-  )
+    [sendNotification]
+  );
 
   const sendSystemUpdate = useCallback(
     (recipient: NotificationRecipient, message: string) => {
       return sendNotification("system-update", recipient, {
         userName: recipient.userId ? "User" : "Customer",
         message,
-      })
+      });
     },
-    [sendNotification],
-  )
+    [sendNotification]
+  );
 
-  const addNotification = useCallback((notification: Omit<Notification, "id" | "timestamp">) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: new Date(),
-    }
-    setNotifications((prev) => [newNotification, ...prev])
-  }, [])
+  const addNotification = useCallback(
+    (notification: Omit<Notification, "id" | "timestamp">) => {
+      const newNotification: Notification = {
+        ...notification,
+        id: Math.random().toString(36).substr(2, 9),
+        timestamp: new Date(),
+      };
+      setNotifications((prev) => [newNotification, ...prev]);
+    },
+    []
+  );
 
   const removeNotification = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id))
-  }, [])
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
 
   const clearNotifications = useCallback(() => {
-    setNotifications([])
-  }, [])
+    setNotifications([]);
+  }, []);
 
   return {
     preferences,
@@ -280,5 +352,5 @@ export function useNotifications() {
     addNotification,
     removeNotification,
     clearNotifications,
-  }
+  };
 }

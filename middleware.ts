@@ -1,6 +1,75 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getSession } from "./lib/auth-service";
+import { getDatabaseSession } from "./lib/database-session-service";
+import {
+  normalizeRole,
+  hasPermission,
+  type Role,
+  type Permission,
+} from "./lib/rbac/unified-rbac";
+
+// Define role-based route restrictions
+const ROLE_ROUTE_RESTRICTIONS: Record<
+  string,
+  { roles: Role[]; permissions?: Permission[] }
+> = {
+  "/dashboard/admin": { roles: ["Admin"] },
+  "/dashboard/user-management": { roles: ["Admin"] },
+  "/dashboard/branch-management": { roles: ["Admin"] },
+  "/dashboard/gl-accounting": { roles: ["Admin", "Finance"] },
+  "/dashboard/audit-trail": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/settings": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
+  "/dashboard/float-management": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/expenses": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/commissions": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/reports": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/analytics": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/momo": {
+    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+  },
+  "/dashboard/agency-banking": {
+    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+  },
+  "/dashboard/e-zwich": {
+    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+  },
+  "/dashboard/power": {
+    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+  },
+  "/dashboard/jumia": {
+    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+  },
+  "/dashboard/inventory": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/transactions": {
+    roles: [
+      "Admin",
+      "Manager",
+      "Finance",
+      "Operations",
+      "Supervisor",
+      "Cashier",
+    ],
+  },
+};
+
+// API route restrictions
+const API_ROUTE_RESTRICTIONS: Record<
+  string,
+  { roles: Role[]; permissions?: Permission[] }
+> = {
+  "/api/users": { roles: ["Admin"] },
+  "/api/branches": { roles: ["Admin"] },
+  "/api/settings": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/gl": { roles: ["Admin", "Finance"] },
+  "/api/audit-logs": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/float-accounts": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/expenses": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/commissions": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/reports": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/analytics": { roles: ["Admin", "Manager", "Finance"] },
+};
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
@@ -50,11 +119,48 @@ export async function middleware(request: NextRequest) {
 
     // Check authentication for protected API routes
     try {
-      const session = await getSession(request);
-      if (!session) {
+      const session = await getDatabaseSession(request);
+      if (!session || !session.user) {
         console.log("No session for protected API route");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
+
+      // Check role-based access for API routes
+      const userRole = normalizeRole(session.user.role);
+      if (userRole) {
+        // Check if this API route has restrictions
+        for (const [route, restriction] of Object.entries(
+          API_ROUTE_RESTRICTIONS
+        )) {
+          if (pathname.startsWith(route)) {
+            // Check role restriction
+            if (!restriction.roles.includes(userRole)) {
+              console.log(
+                `Access denied: ${userRole} cannot access ${pathname}`
+              );
+              return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+            }
+
+            // Check permission restriction if specified
+            if (restriction.permissions) {
+              const hasRequiredPermission = restriction.permissions.some(
+                (permission) => hasPermission(userRole, permission)
+              );
+              if (!hasRequiredPermission) {
+                console.log(
+                  `Permission denied: ${userRole} lacks required permissions for ${pathname}`
+                );
+                return NextResponse.json(
+                  { error: "Forbidden" },
+                  { status: 403 }
+                );
+              }
+            }
+            break;
+          }
+        }
+      }
+
       console.log("Authenticated API request");
       return response;
     } catch (error) {
@@ -68,8 +174,15 @@ export async function middleware(request: NextRequest) {
 
   // Handle page routes
   try {
-    const session = await getSession(request);
+    const session = await getDatabaseSession(request);
     console.log("Session check result:", !!session);
+
+    // Debug: Check what cookies are present
+    const sessionCookie = request.cookies.get("session_token");
+    console.log("Session cookie present:", !!sessionCookie);
+    if (sessionCookie) {
+      console.log("Session token length:", sessionCookie.value.length);
+    }
 
     // If accessing public routes, allow access
     if (publicRoutes.includes(pathname)) {
@@ -85,9 +198,42 @@ export async function middleware(request: NextRequest) {
     }
 
     // For protected routes, if no session, redirect to login
-    if (!session) {
+    if (!session || !session.user) {
       console.log("No session for protected route, redirecting to login");
       return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    // Check role-based access for page routes
+    const userRole = normalizeRole(session.user.role);
+    if (userRole) {
+      // Check if this page route has restrictions
+      for (const [route, restriction] of Object.entries(
+        ROLE_ROUTE_RESTRICTIONS
+      )) {
+        if (pathname.startsWith(route)) {
+          // Check role restriction
+          if (!restriction.roles.includes(userRole)) {
+            console.log(`Access denied: ${userRole} cannot access ${pathname}`);
+            return NextResponse.redirect(new URL("/unauthorized", request.url));
+          }
+
+          // Check permission restriction if specified
+          if (restriction.permissions) {
+            const hasRequiredPermission = restriction.permissions.some(
+              (permission) => hasPermission(userRole, permission)
+            );
+            if (!hasRequiredPermission) {
+              console.log(
+                `Permission denied: ${userRole} lacks required permissions for ${pathname}`
+              );
+              return NextResponse.redirect(
+                new URL("/unauthorized", request.url)
+              );
+            }
+          }
+          break;
+        }
+      }
     }
 
     console.log("Authenticated access to protected route");

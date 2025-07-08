@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -42,6 +42,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Plus, Edit, Trash2, Search, RefreshCw } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useBranches } from "@/hooks/use-branches";
+import { BranchSelector } from "@/components/branch/branch-selector";
+import { useBranch } from "@/contexts/branch-context";
 
 interface GLAccount {
   id: string;
@@ -55,12 +57,14 @@ interface GLAccount {
   created_at: string;
   updated_at: string;
   branch_id: string;
+  branch_name?: string;
 }
 
 export function GLAccountManagement() {
   const { toast } = useToast();
   const { user, loading: userLoading } = useCurrentUser();
   const { branches, loading: branchesLoading } = useBranches();
+  const { selectedBranchId, setSelectedBranchId } = useBranch();
   const [accounts, setAccounts] = useState<GLAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,7 +84,6 @@ export function GLAccountManagement() {
   // Pagination state
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [totalPages, setTotalPages] = useState(1);
   const [totalAccounts, setTotalAccounts] = useState(0);
 
   const accountTypes = [
@@ -91,23 +94,23 @@ export function GLAccountManagement() {
     { value: "Expense", label: "Expense" },
   ];
 
-  useEffect(() => {
-    fetchAccounts();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, pageSize]);
+  // Determine branchId to use
+  const branchIdToUse =
+    user && user.role === "Admin" ? selectedBranchId : user?.branchId;
 
-  const fetchAccounts = async () => {
+  const fetchAccounts = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch(
-        `/api/gl/accounts/complete?page=${page}&pageSize=${pageSize}`
-      );
+      let url = `/api/gl/accounts/complete?page=${page}&pageSize=${pageSize}`;
+      if (branchIdToUse) {
+        url += `&branchId=${branchIdToUse}`;
+      }
+      const response = await fetch(url);
       const data = await response.json();
 
       if (data.success) {
         setAccounts(data.accounts || []);
         setTotalAccounts(data.total_accounts || 0);
-        setTotalPages(data.totalPages || 1);
       } else {
         throw new Error(data.error || "Failed to fetch accounts");
       }
@@ -121,18 +124,73 @@ export function GLAccountManagement() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [page, pageSize, toast, branchIdToUse]);
+
+  const fetchAllAccounts = useCallback(async () => {
+    try {
+      setLoading(true);
+      let url = `/api/gl/accounts/complete?all=true`;
+      if (branchIdToUse) {
+        url += `&branchId=${branchIdToUse}`;
+      }
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setAccounts(data.accounts || []);
+        setTotalAccounts(data.accounts?.length || 0);
+      } else {
+        throw new Error(data.error || "Failed to fetch accounts");
+      }
+    } catch (error) {
+      console.error("Error fetching all GL accounts:", error);
+      toast({
+        title: "Error",
+        description: "Failed to fetch all GL accounts",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast, branchIdToUse]);
+
+  // Separate useEffect for search
+  useEffect(() => {
+    if (searchTerm.trim() !== "") {
+      setPage(1);
+      fetchAllAccounts();
+    }
+  }, [searchTerm, fetchAllAccounts]);
+
+  // Separate useEffect for pagination (only when not searching)
+  useEffect(() => {
+    if (searchTerm.trim() === "") {
+      fetchAccounts();
+    }
+  }, [page, pageSize, searchTerm, fetchAccounts]);
+
+  // Remove backend pagination, fetch all accounts once
+  useEffect(() => {
+    const fetchAll = async () => {
+      setLoading(true);
+      let url = `/api/gl/accounts/complete?all=true`;
+      if (branchIdToUse) {
+        url += `&branchId=${branchIdToUse}`;
+      }
+      const response = await fetch(url);
+      const data = await response.json();
+      if (data.success) {
+        setAccounts(data.accounts || []);
+      } else {
+        setAccounts([]);
+      }
+      setLoading(false);
+    };
+    fetchAll();
+  }, [branchIdToUse]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
-    let branchIdToUse = formData.branch_id;
-    if (!userLoading && user) {
-      if (user.role !== "Admin") {
-        branchIdToUse = user.branchId;
-      }
-    }
 
     if (
       !formData.account_code ||
@@ -259,14 +317,28 @@ export function GLAccountManagement() {
     });
   };
 
+  // Add branch name to search filter
   const filteredAccounts = accounts.filter((account) => {
     const searchLower = searchTerm.toLowerCase();
     return (
       account.account_code.toLowerCase().includes(searchLower) ||
       account.account_name.toLowerCase().includes(searchLower) ||
-      account.account_type.toLowerCase().includes(searchLower)
+      account.account_type.toLowerCase().includes(searchLower) ||
+      (account.branch_name?.toLowerCase() || "").includes(searchLower)
     );
   });
+
+  // Paginate filtered results on the frontend
+  const paginatedAccounts = filteredAccounts.slice(
+    (page - 1) * pageSize,
+    page * pageSize
+  );
+  const totalPages = Math.max(1, Math.ceil(filteredAccounts.length / pageSize));
+
+  // Reset to page 1 when search changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -295,6 +367,11 @@ export function GLAccountManagement() {
 
   return (
     <div className="space-y-6">
+      {user?.role === "Admin" && (
+        <div className="mb-4">
+          <BranchSelector onBranchChange={setSelectedBranchId} />
+        </div>
+      )}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
           <div>
@@ -477,7 +554,7 @@ export function GLAccountManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredAccounts.map((account) => {
+                {paginatedAccounts.map((account) => {
                   const branch = branches.find(
                     (b) => b.id === account.branch_id
                   );
@@ -498,7 +575,9 @@ export function GLAccountManagement() {
                           {account.account_type}
                         </span>
                       </TableCell>
-                      <TableCell>{branch ? branch.name : "Unknown"}</TableCell>
+                      <TableCell>
+                        {account.branch_name || branch?.name || "Unknown"}
+                      </TableCell>
                       <TableCell className="text-right font-medium">
                         {formatCurrency(account.balance)}
                       </TableCell>
@@ -544,7 +623,8 @@ export function GLAccountManagement() {
           <div className="flex items-center justify-between mt-4">
             <div>
               <span className="text-sm text-gray-600">
-                Page {page} of {totalPages} | Total Accounts: {totalAccounts}
+                Page {page} of {totalPages} | Total Accounts:{" "}
+                {filteredAccounts.length}
               </span>
             </div>
             <div className="flex items-center gap-2">
@@ -570,7 +650,7 @@ export function GLAccountManagement() {
                 value={pageSize}
                 onChange={(e) => {
                   setPageSize(Number(e.target.value));
-                  setPage(1); // Reset to first page on page size change
+                  setPage(1);
                 }}
               >
                 {[10, 20, 50, 100].map((size) => (

@@ -93,82 +93,35 @@ export default function ReportsPage() {
   const isManager = user?.role === "Manager";
   const isOperations = user?.role === "Operations";
   const isCashier = user?.role === "Cashier";
-
   const canViewAllBranches = isAdmin;
   const userBranchId = user?.branchId;
   const userBranchName = user?.branchName;
 
   // Role-based access control
   const canViewReports = isAdmin || isFinance || isManager;
-  const canViewFinancialReports = isAdmin || isFinance;
-  const canViewOperationalReports =
-    isAdmin || isManager || isOperations || isCashier;
-
-  const setQuickDateRange = (days: number) => {
-    const to = new Date();
-    const from = subDays(to, days);
-    setDateRange({ from, to });
-  };
-
-  const setMonthRange = (monthsBack: number) => {
-    const date = subMonths(new Date(), monthsBack);
-    setDateRange({
-      from: startOfMonth(date),
-      to: endOfMonth(date),
-    });
-  };
 
   const fetchBranches = async () => {
-    try {
-      console.log("Fetching branches...", {
-        canViewAllBranches,
-        userBranchId,
-        userBranchName,
-      });
-
-      if (canViewAllBranches) {
-        // Admin users: fetch all branches
-        console.log("Admin user - fetching all branches");
+    if (canViewAllBranches) {
+      // Admin users: fetch all branches
+      try {
         const response = await fetch("/api/branches", {
           credentials: "include",
         });
-        console.log("Branches API response status:", response.status);
-
         if (response.ok) {
           const result = await response.json();
-          console.log("Branches API result:", result);
-
           if (result.success && Array.isArray(result.data)) {
-            console.log("Setting branches from result.data:", result.data);
             setBranches(result.data);
           } else if (Array.isArray(result)) {
-            console.log("Setting branches from result array:", result);
             setBranches(result);
-          } else {
-            console.log("No valid branches data found in response");
           }
-        } else {
-          console.error("Branches API failed with status:", response.status);
         }
-      } else {
-        // Non-admin users: fetch only their assigned branch
-        console.log("Non-admin user - setting user branch:", {
-          userBranchId,
-          userBranchName,
-        });
-        if (userBranchId && userBranchName) {
-          const userBranch = {
-            id: userBranchId,
-            name: userBranchName,
-          };
-          console.log("Setting user branch:", userBranch);
-          setBranches([userBranch]);
-          // Set their branch as selected
-          setSelectedBranch(userBranchId);
-        }
+      } catch (error) {
+        console.error("Error fetching branches:", error);
       }
-    } catch (error) {
-      console.error("Error fetching branches:", error);
+    } else if (userBranchId && userBranchName) {
+      // Non-admin users: set only their assigned branch
+      setBranches([{ id: userBranchId, name: userBranchName }]);
+      setSelectedBranch(userBranchId);
     }
   };
 
@@ -187,10 +140,16 @@ export default function ReportsPage() {
         branch: canViewAllBranches ? selectedBranch : userBranchId || "all",
       });
 
+      console.log("Fetching report data with params:", params.toString());
+
       const response = await fetch(`/api/reports/comprehensive?${params}`, {
         credentials: "include",
       });
+
+      console.log("Reports API response status:", response.status);
+
       const result = await response.json();
+      console.log("Reports API result:", result);
 
       if (result.success) {
         setReportData(result.data);
@@ -304,8 +263,8 @@ export default function ReportsPage() {
                   <>
                     <Eye className="h-3 w-3" />
                     All Branches
-                        </>
-                      ) : (
+                  </>
+                ) : (
                   <>
                     <Building2 className="h-3 w-3" />
                     {branches.find((b) => b.id === selectedBranch)?.name ||
@@ -336,13 +295,13 @@ export default function ReportsPage() {
               className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
             />
             Refresh
-                </Button>
+          </Button>
           <Button variant="outline" onClick={() => exportReport("pdf")}>
             <Download className="h-4 w-4 mr-2" />
             Export PDF
-                </Button>
-              </div>
-            </div>
+          </Button>
+        </div>
+      </div>
 
       <ReportsFilterBar
         dateRange={dateRange}
@@ -445,37 +404,37 @@ export default function ReportsPage() {
         <Tabs defaultValue="summary" className="space-y-4">
           <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="summary" className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
+              <BarChart3 className="h-4 w-4" />
               Summary
-          </TabsTrigger>
-            {canViewFinancialReports && (
+            </TabsTrigger>
+            {canViewReports && (
               <TabsTrigger
                 value="income-statement"
                 className="flex items-center gap-2"
               >
-            <TrendingUp className="h-4 w-4" />
-            Income Statement
-          </TabsTrigger>
+                <TrendingUp className="h-4 w-4" />
+                Income Statement
+              </TabsTrigger>
             )}
-            {canViewFinancialReports && (
+            {canViewReports && (
               <TabsTrigger
                 value="balance-sheet"
                 className="flex items-center gap-2"
               >
-            <PieChart className="h-4 w-4" />
-            Balance Sheet
-          </TabsTrigger>
+                <PieChart className="h-4 w-4" />
+                Balance Sheet
+              </TabsTrigger>
             )}
-            {canViewFinancialReports && (
+            {canViewReports && (
               <TabsTrigger
                 value="cash-flow"
                 className="flex items-center gap-2"
               >
-            <FileText className="h-4 w-4" />
-            Cash Flow
-          </TabsTrigger>
+                <FileText className="h-4 w-4" />
+                Cash Flow
+              </TabsTrigger>
             )}
-            {canViewOperationalReports && (
+            {canViewReports && (
               <TabsTrigger
                 value="operational"
                 className="flex items-center gap-2"
@@ -487,8 +446,8 @@ export default function ReportsPage() {
             <TabsTrigger value="export" className="flex items-center gap-2">
               <Download className="h-4 w-4" />
               Export
-          </TabsTrigger>
-        </TabsList>
+            </TabsTrigger>
+          </TabsList>
 
           <TabsContent value="summary">
             <Card>
@@ -690,10 +649,10 @@ export default function ReportsPage() {
                 )}
               </CardContent>
             </Card>
-        </TabsContent>
+          </TabsContent>
 
-          {canViewFinancialReports && (
-        <TabsContent value="income-statement">
+          {canViewReports && (
+            <TabsContent value="income-statement">
               <Card>
                 <CardHeader>
                   <CardTitle>Income Statement</CardTitle>
@@ -794,11 +753,11 @@ export default function ReportsPage() {
                   )}
                 </CardContent>
               </Card>
-        </TabsContent>
+            </TabsContent>
           )}
 
-          {canViewFinancialReports && (
-        <TabsContent value="balance-sheet">
+          {canViewReports && (
+            <TabsContent value="balance-sheet">
               <Card>
                 <CardHeader>
                   <CardTitle>Balance Sheet</CardTitle>
@@ -883,11 +842,11 @@ export default function ReportsPage() {
                   )}
                 </CardContent>
               </Card>
-        </TabsContent>
+            </TabsContent>
           )}
 
-          {canViewFinancialReports && (
-        <TabsContent value="cash-flow">
+          {canViewReports && (
+            <TabsContent value="cash-flow">
               <Card>
                 <CardHeader>
                   <CardTitle>Cash Flow Statement</CardTitle>
@@ -977,7 +936,7 @@ export default function ReportsPage() {
             </TabsContent>
           )}
 
-          {canViewOperationalReports && (
+          {canViewReports && (
             <TabsContent value="operational">
               <Card>
                 <CardHeader>
@@ -1112,7 +1071,7 @@ export default function ReportsPage() {
                   )}
                 </CardContent>
               </Card>
-        </TabsContent>
+            </TabsContent>
           )}
 
           <TabsContent value="export">
@@ -1143,8 +1102,8 @@ export default function ReportsPage() {
                 </div>
               </CardContent>
             </Card>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
       )}
     </div>
   );

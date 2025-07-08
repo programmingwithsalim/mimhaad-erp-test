@@ -7,7 +7,7 @@ const sql = neon(process.env.DATABASE_URL!);
 export async function GET(request: NextRequest) {
   try {
     // Get user context
-    const user = getCurrentUser(request);
+    const user = await getCurrentUser(request);
     if (!user || user.id === "00000000-0000-0000-0000-000000000000") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -31,14 +31,14 @@ export async function GET(request: NextRequest) {
         fa.current_balance,
         fa.branch_id,
         fa.account_number,
-        b.name as branch_name
+        COALESCE(b.name, 'Unknown Branch') as branch_name
       FROM float_accounts fa
       LEFT JOIN branches b ON fa.branch_id = b.id
       WHERE fa.branch_id = ${userBranchId}
       ORDER BY fa.provider, fa.account_type
     `;
 
-    // Fetch GL accounts
+    // Fetch GL accounts (filtered by branch)
     const glAccounts = await sql`
       SELECT 
         id,
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
         type as account_type,
         is_active
       FROM gl_accounts 
-      WHERE is_active = true
+      WHERE is_active = true AND branch_id = ${userBranchId}
       ORDER BY code
     `;
 
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     // Get user context
-    const user = getCurrentUser(request);
+    const user = await getCurrentUser(request);
     if (!user || user.id === "00000000-0000-0000-0000-000000000000") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

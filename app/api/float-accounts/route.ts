@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { FloatAccountService } from "@/lib/services/float-account-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
     // Get current user for role-based access
     let user;
     try {
-      user = getCurrentUser(request);
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.warn("Authentication failed, using fallback:", authError);
       user = {
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
     // Get current user for role-based access
     let user;
     try {
-      user = getCurrentUser(request);
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.warn("Authentication failed, using fallback:", authError);
       user = {
@@ -248,42 +249,19 @@ export async function POST(request: NextRequest) {
 
     console.log("💰 [FLOAT] Using user ID:", user.id);
 
-    // Create the float account
-    const result = await sql`
-      INSERT INTO float_accounts (
-        provider,
-        account_type,
-        account_number,
-        current_balance,
-        min_threshold,
-        max_threshold,
-        is_active,
-        isezwichpartner,
-        notes,
-        branch_id,
-        created_by
-      ) VALUES (
-        ${provider},
-        ${account_type},
-        ${account_number || null},
-        ${current_balance || 0},
-        ${min_threshold || 1000},
-        ${max_threshold || 50000},
-        ${is_active},
-        ${isEzwichPartner},
-        ${notes || null},
-        ${branch_id},
-        ${user.id}
-      )
-      RETURNING *
-    `;
-
-    console.log("✅ [FLOAT] Float account created successfully:", result[0]);
+    // Use FloatAccountService for creation (auto GL)
+    const floatAccount = await FloatAccountService.createFloatAccount({
+      branch_id,
+      account_type,
+      provider,
+      account_name: account_number || provider || account_type,
+      initial_balance: current_balance || 0,
+    });
 
     return NextResponse.json({
       success: true,
-      account: result[0],
-      message: "Float account created successfully",
+      account: floatAccount,
+      message: "Float account created successfully (with GL)",
     });
   } catch (error) {
     console.error("❌ [FLOAT] Error creating float account:", error);

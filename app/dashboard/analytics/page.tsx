@@ -238,8 +238,16 @@ export default function AnalyticsPage() {
         userBranchId: userBranchId || "",
       });
 
-      const response = await fetch(`/api/analytics/comprehensive?${params}`);
+      console.log("Fetching analytics data with params:", params.toString());
+
+      const response = await fetch(`/api/analytics/comprehensive?${params}`, {
+        credentials: "include",
+      });
+      
+      console.log("Analytics API response status:", response.status);
+      
       const result = await response.json();
+      console.log("Analytics API result:", result);
 
       if (result.success) {
         setData(result.data);
@@ -342,7 +350,7 @@ export default function AnalyticsPage() {
 
   const revenueBreakdownData =
     data?.servicePerformance?.map((service, index) => ({
-      name: service.service.charAt(0).toUpperCase() + service.service.slice(1),
+      name: service.service,
       value: service.totalFees,
       color: COLORS[index % COLORS.length],
       volume: service.totalVolume,
@@ -351,8 +359,7 @@ export default function AnalyticsPage() {
 
   const servicePerformanceData =
     data?.servicePerformance?.map((service, index) => ({
-      service:
-        service.service.charAt(0).toUpperCase() + service.service.slice(1),
+      service: service.service,
       transactions: service.transactionCount,
       volume: service.totalVolume,
       fees: service.totalFees,

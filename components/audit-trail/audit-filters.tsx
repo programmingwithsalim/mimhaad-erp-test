@@ -17,6 +17,7 @@ interface AuditFiltersProps {
   onSearchChange: (value: string) => void;
   dateRange: DateRange | undefined;
   onDateRangeChange: (range: DateRange | undefined) => void;
+  showBranchFilter?: boolean;
 }
 
 export function AuditFilters({
@@ -26,6 +27,7 @@ export function AuditFilters({
   onSearchChange,
   dateRange,
   onDateRangeChange,
+  showBranchFilter = true,
 }: AuditFiltersProps) {
   return (
     <div className="space-y-6">
@@ -70,12 +72,14 @@ export function AuditFilters({
           }
         />
 
-        <BranchFilter
-          selectedBranches={filters.branchId || []}
-          setSelectedBranches={(branches) =>
-            onFilterChange({ branchId: branches })
-          }
-        />
+        {showBranchFilter && (
+          <BranchFilter
+            selectedBranches={filters.branchId || []}
+            setSelectedBranches={(branches) =>
+              onFilterChange({ branchId: branches })
+            }
+          />
+        )}
       </div>
     </div>
   );

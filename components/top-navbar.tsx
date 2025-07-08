@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useNotifications } from "@/hooks/use-notifications";
 
 // Mock notification data
 const mockNotifications = [
@@ -77,8 +78,10 @@ export function TopNavbar() {
   const [tempRole, setTempRole] = useState(user?.role || "");
   const [tempBranch, setTempBranch] = useState(user?.branchId || "");
 
+  const { notifications, isLoading: notificationsLoading } = useNotifications();
+
   // Count unread notifications
-  const unreadCount = mockNotifications.filter(
+  const unreadCount = notifications.filter(
     (notification) => !notification.read
   ).length;
 
@@ -126,7 +129,7 @@ export function TopNavbar() {
 
   // Handle notification view all click
   const handleViewAllNotifications = () => {
-    router.push("/profile?tab=notifications");
+    router.push("/dashboard/notifications");
     setNotificationOpen(false);
   };
 
@@ -252,13 +255,17 @@ export function TopNavbar() {
                 </Button>
               </div>
               <div className="max-h-[300px] overflow-auto">
-                {mockNotifications.length === 0 ? (
+                {notificationsLoading ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    Loading notifications...
+                  </div>
+                ) : notifications.length === 0 ? (
                   <div className="p-4 text-center text-sm text-muted-foreground">
                     No notifications
                   </div>
                 ) : (
                   <div className="space-y-1">
-                    {mockNotifications.map((notification) => (
+                    {notifications.map((notification) => (
                       <div
                         key={notification.id}
                         className={`rounded-md p-2 text-sm ${
@@ -340,9 +347,7 @@ export function TopNavbar() {
             <div className="absolute right-0 top-full mt-1 w-56 rounded-md border bg-background p-1 shadow-lg z-50">
               <div className="border-b p-2">
                 <p className="font-medium">{user?.firstName}</p>
-                <p className="text-xs text-muted-foreground">
-                  {user?.email}
-                </p>
+                <p className="text-xs text-muted-foreground">{user?.email}</p>
                 <p className="text-xs text-muted-foreground capitalize">
                   {user?.role}
                 </p>

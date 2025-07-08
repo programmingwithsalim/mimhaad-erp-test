@@ -1,10 +1,32 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { getCurrentUser } from "@/lib/auth-utils";
 
-const sql = neon(process.env.CONNECTION_STRING!)
+const sql = neon(process.env.CONNECTION_STRING!);
 
-export async function GET() {
+export async function GET(request) {
   try {
+    // Get user context
+    const user = await getCurrentUser(request);
+    if (!user || user.id === "00000000-0000-0000-0000-000000000000") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Parse branchId from query or use user's branchId
+    const url = request.nextUrl || request.url || {};
+    const searchParams =
+      url.searchParams || new URL(url, "http://localhost").searchParams;
+    let branchId = searchParams.get("branchId");
+    if (!branchId && user.role !== "Admin") {
+      branchId = user.branchId;
+    }
+
+    // Build branch filter SQL
+    const branchFilter = branchId ? sql`AND branch_id = ${branchId}` : sql``;
+    const branchFilterWhere = branchId
+      ? sql`WHERE branch_id = ${branchId}`
+      : sql``;
+
     // Get account statistics
     const accountStats = await sql`
       SELECT 
@@ -16,7 +38,8 @@ export async function GET() {
         COUNT(CASE WHEN type = 'Revenue' AND is_active = true THEN 1 END) as revenue_accounts,
         COUNT(CASE WHEN type = 'Expense' AND is_active = true THEN 1 END) as expense_accounts
       FROM gl_accounts
-    `
+      ${branchFilterWhere}
+    `;
 
     // Get transaction statistics
     const transactionStats = await sql`
@@ -25,7 +48,8 @@ export async function GET() {
         COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_transactions,
         COUNT(CASE WHEN status = 'posted' THEN 1 END) as posted_transactions
       FROM gl_transactions
-    `
+      ${branchFilterWhere}
+    `;
 
     // Get debit/credit totals and calculate net position correctly
     const balanceStats = await sql`
@@ -35,7 +59,8 @@ export async function GET() {
       FROM gl_journal_entries je
       JOIN gl_transactions gt ON je.transaction_id = gt.id
       WHERE gt.status = 'posted'
-    `
+      ${branchId ? sql`AND gt.branch_id = ${branchId}` : sql``}
+    `;
 
     // Get net position by account type (for proper financial position)
     const netPositionByType = await sql`
@@ -53,6 +78,7 @@ export async function GET() {
         LEFT JOIN gl_journal_entries je ON a.id = je.account_id
         LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
         WHERE a.is_active = true
+        ${branchId ? sql`AND a.branch_id = ${branchId}` : sql``}
         GROUP BY a.id, a.code, a.name, a.type
       )
       SELECT
@@ -62,7 +88,7 @@ export async function GET() {
         SUM(CASE WHEN type = 'Revenue' THEN net_balance ELSE 0 END) as revenue,
         SUM(CASE WHEN type = 'Expense' THEN net_balance ELSE 0 END) as expenses
       FROM account_balances
-    `
+    `;
 
     // Get recent activity by module (last 30 days)
     const recentActivity = await sql`
@@ -74,46 +100,50 @@ export async function GET() {
       JOIN gl_journal_entries je ON gt.id = je.transaction_id
       WHERE gt.created_at >= NOW() - INTERVAL '30 days'
         AND gt.status = 'posted'
+        ${branchId ? sql`AND gt.branch_id = ${branchId}` : sql``}
       GROUP BY source_module
       ORDER BY amount DESC
       LIMIT 10
-    `
+    `;
 
-    const accountStatsRow = accountStats[0]
-    const transactionStatsRow = transactionStats[0]
-    const balanceStatsRow = balanceStats[0]
-    const netPositionRow = netPositionByType[0]
+    const accountStatsRow = accountStats[0];
+    const transactionStatsRow = transactionStats[0];
+    const balanceStatsRow = balanceStats[0];
+    const netPositionRow = netPositionByType[0];
 
-    const totalDebits = Number.parseFloat(balanceStatsRow.total_debits) || 0
-    const totalCredits = Number.parseFloat(balanceStatsRow.total_credits) || 0
-    const balanceDifference = totalDebits - totalCredits
-    const isBalanced = Math.abs(balanceDifference) < 0.01
+    const totalDebits = Number.parseFloat(balanceStatsRow.total_debits) || 0;
+    const totalCredits = Number.parseFloat(balanceStatsRow.total_credits) || 0;
+    const balanceDifference = totalDebits - totalCredits;
+    const isBalanced = Math.abs(balanceDifference) < 0.01;
 
     // Calculate actual net position (profit/loss)
-    const assets = Number.parseFloat(netPositionRow.assets) || 0
-    const liabilities = Number.parseFloat(netPositionRow.liabilities) || 0
-    const equity = Number.parseFloat(netPositionRow.equity) || 0
-    const revenue = Number.parseFloat(netPositionRow.revenue) || 0
-    const expenses = Number.parseFloat(netPositionRow.expenses) || 0
+    const assets = Number.parseFloat(netPositionRow.assets) || 0;
+    const liabilities = Number.parseFloat(netPositionRow.liabilities) || 0;
+    const equity = Number.parseFloat(netPositionRow.equity) || 0;
+    const revenue = Number.parseFloat(netPositionRow.revenue) || 0;
+    const expenses = Number.parseFloat(netPositionRow.expenses) || 0;
 
     // Net position = Revenue - Expenses (profit/loss)
-    const netPosition = revenue - expenses
+    const netPosition = revenue - expenses;
 
     // Financial position = Assets - (Liabilities + Equity)
-    const financialPosition = assets - (liabilities + equity)
+    const financialPosition = assets - (liabilities + equity);
 
     const statistics = {
       totalAccounts: Number.parseInt(accountStatsRow.total_accounts) || 0,
       activeAccounts: Number.parseInt(accountStatsRow.active_accounts) || 0,
-      totalTransactions: Number.parseInt(transactionStatsRow.total_transactions) || 0,
+      totalTransactions:
+        Number.parseInt(transactionStatsRow.total_transactions) || 0,
       totalDebits,
       totalCredits,
       isBalanced,
       balanceDifference,
       netPosition,
       financialPosition,
-      pendingTransactions: Number.parseInt(transactionStatsRow.pending_transactions) || 0,
-      postedTransactions: Number.parseInt(transactionStatsRow.posted_transactions) || 0,
+      pendingTransactions:
+        Number.parseInt(transactionStatsRow.pending_transactions) || 0,
+      postedTransactions:
+        Number.parseInt(transactionStatsRow.posted_transactions) || 0,
       accountsByType: {
         Asset: Number.parseInt(accountStatsRow.asset_accounts) || 0,
         Liability: Number.parseInt(accountStatsRow.liability_accounts) || 0,
@@ -127,11 +157,14 @@ export async function GET() {
         amount: Number.parseFloat(row.amount) || 0,
       })),
       lastSyncTime: new Date().toISOString(),
-    }
+    };
 
-    return NextResponse.json(statistics)
+    return NextResponse.json(statistics);
   } catch (error) {
-    console.error("Error fetching GL statistics:", error)
-    return NextResponse.json({ error: "Failed to fetch GL statistics" }, { status: 500 })
+    console.error("Error fetching GL statistics:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch GL statistics" },
+      { status: 500 }
+    );
   }
 }

@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 import { AuditLogTable } from "./audit-trail-table";
 import { AuditStatistics } from "./audit-statistics";
@@ -53,6 +54,7 @@ export function AuditTrailDashboard({
   showExport = true,
 }: AuditTrailDashboardProps) {
   const { toast } = useToast();
+  const { user } = useCurrentUser();
 
   // State management
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
@@ -85,51 +87,65 @@ export function AuditTrailDashboard({
 
   // Fetch audit logs
   const fetchAuditLogs = async (newFilters?: AuditLogFilters) => {
-      try {
+    try {
       setLoading(true);
       const currentFilters = newFilters || filters;
-
-        const queryParams = new URLSearchParams({
+      const queryParams = new URLSearchParams({
         page: currentFilters.page?.toString() || "1",
         limit: currentFilters.limit?.toString() || "50",
       });
-
-        // Add filters to query params
+      // Add filters to query params
       if (currentFilters.userId?.length) {
         queryParams.set("userId", currentFilters.userId.join(","));
-        }
+      }
       if (currentFilters.actionType?.length) {
         queryParams.set("actionType", currentFilters.actionType.join(","));
-        }
+      }
       if (currentFilters.entityType?.length) {
         queryParams.set("entityType", currentFilters.entityType.join(","));
-        }
+      }
       if (currentFilters.severity?.length) {
         queryParams.set("severity", currentFilters.severity.join(","));
-        }
+      }
       if (currentFilters.status?.length) {
         queryParams.set("status", currentFilters.status.join(","));
+      }
+      // Branch filtering logic
+      let branchIdToSend = undefined;
+      if (user) {
+        if (user.role !== "Admin") {
+          branchIdToSend = user.branchId;
+        } else if (
+          Array.isArray(currentFilters.branchId) &&
+          currentFilters.branchId.length === 1
+        ) {
+          branchIdToSend = currentFilters.branchId[0];
+        } else if (
+          typeof currentFilters.branchId === "string" &&
+          currentFilters.branchId
+        ) {
+          branchIdToSend = currentFilters.branchId;
         }
-      if (currentFilters.branchId?.length) {
-        queryParams.set("branchId", currentFilters.branchId.join(","));
-        }
-        if (searchTerm.trim()) {
+      }
+      if (branchIdToSend) {
+        queryParams.set("branchId", branchIdToSend);
+      }
+      console.log("[AuditTrail] Fetching logs with branchId:", branchIdToSend);
+      if (searchTerm.trim()) {
         queryParams.set("searchTerm", searchTerm.trim());
-        }
-        if (dateRange?.from) {
+      }
+      if (dateRange?.from) {
         queryParams.set("startDate", format(dateRange.from, "yyyy-MM-dd"));
-        }
-        if (dateRange?.to) {
+      }
+      if (dateRange?.to) {
         queryParams.set("endDate", format(dateRange.to, "yyyy-MM-dd"));
       }
-
       const response = await fetch(`/api/audit-logs?${queryParams}`);
       const data = await response.json();
-
       if (data.success && data.data) {
         setAuditLogs(data.data.logs || []);
         setPagination(data.data.pagination);
-        } else {
+      } else {
         console.error("Failed to fetch audit logs:", data.error);
         toast({
           title: "Error",
@@ -138,8 +154,8 @@ export function AuditTrailDashboard({
         });
         setAuditLogs([]);
         setPagination((prev) => ({ ...prev, total: 0, pages: 0 }));
-        }
-      } catch (error) {
+      }
+    } catch (error) {
       console.error("Error fetching audit logs:", error);
       toast({
         title: "Error",
@@ -148,7 +164,7 @@ export function AuditTrailDashboard({
       });
       setAuditLogs([]);
       setPagination((prev) => ({ ...prev, total: 0, pages: 0 }));
-      } finally {
+    } finally {
       setLoading(false);
     }
   };
@@ -156,12 +172,28 @@ export function AuditTrailDashboard({
   // Fetch statistics
   const fetchStatistics = async () => {
     if (!showStatistics) return;
-
     try {
       setLoadingStats(true);
-      const response = await fetch("/api/audit-logs/statistics");
+      let statsUrl = "/api/audit-logs/statistics";
+      let branchIdToSend = undefined;
+      if (user) {
+        if (user.role !== "Admin") {
+          branchIdToSend = user.branchId;
+        } else if (
+          Array.isArray(filters.branchId) &&
+          filters.branchId.length === 1
+        ) {
+          branchIdToSend = filters.branchId[0];
+        } else if (typeof filters.branchId === "string" && filters.branchId) {
+          branchIdToSend = filters.branchId;
+        }
+      }
+      if (branchIdToSend) {
+        statsUrl += `?branchId=${encodeURIComponent(branchIdToSend)}`;
+      }
+      console.log("[AuditTrail] Fetching stats with branchId:", branchIdToSend);
+      const response = await fetch(statsUrl);
       const data = await response.json();
-
       if (data.success) {
         setStatistics(data.data);
       } else {
@@ -189,6 +221,11 @@ export function AuditTrailDashboard({
     fetchAuditLogs();
     fetchStatistics();
   }, []);
+
+  useEffect(() => {
+    fetchAuditLogs();
+    fetchStatistics();
+  }, [user]);
 
   // Handle filter changes
   const handleFilterChange = (newFilters: Partial<AuditLogFilters>) => {
@@ -350,6 +387,7 @@ export function AuditTrailDashboard({
               onSearchChange={handleSearch}
               dateRange={dateRange}
               onDateRangeChange={handleDateRangeChange}
+              showBranchFilter={user?.role === "Admin"}
             />
           </CardContent>
         </Card>
@@ -357,16 +395,16 @@ export function AuditTrailDashboard({
 
       {/* Search Bar */}
       <div className="flex items-center gap-4">
-            <div className="relative flex-1">
+        <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search audit logs..."
-                value={searchTerm}
-                onChange={(e) => handleSearch(e.target.value)}
+          <Input
+            placeholder="Search audit logs..."
+            value={searchTerm}
+            onChange={(e) => handleSearch(e.target.value)}
             className="pl-10"
-              />
-            </div>
-          </div>
+          />
+        </div>
+      </div>
 
       {/* Audit Logs Table */}
       <Card>
@@ -391,17 +429,17 @@ export function AuditTrailDashboard({
       {/* Log Details Dialog */}
       <Dialog open={!!selectedLog} onOpenChange={() => setSelectedLog(null)}>
         <DialogContent className="max-w-4xl max-h-[80vh]">
-                              <DialogHeader>
-                                <DialogTitle>Audit Log Details</DialogTitle>
+          <DialogHeader>
+            <DialogTitle>Audit Log Details</DialogTitle>
             <DialogDescription>
               Detailed information about this audit log entry
             </DialogDescription>
-                              </DialogHeader>
+          </DialogHeader>
           <ScrollArea className="max-h-[60vh]">
             {selectedLog && <AuditLogDetails log={selectedLog} />}
-                              </ScrollArea>
-                            </DialogContent>
-                          </Dialog>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

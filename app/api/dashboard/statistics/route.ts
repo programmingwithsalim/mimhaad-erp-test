@@ -24,8 +24,229 @@ export async function GET(request: NextRequest) {
     // Determine effective branch filter
     const effectiveBranchId = isAdmin ? null : userBranchId;
 
-    // Get all statistics in parallel with role-based filtering
+    // Build branch filter for SQL queries
+    const branchFilter = effectiveBranchId ? `AND branch_id = '${effectiveBranchId}'` : "";
+
+    // Get comprehensive transaction statistics with aggregation
+    const transactionStatsQuery = `
+      SELECT 
+        COUNT(*) as total_transactions,
+        COALESCE(SUM(amount), 0) as total_volume,
+        COALESCE(SUM(fee), 0) as total_fees,
+        COALESCE(AVG(amount), 0) as avg_transaction_value,
+        COUNT(DISTINCT user_id) as unique_users,
+        COUNT(DISTINCT branch_id) as active_branches
+      FROM (
+        SELECT amount, fee, user_id, branch_id FROM agency_banking_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee, user_id, branch_id FROM momo_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee, user_id, branch_id FROM e_zwich_withdrawals 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee, user_id, branch_id FROM power_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee, user_id, branch_id FROM jumia_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'active' ${branchFilter}
+      ) as all_transactions
+    `;
+
+    // Get today's statistics
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayEnd = new Date();
+    todayEnd.setHours(23, 59, 59, 999);
+
+    const todayStatsQuery = `
+      SELECT 
+        COUNT(*) as today_transactions,
+        COALESCE(SUM(amount), 0) as today_volume,
+        COALESCE(SUM(fee), 0) as today_fees
+      FROM (
+        SELECT amount, fee FROM agency_banking_transactions 
+        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee FROM momo_transactions 
+        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee FROM e_zwich_withdrawals 
+        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee FROM power_transactions 
+        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT amount, fee FROM jumia_transactions 
+        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
+        AND status = 'active' ${branchFilter}
+      ) as today_transactions
+    `;
+
+    // Get service breakdown with aggregation
+    const serviceBreakdownQuery = `
+      SELECT 
+        service_type,
+        COUNT(*) as transaction_count,
+        COALESCE(SUM(amount), 0) as total_volume,
+        COALESCE(SUM(fee), 0) as total_fees,
+        COALESCE(AVG(amount), 0) as avg_transaction_value
+      FROM (
+        SELECT 'MoMo' as service_type, amount, fee FROM momo_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT 'Agency Banking' as service_type, amount, fee FROM agency_banking_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT 'E-Zwich' as service_type, amount, fee FROM e_zwich_withdrawals 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT 'Power' as service_type, amount, fee FROM power_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT 'Jumia' as service_type, amount, fee FROM jumia_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'active' ${branchFilter}
+      ) as service_data
+      GROUP BY service_type
+      ORDER BY total_volume DESC
+    `;
+
+    // Get recent activity with aggregation
+    const recentActivityQuery = `
+      SELECT 
+        'agency_banking' as service,
+        id,
+        amount,
+        customer_name,
+        created_at,
+        'Agency Banking' as service_name
+      FROM agency_banking_transactions 
+      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+      AND status = 'completed' ${branchFilter}
+      UNION ALL
+      SELECT 
+        'momo' as service,
+        id,
+        amount,
+        customer_name,
+        created_at,
+        'MoMo' as service_name
+      FROM momo_transactions 
+      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+      AND status = 'completed' ${branchFilter}
+      UNION ALL
+      SELECT 
+        'e_zwich' as service,
+        id,
+        amount,
+        customer_name,
+        created_at,
+        'E-Zwich' as service_name
+      FROM e_zwich_withdrawals 
+      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+      AND status = 'completed' ${branchFilter}
+      UNION ALL
+      SELECT 
+        'power' as service,
+        id,
+        amount,
+        customer_name,
+        created_at,
+        'Power' as service_name
+      FROM power_transactions 
+      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+      AND status = 'completed' ${branchFilter}
+      UNION ALL
+      SELECT 
+        'jumia' as service,
+        id,
+        amount,
+        customer_name,
+        created_at,
+        'Jumia' as service_name
+      FROM jumia_transactions 
+      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+      AND status = 'active' ${branchFilter}
+      ORDER BY created_at DESC
+      LIMIT 10
+    `;
+
+    // Get float alerts with aggregation
+    const floatAlertsQuery = `
+      SELECT 
+        id,
+        account_type as provider,
+        account_type as service,
+        current_balance,
+        min_threshold as threshold,
+        CASE 
+          WHEN current_balance < min_threshold THEN 'critical'
+          WHEN current_balance < (min_threshold * 1.5) THEN 'warning'
+          ELSE 'normal'
+        END as severity
+      FROM float_accounts 
+      WHERE is_active = true 
+      AND (current_balance < min_threshold OR current_balance < (min_threshold * 1.5))
+      ${branchFilter}
+      ORDER BY current_balance ASC
+      LIMIT 10
+    `;
+
+    // Get chart data with daily aggregation
+    const chartDataQuery = `
+      SELECT 
+        DATE(created_at) as date,
+        COUNT(*) as transaction_count,
+        COALESCE(SUM(amount), 0) as volume,
+        COALESCE(SUM(fee), 0) as fees
+      FROM (
+        SELECT created_at, amount, fee FROM agency_banking_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT created_at, amount, fee FROM momo_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT created_at, amount, fee FROM e_zwich_withdrawals 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT created_at, amount, fee FROM power_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'completed' ${branchFilter}
+        UNION ALL
+        SELECT created_at, amount, fee FROM jumia_transactions 
+        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
+        AND status = 'active' ${branchFilter}
+      ) as all_transactions
+      GROUP BY DATE(created_at)
+      ORDER BY date
+    `;
+
+    // Execute all queries in parallel
     const [
+      transactionStatsResult,
+      todayStatsResult,
+      serviceBreakdownResult,
+      recentActivityResult,
+      floatAlertsResult,
+      chartDataResult,
       agencyBankingStats,
       momoStats,
       ezwichStats,
@@ -37,6 +258,12 @@ export async function GET(request: NextRequest) {
       userStats,
       branchStats,
     ] = await Promise.all([
+      sql.unsafe(transactionStatsQuery),
+      sql.unsafe(todayStatsQuery),
+      sql.unsafe(serviceBreakdownQuery),
+      sql.unsafe(recentActivityQuery),
+      sql.unsafe(floatAlertsQuery),
+      sql.unsafe(chartDataQuery),
       getAgencyBankingStats(startDate, endDate, effectiveBranchId),
       getMomoStats(startDate, endDate, effectiveBranchId),
       getEzwichStats(startDate, endDate, effectiveBranchId),
@@ -49,44 +276,94 @@ export async function GET(request: NextRequest) {
       getBranchStats(isAdmin),
     ]);
 
-    // Calculate totals
-    const totalTransactions =
-      agencyBankingStats.count +
-      momoStats.count +
-      ezwichStats.count +
-      jumiaStats.count +
-      powerStats.count;
+    // Process results
+    const totalTransactions = Number(transactionStatsResult[0]?.total_transactions || 0);
+    const totalVolume = Number(transactionStatsResult[0]?.total_volume || 0);
+    const totalFees = Number(transactionStatsResult[0]?.total_fees || 0);
+    const avgTransactionValue = Number(transactionStatsResult[0]?.avg_transaction_value || 0);
+    const uniqueUsers = Number(transactionStatsResult[0]?.unique_users || 0);
+    const activeBranches = Number(transactionStatsResult[0]?.active_branches || 0);
 
-    const totalVolume =
-      agencyBankingStats.volume +
-      momoStats.volume +
-      ezwichStats.volume +
-      jumiaStats.volume +
-      powerStats.volume;
+    const todayTransactions = Number(todayStatsResult[0]?.today_transactions || 0);
+    const todayVolume = Number(todayStatsResult[0]?.today_volume || 0);
+    const todayFees = Number(todayStatsResult[0]?.today_fees || 0);
 
+    const serviceBreakdown = Array.isArray(serviceBreakdownResult)
+      ? serviceBreakdownResult.map((service: any) => ({
+          service: service.service_type,
+          transactions: Number(service.transaction_count || 0),
+          volume: Number(service.total_volume || 0),
+          commission: Number(service.total_fees || 0),
+          avgTransactionValue: Number(service.avg_transaction_value || 0),
+        }))
+      : [];
+
+    const recentActivity = Array.isArray(recentActivityResult)
+      ? recentActivityResult.map((activity: any) => ({
+          id: activity.id,
+          type: 'transaction',
+          service: activity.service_name,
+          amount: Number(activity.amount || 0),
+          timestamp: activity.created_at,
+          user: activity.customer_name || 'Unknown',
+        }))
+      : [];
+
+    const floatAlerts = Array.isArray(floatAlertsResult)
+      ? floatAlertsResult.map((alert: any) => ({
+          id: alert.id,
+          provider: alert.provider,
+          service: alert.service,
+          current_balance: Number(alert.current_balance || 0),
+          threshold: Number(alert.threshold || 0),
+          severity: alert.severity,
+        }))
+      : [];
+
+    const chartData = Array.isArray(chartDataResult)
+      ? chartDataResult.map((row: any) => ({
+          date: row.date,
+          transactions: Number(row.transaction_count || 0),
+          volume: Number(row.volume || 0),
+          commission: Number(row.fees || 0),
+        }))
+      : [];
+
+    // Calculate totals from individual service stats
     const totalCommissions = commissionStats.total;
     const totalExpenses = expenseStats.total;
 
     // Role-specific data filtering
     const responseData: any = {
-        overview: {
-          totalTransactions,
-          totalVolume,
-          totalCommissions,
-          totalExpenses,
-          netRevenue: totalCommissions - totalExpenses,
-        },
-        services: {
-          agencyBanking: agencyBankingStats,
-          momo: momoStats,
-          ezwich: ezwichStats,
-          jumia: jumiaStats,
-          power: powerStats,
-        },
-        float: floatStats,
-        commissions: commissionStats,
-        expenses: expenseStats,
-      chartData: await getChartData(startDate, endDate, effectiveBranchId),
+      overview: {
+        totalTransactions,
+        totalVolume,
+        totalCommissions,
+        totalExpenses,
+        netRevenue: totalCommissions - totalExpenses,
+        avgTransactionValue,
+        uniqueUsers,
+        activeBranches,
+      },
+      today: {
+        transactions: todayTransactions,
+        volume: todayVolume,
+        commission: todayFees,
+      },
+      services: {
+        agencyBanking: agencyBankingStats,
+        momo: momoStats,
+        ezwich: ezwichStats,
+        jumia: jumiaStats,
+        power: powerStats,
+      },
+      serviceBreakdown,
+      recentActivity,
+      floatAlerts,
+      chartData,
+      float: floatStats,
+      commissions: commissionStats,
+      expenses: expenseStats,
     };
 
     // Add role-specific data

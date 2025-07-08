@@ -53,30 +53,22 @@ export async function GET(request: NextRequest) {
     let effectiveBranchId = null;
 
     try {
-      user = getCurrentUser(request);
+      user = await getCurrentUser(request); // Ensure this is awaited if async
+      if (!user) throw new Error("No user found");
       console.log("👤 Current user:", user);
 
-      // Determine effective branch ID based on user role and filters
       if (user.role === "Admin") {
-        // Admin can see all branches or filter by specific branch
         effectiveBranchId = filters.branchId || "all";
       } else {
-        // Non-admin users can only see their assigned branch
         effectiveBranchId = user.branchId;
       }
     } catch (authError) {
-      console.warn("⚠️ Authentication failed, using fallback:", authError);
-      // Use fallback values
-      user = {
-        id: "00000000-0000-0000-0000-000000000000",
-        name: "System User",
-        username: "system",
-        role: "admin",
-        branchId: "635844ab-029a-43f8-8523-d7882915266a",
-        branchName: "Main Branch",
-      };
-      effectiveBranchId =
-        filters.branchId || "635844ab-029a-43f8-8523-d7882915266a";
+      // Instead of fallback admin, return 401
+      console.warn("⚠️ Authentication failed:", authError);
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
     console.log("📊 Fetching transactions with optimized query:", {
@@ -279,7 +271,8 @@ export async function GET(request: NextRequest) {
       try {
         let jumiaCount, jumiaData;
         if (effectiveBranchId && effectiveBranchId !== "all") {
-          jumiaCount = await sql`SELECT COUNT(*) as count FROM jumia_transactions WHERE branch_id::text = ${effectiveBranchId}`;
+          jumiaCount =
+            await sql`SELECT COUNT(*) as count FROM jumia_transactions WHERE branch_id::text = ${effectiveBranchId}`;
           if (jumiaCount[0]?.count > 0) {
             jumiaData = await sql`
               SELECT 
@@ -292,7 +285,8 @@ export async function GET(request: NextRequest) {
             `;
           }
         } else {
-          jumiaCount = await sql`SELECT COUNT(*) as count FROM jumia_transactions`;
+          jumiaCount =
+            await sql`SELECT COUNT(*) as count FROM jumia_transactions`;
           if (jumiaCount[0]?.count > 0) {
             jumiaData = await sql`
               SELECT 

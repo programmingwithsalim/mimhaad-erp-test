@@ -1,10 +1,9 @@
 "use client";
 
-import type React from "react";
-import { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useState, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 
-interface User {
+export interface User {
   id: string;
   email: string;
   firstName: string;
@@ -13,13 +12,8 @@ interface User {
   role: string;
   branchId?: string;
   branchName?: string;
-  branchType?: string;
   phone?: string;
   avatar?: string;
-  status?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  lastLogin?: string;
 }
 
 interface AuthContextType {
@@ -57,23 +51,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log("Checking session...");
 
-      // First check if there's a role-switched user in session storage
-      if (typeof window !== "undefined") {
-        const storedUser = sessionStorage.getItem("currentUser");
-        if (storedUser) {
-          try {
-            const userData = JSON.parse(storedUser);
-            console.log("Found stored user data:", userData);
-            setUser(userData);
-            setIsLoading(false);
-            return;
-          } catch (error) {
-            console.error("Error parsing stored user data:", error);
-            sessionStorage.removeItem("currentUser");
-          }
-        }
-      }
-
       const response = await fetch("/api/auth/session", {
         credentials: "include",
         cache: "no-store",
@@ -91,11 +68,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim(),
           };
           setUser(userData);
-
-          // Store in session storage for role switcher
-          if (typeof window !== "undefined") {
-            sessionStorage.setItem("currentUser", JSON.stringify(userData));
-          }
         } else {
           setUser(null);
         }
@@ -113,7 +85,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      console.log("Attempting login for:", email);
+      console.log("Logging in...");
+      setIsLoading(true);
+
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: {
@@ -125,8 +99,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Login successful", data.user);
-        setUser(data.user);
+        console.log("Login successful");
+
+        // Ensure all user fields are properly mapped
+        const userData = {
+          ...data.user,
+          name:
+            data.user.name ||
+            `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim(),
+        };
+
+        setUser(userData);
+        router.push("/dashboard");
         return true;
       } else {
         const errorData = await response.json();
@@ -136,6 +120,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error("Login error:", error);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -144,7 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log("Logging out...");
       setIsLoading(true);
 
-      // Call logout API for both JWT and database sessions
+      // Call logout API to invalidate database session
       const response = await fetch("/api/auth/logout", {
         method: "POST",
         credentials: "include",
@@ -159,12 +145,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Clear user state immediately
       setUser(null);
 
-      // Clear any local storage or session storage
-      if (typeof window !== "undefined") {
-        localStorage.clear();
-        sessionStorage.clear();
-      }
-
       // Redirect to login page (root path)
       if (typeof window !== "undefined") {
         window.location.href = "/";
@@ -174,8 +154,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Still clear user state and redirect on error
       setUser(null);
       if (typeof window !== "undefined") {
-        localStorage.clear();
-        sessionStorage.clear();
         window.location.href = "/";
       }
     } finally {
@@ -192,7 +170,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        setUser(data.user);
+        if (data.user) {
+          const userData = {
+            ...data.user,
+            name:
+              data.user.name ||
+              `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim(),
+          };
+          setUser(userData);
+        } else {
+          setUser(null);
+        }
       } else {
         setUser(null);
       }

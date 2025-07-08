@@ -119,6 +119,8 @@ export default function ExpensesPage() {
   const { user } = useCurrentUser();
   const { toast } = useToast();
 
+  const isAdmin = user?.role === "Admin";
+
   const fetchExpenses = async (showLoading = true) => {
     try {
       if (showLoading) {
@@ -210,6 +212,12 @@ export default function ExpensesPage() {
       fetchBranches();
     }
   }, [selectedBranch]);
+
+  useEffect(() => {
+    if (!isAdmin && user?.branchId) {
+      setSelectedBranch(user.branchId);
+    }
+  }, [isAdmin, user?.branchId]);
 
   const refreshExpenses = async () => {
     console.log("Refreshing expenses and statistics...");
@@ -398,7 +406,7 @@ export default function ExpensesPage() {
             </div>
 
             {/* Branch Filter for Admin Users */}
-            {user?.role === "Admin" && (
+            {isAdmin && (
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2">
                   <Label htmlFor="branch-filter">Filter by Branch:</Label>

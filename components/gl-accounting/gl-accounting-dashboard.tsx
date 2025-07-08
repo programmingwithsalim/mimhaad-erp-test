@@ -20,6 +20,9 @@ import type { DateRange } from "react-day-picker";
 import { RefreshCw, Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { BranchSelector } from "@/components/branch/branch-selector";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { useBranch } from "@/contexts/branch-context";
 
 interface GLAccountingDashboardProps {
   initialDateRange?: DateRange;
@@ -28,6 +31,10 @@ interface GLAccountingDashboardProps {
 export function GLAccountingDashboard({
   initialDateRange,
 }: GLAccountingDashboardProps) {
+  const { user } = useCurrentUser();
+  const { selectedBranchId, setSelectedBranchId } = useBranch();
+  const branchIdToUse =
+    user && user.role === "Admin" ? selectedBranchId : user?.branchId;
   const [dateRange, setDateRange] = useState<DateRange>(
     initialDateRange || {
       from: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
@@ -81,6 +88,11 @@ export function GLAccountingDashboard({
 
   return (
     <div className="space-y-6">
+      {user?.role === "Admin" && (
+        <div className="mb-4">
+          <BranchSelector onBranchChange={setSelectedBranchId} />
+        </div>
+      )}
       {/* 1. Dashboard Summary */}
       <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-100">
         <CardHeader className="pb-2">
@@ -89,7 +101,7 @@ export function GLAccountingDashboard({
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <GLStatistics compact />
+          <GLStatistics compact branchId={branchIdToUse} />
         </CardContent>
       </Card>
 

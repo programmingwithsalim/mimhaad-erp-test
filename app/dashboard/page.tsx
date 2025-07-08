@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useRBAC } from "@/components/rbac/rbac-provider";
 import {
   TrendingUp,
   DollarSign,
@@ -29,6 +30,7 @@ import {
   LineChart,
   PieChart,
   Target,
+  CheckCircle,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EnhancedAdminDashboard } from "@/components/dashboard/enhanced-admin-dashboard";
@@ -118,6 +120,15 @@ const defaultStats: DashboardStats = {
 export default function DashboardPage() {
   const { toast } = useToast();
   const { user } = useCurrentUser();
+  const {
+    userRole,
+    isAdmin,
+    isManager,
+    isFinance,
+    isOperations,
+    isSupervisor,
+    isCashier,
+  } = useRBAC();
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -129,91 +140,83 @@ export default function DashboardPage() {
     }).format(amount || 0);
   };
 
-  const loadDashboardData = async () => {
-    if (!user?.branchId) {
-      setLoading(false);
-      return;
-    }
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat("en-GH").format(num || 0);
+  };
 
+  const loadDashboardData = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const params = new URLSearchParams({
-        branchId: user.branchId,
-        userRole: user.role || "",
-        userBranchId: user.branchId,
+      console.log("Loading dashboard data for user:", {
+        role: user?.role,
+        branchId: user?.branchId,
+        branchName: user?.branchName,
       });
 
-      const response = await fetch(`/api/dashboard/statistics?${params}`, {
+      const response = await fetch("/api/dashboard/statistics", {
         credentials: "include",
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          // Transform the API response to match our expected format
-          const transformedData = transformApiData(data.data);
-          setStats(transformedData);
-        } else {
-          console.error("Dashboard API error:", data.error);
-          setError(data.error || "Failed to load dashboard data");
-          setStats(defaultStats);
-        }
-      } else {
-        console.error("Dashboard API response not ok:", response.status);
-        setError(`Server error: ${response.status}`);
-        setStats(defaultStats);
+      console.log("Dashboard API response status:", response.status);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const apiData = await response.json();
+      console.log("Dashboard API result:", apiData);
+
+      const transformedData = transformApiData(apiData);
+      setStats(transformedData);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
-      setError(error instanceof Error ? error.message : "Unknown error");
-      setStats(defaultStats);
+      setError(
+        error instanceof Error ? error.message : "Failed to load dashboard data"
+      );
+      toast({
+        title: "Error",
+        description: "Failed to load dashboard data",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
   };
 
-  // Transform API data to match our expected format
   const transformApiData = (apiData: any): DashboardStats => {
-    const services = apiData.services || {};
+    console.log("Transforming API data:", apiData);
+
+    // Extract data from the new API structure
     const overview = apiData.overview || {};
+    const services = apiData.services || {};
+    const today = apiData.today || {};
 
-    // Calculate totals from services
-    const totalTransactions = Object.values(services).reduce(
-      (sum: number, service: any) => sum + (service.count || 0),
-      0
-    );
-    const totalVolume = Object.values(services).reduce(
-      (sum: number, service: any) => sum + (service.volume || 0),
-      0
-    );
-    const totalCommission = Object.values(services).reduce(
-      (sum: number, service: any) => sum + (service.fees || 0),
-      0
-    );
+    const totalTransactions = overview.totalTransactions || 0;
+    const totalVolume = overview.totalVolume || 0;
+    const totalCommission = overview.totalCommissions || 0;
 
-    // Transform service breakdown
-    const serviceBreakdown = Object.entries(services).map(
-      ([key, service]: [string, any]) => ({
-        service: key.replace(/([A-Z])/g, " $1").trim(), // Convert camelCase to readable
-        transactions: service.count || 0,
-        volume: service.volume || 0,
-        commission: service.fees || 0,
-      })
-    );
+    // Transform service breakdown from the new structure
+    const serviceBreakdown = apiData.serviceBreakdown || [
+      { service: "MoMo", transactions: 0, volume: 0, commission: 0 },
+      { service: "Agency Banking", transactions: 0, volume: 0, commission: 0 },
+      { service: "E-Zwich", transactions: 0, volume: 0, commission: 0 },
+      { service: "Power", transactions: 0, volume: 0, commission: 0 },
+      { service: "Jumia", transactions: 0, volume: 0, commission: 0 },
+    ];
 
     return {
       totalTransactions,
       totalVolume,
       totalCommission,
       activeUsers: apiData.users?.activeUsers || 0,
-      todayTransactions: totalTransactions, // For now, use total as today's
-      todayVolume: totalVolume,
-      todayCommission: totalCommission,
+      todayTransactions: today.transactions || 0,
+      todayVolume: today.volume || 0,
+      todayCommission: today.commission || 0,
       serviceBreakdown,
       recentActivity: apiData.recentActivity || [],
-      floatAlerts: apiData.float?.alerts || [],
+      floatAlerts: apiData.floatAlerts || [],
       chartData: apiData.chartData || [],
       financialMetrics: apiData.financialMetrics || {},
       revenueAnalysis: apiData.revenueAnalysis || [],
@@ -290,10 +293,8 @@ export default function DashboardPage() {
     );
   }
 
-  // Role-based dashboard rendering with proper role detection
-  const userRole = user?.role;
-
-  if (userRole === "Admin") {
+  // Role-based dashboard rendering with proper case-sensitive role detection
+  if (isAdmin) {
     return (
       <EnhancedAdminDashboard
         serviceStats={mappedServiceStats}
@@ -306,7 +307,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (userRole === "Finance") {
+  if (isFinance) {
     return (
       <EnhancedFinanceDashboard
         serviceStats={mappedServiceStats}
@@ -316,7 +317,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (userRole === "Manager") {
+  if (isManager) {
     return (
       <EnhancedManagerDashboard
         serviceStats={mappedServiceStats}
@@ -328,15 +329,16 @@ export default function DashboardPage() {
     );
   }
 
-  if (userRole === "Operations" || userRole === "Cashier") {
+  // Operations Dashboard
+  if (isOperations) {
     return (
       <div className="container mx-auto p-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Operations Dashboard</h1>
             <p className="text-muted-foreground">
-              Welcome back, {user?.firstName} {user?.lastName}! Daily operations
-              overview for {user?.branchName || "your branch"}
+              Welcome back, {user?.firstName} {user?.lastName}! Here's your
+              operations overview.
             </p>
           </div>
           <Button variant="outline" onClick={loadDashboardData}>
@@ -355,39 +357,7 @@ export default function DashboardPage() {
           </Alert>
         )}
 
-        {/* Float Alerts */}
-        {stats.floatAlerts && stats.floatAlerts.length > 0 && (
-          <div className="space-y-2">
-            <h3 className="text-lg font-semibold">Float Alerts</h3>
-            {stats.floatAlerts.map((alert) => (
-              <Alert
-                key={alert.id}
-                className={`border-l-4 ${
-                  alert.severity === "critical"
-                    ? "border-l-red-500 bg-red-50"
-                    : "border-l-yellow-500 bg-yellow-50"
-                }`}
-              >
-                <AlertTriangle
-                  className={`h-4 w-4 ${
-                    alert.severity === "critical"
-                      ? "text-red-600"
-                      : "text-yellow-600"
-                  }`}
-                />
-                <AlertDescription>
-                  <span className="font-medium">
-                    {alert.service} - {alert.provider}
-                  </span>{" "}
-                  float balance is {alert.severity}:{" "}
-                  {formatCurrency(alert.current_balance)}
-                </AlertDescription>
-              </Alert>
-            ))}
-          </div>
-        )}
-
-        {/* Daily Operations Overview */}
+        {/* Key Metrics */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -398,10 +368,10 @@ export default function DashboardPage() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {stats.todayTransactions}
+                {formatNumber(stats.todayTransactions)}
               </div>
               <p className="text-xs text-muted-foreground">
-                Total: {stats.totalTransactions}
+                Total: {formatNumber(stats.totalTransactions)}
               </p>
             </CardContent>
           </Card>
@@ -411,7 +381,7 @@ export default function DashboardPage() {
               <CardTitle className="text-sm font-medium">
                 Today's Volume
               </CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
@@ -455,118 +425,16 @@ export default function DashboardPage() {
         </div>
 
         {/* Service Performance */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="md:col-span-2">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <BarChart3 className="h-5 w-5" />
-                Service Performance Today
+                Service Performance
               </CardTitle>
               <CardDescription>
-                How each service is performing today
+                Today's performance across all services
               </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {stats.serviceBreakdown?.map((service) => (
-                  <div
-                    key={service.service}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      {getServiceIcon(service.service)}
-                      <span className="font-medium">{service.service}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">{service.transactions}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {formatCurrency(service.volume)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Recent Transactions
-              </CardTitle>
-              <CardDescription>Latest transactions processed</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {stats.recentActivity?.slice(0, 5).map((activity) => (
-                  <div
-                    key={activity.id}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      {getServiceIcon(activity.service)}
-                      <div>
-                        <div className="font-medium">{activity.service}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {activity.user} • {activity.timestamp}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">
-                        {formatCurrency(activity.amount)}
-                      </div>
-                      <Badge variant="outline">{activity.type}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Simple Charts */}
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <LineChart className="h-5 w-5" />
-                This Week's Performance
-              </CardTitle>
-              <CardDescription>Daily transaction count</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="h-48 flex items-end justify-between gap-2">
-                {stats.chartData?.slice(-7).map((day, index) => (
-                  <div key={day.date} className="flex flex-col items-center">
-                    <div
-                      className="w-8 bg-primary rounded-t"
-                      style={{
-                        height: `${
-                          (day.transactions /
-                            Math.max(
-                              ...stats.chartData.map((d) => d.transactions)
-                            )) *
-                          160
-                        }px`,
-                        minHeight: "20px",
-                      }}
-                    ></div>
-                    <span className="text-xs mt-2">{day.date}</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <PieChart className="h-5 w-5" />
-                Service Distribution
-              </CardTitle>
-              <CardDescription>Revenue by service type</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -592,34 +460,361 @@ export default function DashboardPage() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                Quick Actions
+              </CardTitle>
+              <CardDescription>Common operational tasks</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button variant="outline" className="w-full justify-start">
+                <Smartphone className="mr-2 h-4 w-4" />
+                Process MoMo
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Building2 className="mr-2 h-4 w-4" />
+                Agency Banking
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <CreditCard className="mr-2 h-4 w-4" />
+                E-Zwich Services
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Zap className="mr-2 h-4 w-4" />
+                Power Services
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Supervisor Dashboard
+  if (isSupervisor) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Supervisor Dashboard</h1>
+            <p className="text-muted-foreground">
+              Welcome back, {user?.firstName} {user?.lastName}! Here's your
+              supervision overview.
+            </p>
+          </div>
+          <Button variant="outline" onClick={loadDashboardData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
         </div>
 
-        {/* Quick Actions */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5" />
-              Quick Actions
-            </CardTitle>
-            <CardDescription>Common tasks for your role</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-3">
-              <Button variant="outline" className="h-20 flex-col">
-                <Smartphone className="h-6 w-6 mb-2" />
-                <span>Process MoMo</span>
+        {/* Error Alert */}
+        {error && (
+          <Alert className="border-yellow-200 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-700">
+              {error} - Showing available data with fallback values.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Key Metrics */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Transactions
+              </CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatNumber(stats.todayTransactions)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatNumber(stats.totalTransactions)}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Volume
+              </CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.todayVolume)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatCurrency(stats.totalVolume)}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Pending Approvals
+              </CardTitle>
+              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.pendingApprovals || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Awaiting review</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Active Users
+              </CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.activeUsers}</div>
+              <p className="text-xs text-muted-foreground">Currently online</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Service Performance */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Service Performance
+              </CardTitle>
+              <CardDescription>
+                Today's performance across all services
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {stats.serviceBreakdown?.map((service) => (
+                  <div
+                    key={service.service}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      {getServiceIcon(service.service)}
+                      <span className="font-medium">{service.service}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">
+                        {formatCurrency(service.volume)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {service.transactions} transactions
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                Quick Actions
+              </CardTitle>
+              <CardDescription>Common supervision tasks</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button variant="outline" className="w-full justify-start">
+                <Activity className="mr-2 h-4 w-4" />
+                Review Transactions
               </Button>
-              <Button variant="outline" className="h-20 flex-col">
-                <CreditCard className="h-6 w-6 mb-2" />
-                <span>E-Zwich Transaction</span>
+              <Button variant="outline" className="w-full justify-start">
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Approve Requests
               </Button>
-              <Button variant="outline" className="h-20 flex-col">
-                <Zap className="h-6 w-6 mb-2" />
-                <span>Power Sale</span>
+              <Button variant="outline" className="w-full justify-start">
+                <Smartphone className="mr-2 h-4 w-4" />
+                Process MoMo
               </Button>
-            </div>
-          </CardContent>
-        </Card>
+              <Button variant="outline" className="w-full justify-start">
+                <Building2 className="mr-2 h-4 w-4" />
+                Agency Banking
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Cashier Dashboard
+  if (isCashier) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Cashier Dashboard</h1>
+            <p className="text-muted-foreground">
+              Welcome back, {user?.firstName} {user?.lastName}! Here's your
+              transaction overview.
+            </p>
+          </div>
+          <Button variant="outline" onClick={loadDashboardData}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Refresh
+          </Button>
+        </div>
+
+        {/* Error Alert */}
+        {error && (
+          <Alert className="border-yellow-200 bg-yellow-50">
+            <AlertTriangle className="h-4 w-4 text-yellow-600" />
+            <AlertDescription className="text-yellow-700">
+              {error} - Showing available data with fallback values.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Key Metrics */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Transactions
+              </CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatNumber(stats.todayTransactions)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatNumber(stats.totalTransactions)}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Volume
+              </CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.todayVolume)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatCurrency(stats.totalVolume)}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Today's Commission
+              </CardTitle>
+              <DollarSign className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.todayCommission)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Total: {formatCurrency(stats.totalCommission)}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                Active Users
+              </CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.activeUsers}</div>
+              <p className="text-xs text-muted-foreground">Currently online</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Service Performance */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-5 w-5" />
+                Service Performance
+              </CardTitle>
+              <CardDescription>
+                Today's performance across all services
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {stats.serviceBreakdown?.map((service) => (
+                  <div
+                    key={service.service}
+                    className="flex items-center justify-between"
+                  >
+                    <div className="flex items-center gap-3">
+                      {getServiceIcon(service.service)}
+                      <span className="font-medium">{service.service}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-medium">
+                        {formatCurrency(service.volume)}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        {service.transactions} transactions
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Target className="h-5 w-5" />
+                Quick Actions
+              </CardTitle>
+              <CardDescription>Common transaction tasks</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <Button variant="outline" className="w-full justify-start">
+                <Smartphone className="mr-2 h-4 w-4" />
+                Process MoMo
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Building2 className="mr-2 h-4 w-4" />
+                Agency Banking
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <CreditCard className="mr-2 h-4 w-4" />
+                E-Zwich Services
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Zap className="mr-2 h-4 w-4" />
+                Power Services
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }
@@ -682,7 +877,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Overview Cards */}
+      {/* Key Metrics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -692,9 +887,11 @@ export default function DashboardPage() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.todayTransactions}</div>
+            <div className="text-2xl font-bold">
+              {formatNumber(stats.todayTransactions)}
+            </div>
             <p className="text-xs text-muted-foreground">
-              Total: {stats.totalTransactions}
+              Total: {formatNumber(stats.totalTransactions)}
             </p>
           </CardContent>
         </Card>
@@ -704,7 +901,7 @@ export default function DashboardPage() {
             <CardTitle className="text-sm font-medium">
               Today's Volume
             </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
@@ -745,99 +942,107 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Service Breakdown */}
-      {stats.serviceBreakdown && stats.serviceBreakdown.length > 0 && (
-        <Card>
+      {/* Service Performance */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle>Service Performance</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Service Performance
+            </CardTitle>
             <CardDescription>
-              Today's performance by service type
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {stats.serviceBreakdown.map((service, index) => (
-                <div
-                  key={service.service}
-                  className="flex items-center space-x-4 rounded-lg border p-4"
-                >
-                  <div className="flex-shrink-0">
-                    {getServiceIcon(service.service)}
-                  </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium leading-none">
-                      {service.service.charAt(0).toUpperCase() +
-                        service.service.slice(1)}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {service.transactions} transactions
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatCurrency(service.volume)}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Recent Activity */}
-      {stats.recentActivity && stats.recentActivity.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>
-              Latest transactions and activities
+              Today's performance across all services
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {stats.recentActivity.slice(0, 5).map((activity) => (
+              {stats.serviceBreakdown?.map((service) => (
                 <div
-                  key={activity.id}
-                  className="flex items-center space-x-4 rounded-lg border p-4"
+                  key={service.service}
+                  className="flex items-center justify-between"
                 >
-                  <div className="flex-shrink-0">
-                    {getServiceIcon(activity.service)}
+                  <div className="flex items-center gap-3">
+                    {getServiceIcon(service.service)}
+                    <span className="font-medium">{service.service}</span>
                   </div>
-                  <div className="flex-1 space-y-1">
-                    <p className="text-sm font-medium leading-none">
-                      {activity.type} - {activity.service}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatCurrency(activity.amount)} by {activity.user}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {format(new Date(activity.timestamp), "MMM dd, HH:mm")}
-                    </p>
+                  <div className="text-right">
+                    <div className="font-medium">
+                      {formatCurrency(service.volume)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {service.transactions} transactions
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
-      )}
 
-      {/* Empty State */}
-      {!stats.serviceBreakdown.length &&
-        !stats.recentActivity.length &&
-        !error && (
-          <Card>
-            <CardContent className="text-center py-8">
-              <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-medium mb-2">No Data Available</h3>
-              <p className="text-muted-foreground mb-4">
-                No transactions or activities found for the current period.
-              </p>
-              <Button onClick={loadDashboardData} variant="outline">
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Refresh Data
-              </Button>
-            </CardContent>
-          </Card>
-        )}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <PieChart className="h-5 w-5" />
+              Service Distribution
+            </CardTitle>
+            <CardDescription>Revenue by service type</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {stats.serviceBreakdown?.map((service) => (
+                <div
+                  key={service.service}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    {getServiceIcon(service.service)}
+                    <span className="font-medium">{service.service}</span>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-medium">
+                      {formatCurrency(service.volume)}
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {service.transactions} transactions
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Quick Actions */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5" />
+            Quick Actions
+          </CardTitle>
+          <CardDescription>Common tasks and shortcuts</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <Button variant="outline" className="h-20 flex-col">
+              <Smartphone className="h-6 w-6 mb-2" />
+              <span>MoMo Services</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col">
+              <Building2 className="h-6 w-6 mb-2" />
+              <span>Agency Banking</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col">
+              <CreditCard className="h-6 w-6 mb-2" />
+              <span>E-Zwich</span>
+            </Button>
+            <Button variant="outline" className="h-20 flex-col">
+              <Zap className="h-6 w-6 mb-2" />
+              <span>Power Services</span>
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

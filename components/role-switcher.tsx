@@ -53,11 +53,6 @@ export function RoleSwitcher() {
       // Update the user in the auth context
       updateUser(updatedUser);
 
-      // Store in session storage for persistence
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("currentUser", JSON.stringify(updatedUser));
-      }
-
       toast({
         title: "Role Switched",
         description: `Now testing as ${
@@ -93,10 +88,6 @@ export function RoleSwitcher() {
       };
 
       updateUser(updatedUser);
-
-      if (typeof window !== "undefined") {
-        sessionStorage.setItem("currentUser", JSON.stringify(updatedUser));
-      }
 
       toast({
         title: "Branch Switched",

@@ -21,6 +21,7 @@ import {
   BarChart3,
   Clock,
 } from "lucide-react";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 interface GLStatistics {
   totalAccounts: number;
@@ -49,7 +50,8 @@ interface GLStatistics {
   lastSyncTime: string;
 }
 
-export function GLStatistics() {
+export function GLStatistics({ branchId }: { branchId?: string }) {
+  const { user } = useCurrentUser();
   const [statistics, setStatistics] = useState<GLStatistics | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -60,8 +62,11 @@ export function GLStatistics() {
     try {
       setIsLoading(true);
       setError(null);
-
-      const response = await fetch("/api/gl/statistics", {
+      let url = "/api/gl/statistics";
+      if (branchId) {
+        url += `?branchId=${branchId}`;
+      }
+      const response = await fetch(url, {
         cache: "no-store", // Ensure fresh data
         headers: {
           "Cache-Control": "no-cache",
@@ -83,7 +88,7 @@ export function GLStatistics() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [branchId]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {

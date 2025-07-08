@@ -47,7 +47,7 @@ export async function PATCH(
     // Get current user for role-based access
     let user;
     try {
-      user = getCurrentUser(request);
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.warn("Authentication failed, using fallback:", authError);
       user = {
@@ -137,7 +137,7 @@ export async function PUT(
     // Get current user for role-based access
     let user;
     try {
-      user = getCurrentUser(request);
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.warn("Authentication failed, using fallback:", authError);
       user = {
@@ -226,7 +226,7 @@ export async function DELETE(
     // Get current user for role-based access
     let user;
     try {
-      user = getCurrentUser(request);
+      user = await getCurrentUser(request);
     } catch (authError) {
       console.warn("Authentication failed, using fallback:", authError);
       user = {

@@ -304,11 +304,9 @@ export function EnhancedAdminDashboard({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Branches
-            </CardTitle>
+        <Card className="border-l-4 border-primary bg-primary/5">
+          <CardHeader>
+            <CardTitle className="text-primary">Total Branches</CardTitle>
             <Building2 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
