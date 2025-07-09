@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
@@ -56,18 +56,15 @@ const emailConfigSchema = z.object({
   smtpPort: z.coerce.number().optional(),
   smtpUsername: z.string().optional(),
   smtpPassword: z.string().optional(),
-  smtpSecure: z.boolean().default(true),
+  smtpSecure: z.boolean(),
   smtpFromEmail: z.string().email().optional().or(z.literal("")),
   smtpFromName: z.string().optional(),
 });
 
 const smsConfigSchema = z.object({
-  smsProvider: z.enum(
-    ["twilio", "nexmo", "africastalking", "custom", "smsonlinegh", "hubtel"],
-    {
-      required_error: "Please select an SMS provider",
-    }
-  ),
+  smsProvider: z.enum(["hubtel", "twilio", "custom", "smsonlinegh"], {
+    required_error: "Please select an SMS provider",
+  }),
   smsApiKey: z.string().min(1, { message: "API key is required" }),
   smsApiSecret: z.string().min(1, { message: "API secret is required" }),
   smsSenderId: z.string().min(1, { message: "Sender ID is required" }),
@@ -76,7 +73,7 @@ const smsConfigSchema = z.object({
     .url({ message: "Please enter a valid URL" })
     .optional()
     .or(z.literal("")),
-  smsTestMode: z.boolean().default(false),
+  smsTestMode: z.boolean(),
 });
 
 type EmailConfigValues = z.infer<typeof emailConfigSchema>;
@@ -97,13 +94,20 @@ const initialEmailConfig = {
 };
 
 const initialSmsConfig = {
-  smsProvider: "twilio" as const,
+  smsProvider: "hubtel" as const,
   smsApiKey: "",
   smsApiSecret: "",
   smsSenderId: "",
   smsWebhookUrl: "",
   smsTestMode: true,
 };
+
+const smsProviders = [
+  { value: "hubtel", label: "Hubtel" },
+  { value: "smsonlinegh", label: "SMSOnlineGH" },
+  { value: "twilio", label: "Twilio" },
+  { value: "custom", label: "Custom Provider" },
+];
 
 export function CommunicationsSettings({ userRole }: { userRole: string }) {
   const { toast } = useToast();
@@ -119,6 +123,10 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
     success: boolean;
     message: string;
   } | null>(null);
+  const [allSmsConfigs, setAllSmsConfigs] = useState<any>({});
+  const [selectedSmsProvider, setSelectedSmsProvider] = useState(
+    initialSmsConfig.smsProvider
+  );
 
   const emailForm = useForm<EmailConfigValues>({
     resolver: zodResolver(emailConfigSchema),
@@ -141,6 +149,7 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
       const response = await fetch("/api/settings/communications-config");
       if (response.ok) {
         const result = await response.json();
+        console.log(result);
         if (result.success && result.data && Array.isArray(result.data)) {
           const configData = result.data.reduce((acc: any, config: any) => {
             if (
@@ -152,7 +161,7 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
             }
             return acc;
           }, {});
-
+          setAllSmsConfigs(configData);
           // Update Email form
           emailForm.reset({
             emailProvider: configData.email_provider || "resend",
@@ -163,20 +172,38 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
             smtpPort: Number(configData.smtp_port) || 587,
             smtpUsername: configData.smtp_username || "",
             smtpPassword: configData.smtp_password || "",
-            smtpSecure: configData.smtp_secure === "true",
+            smtpSecure: configData.smtp_secure === "true" ? true : false,
             smtpFromEmail: configData.smtp_from_email || "",
             smtpFromName: configData.smtp_from_name || "",
           });
 
           // Update SMS form
+          const provider = configData.sms_provider || "hubtel";
           smsForm.reset({
-            smsProvider: configData.sms_provider || "twilio",
-            smsApiKey: configData.sms_api_key || "",
-            smsApiSecret: configData.sms_api_secret || "",
-            smsSenderId: configData.sms_sender_id || "",
-            smsWebhookUrl: configData.sms_webhook_url || "",
-            smsTestMode: configData.sms_test_mode === "true",
+            smsProvider: provider,
+            smsApiKey:
+              configData[`${provider}_sms_api_key`] ||
+              configData["hubtel_sms_api_key"] ||
+              "",
+            smsApiSecret:
+              configData[`${provider}_sms_api_secret`] ||
+              configData["hubtel_sms_api_secret"] ||
+              "",
+            smsSenderId:
+              configData[`${provider}_sms_sender_id`] ||
+              configData["hubtel_sms_sender_id"] ||
+              "",
+            smsWebhookUrl:
+              configData[`${provider}_sms_webhook_url`] ||
+              configData["hubtel_sms_webhook_url"] ||
+              "",
+            smsTestMode:
+              (configData[`${provider}_sms_test_mode`] ||
+                configData["hubtel_sms_test_mode"]) === "true"
+                ? true
+                : false,
           });
+          setSelectedSmsProvider(provider);
         }
       }
     } catch (error) {
@@ -188,6 +215,20 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
       });
     }
   };
+
+  // Robust auto-population for SMS provider fields
+  useEffect(() => {
+    const provider = selectedSmsProvider;
+    smsForm.reset({
+      smsProvider: provider,
+      smsApiKey: allSmsConfigs[`${provider}_sms_api_key`] || "",
+      smsApiSecret: allSmsConfigs[`${provider}_sms_api_secret`] || "",
+      smsSenderId: allSmsConfigs[`${provider}_sms_sender_id`] || "",
+      smsWebhookUrl: allSmsConfigs[`${provider}_sms_webhook_url`] || "",
+      smsTestMode:
+        allSmsConfigs[`${provider}_sms_test_mode`] === "true" ? true : false,
+    });
+  }, [selectedSmsProvider, allSmsConfigs]);
 
   const onSubmitEmailConfig = async (values: EmailConfigValues) => {
     setIsSaving(true);
@@ -262,33 +303,51 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
   const onSubmitSmsConfig = async (values: SmsConfigValues) => {
     setIsSaving(true);
     try {
+      const provider = values.smsProvider;
       const configs = [
-        { config_key: "sms_provider", config_value: values.smsProvider },
-        { config_key: "sms_api_key", config_value: values.smsApiKey },
-        { config_key: "sms_api_secret", config_value: values.smsApiSecret },
-        { config_key: "sms_sender_id", config_value: values.smsSenderId },
+        { config_key: "sms_provider", config_value: provider },
         {
-          config_key: "sms_webhook_url",
+          config_key: `${provider}_sms_api_key`,
+          config_value: values.smsApiKey,
+        },
+        {
+          config_key: `${provider}_sms_api_secret`,
+          config_value: values.smsApiSecret,
+        },
+        {
+          config_key: `${provider}_sms_sender_id`,
+          config_value: values.smsSenderId,
+        },
+        {
+          config_key: `${provider}_sms_webhook_url`,
           config_value: values.smsWebhookUrl || "",
         },
         {
-          config_key: "sms_test_mode",
+          config_key: `${provider}_sms_test_mode`,
           config_value: values.smsTestMode.toString(),
         },
       ];
-
       const response = await fetch("/api/settings/communications-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ configs, userId: 1 }),
       });
-
       if (response.ok) {
         toast({
           title: "Settings updated",
           description: "SMS configuration has been updated successfully.",
         });
         setSmsTestResult(null); // Clear previous test results
+        // Update allSmsConfigs with new values
+        setAllSmsConfigs((prev: any) => ({
+          ...prev,
+          [`${provider}_sms_api_key`]: values.smsApiKey,
+          [`${provider}_sms_api_secret`]: values.smsApiSecret,
+          [`${provider}_sms_sender_id`]: values.smsSenderId,
+          [`${provider}_sms_webhook_url`]: values.smsWebhookUrl,
+          [`${provider}_sms_test_mode`]: values.smsTestMode.toString(),
+          sms_provider: provider,
+        }));
       } else {
         throw new Error("Failed to update settings");
       }
@@ -753,8 +812,11 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                             <FormItem>
                               <FormLabel>SMS Provider</FormLabel>
                               <Select
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
+                                onValueChange={(val) => {
+                                  field.onChange(val);
+                                  setSelectedSmsProvider(val);
+                                }}
+                                value={field.value}
                               >
                                 <FormControl>
                                   <SelectTrigger>
@@ -762,20 +824,11 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                                   </SelectTrigger>
                                 </FormControl>
                                 <SelectContent>
-                                  <SelectItem value="twilio">Twilio</SelectItem>
-                                  <SelectItem value="nexmo">
-                                    Vonage (Nexmo)
-                                  </SelectItem>
-                                  <SelectItem value="africastalking">
-                                    Africa's Talking
-                                  </SelectItem>
-                                  <SelectItem value="smsonlinegh">
-                                    SMSOnlineGH
-                                  </SelectItem>
-                                  <SelectItem value="hubtel">Hubtel</SelectItem>
-                                  <SelectItem value="custom">
-                                    Custom Provider
-                                  </SelectItem>
+                                  {smsProviders.map((p) => (
+                                    <SelectItem key={p.value} value={p.value}>
+                                      {p.label}
+                                    </SelectItem>
+                                  ))}
                                 </SelectContent>
                               </Select>
                               <FormDescription>

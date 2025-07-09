@@ -1,95 +1,96 @@
-import { neon } from "@neondatabase/serverless"
+import { neon } from "@neondatabase/serverless";
+import { NotificationService } from "@/lib/services/notification-service";
 
-const sql = neon(process.env.CONNECTION_STRING!)
+const sql = neon(process.env.CONNECTION_STRING!);
 
 export interface CardBatch {
-  id: string
-  batch_code: string
-  quantity_received: number
-  quantity_issued: number
-  quantity_available: number
-  card_type: string
-  expiry_date: string
-  status: string
-  branch_id: string
-  created_by: string
-  created_at: string
-  notes?: string
+  id: string;
+  batch_code: string;
+  quantity_received: number;
+  quantity_issued: number;
+  quantity_available: number;
+  card_type: string;
+  expiry_date: string;
+  status: string;
+  branch_id: string;
+  created_by: string;
+  created_at: string;
+  notes?: string;
 }
 
 export interface IssuedCard {
-  id: string
-  card_number: string
-  batch_id: string
-  customer_name: string
-  customer_phone: string
-  customer_email?: string
-  date_of_birth?: string
-  gender?: string
-  id_type?: string
-  id_number?: string
-  id_expiry_date?: string
-  address_line1?: string
-  address_line2?: string
-  city?: string
-  region?: string
-  postal_code?: string
-  country?: string
-  card_status: string
-  issue_date: string
-  expiry_date?: string
-  branch_id: string
-  issued_by: string
-  fee_charged: number
-  created_at: string
+  id: string;
+  card_number: string;
+  batch_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  date_of_birth?: string;
+  gender?: string;
+  id_type?: string;
+  id_number?: string;
+  id_expiry_date?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  region?: string;
+  postal_code?: string;
+  country?: string;
+  card_status: string;
+  issue_date: string;
+  expiry_date?: string;
+  branch_id: string;
+  issued_by: string;
+  fee_charged: number;
+  created_at: string;
 }
 
 export interface EZwichTransaction {
-  id: string
-  transaction_reference: string
-  transaction_type: string
-  card_number?: string
-  customer_name: string
-  customer_phone: string
-  transaction_amount: number
-  fee_amount: number
-  total_amount: number
-  branch_id: string
-  processed_by: string
-  status: string
-  transaction_date: string
-  notes?: string
-  batch_id?: string
-  card_issued_id?: string
+  id: string;
+  transaction_reference: string;
+  transaction_type: string;
+  card_number?: string;
+  customer_name: string;
+  customer_phone: string;
+  transaction_amount: number;
+  fee_amount: number;
+  total_amount: number;
+  branch_id: string;
+  processed_by: string;
+  status: string;
+  transaction_date: string;
+  notes?: string;
+  batch_id?: string;
+  card_issued_id?: string;
 }
 
 // Generate unique transaction reference
 export function generateTransactionReference(): string {
-  const timestamp = Date.now().toString()
+  const timestamp = Date.now().toString();
   const random = Math.floor(Math.random() * 10000)
     .toString()
-    .padStart(4, "0")
-  return `EZ${timestamp.slice(-8)}${random}`
+    .padStart(4, "0");
+  return `EZ${timestamp.slice(-8)}${random}`;
 }
 
 // Generate unique card number
 export function generateCardNumber(): string {
-  const timestamp = Date.now().toString().slice(-8)
+  const timestamp = Date.now().toString().slice(-8);
   const random = Math.floor(Math.random() * 10000)
     .toString()
-    .padStart(4, "0")
-  return `627760${timestamp}${random}`
+    .padStart(4, "0");
+  return `627760${timestamp}${random}`;
 }
 
 // Ensure tables exist
 export async function ensureEZwichTables() {
   try {
     // This will be handled by the SQL schema file
-    console.log("E-Zwich tables ensured successfully")
-    return true
+    console.log("E-Zwich tables ensured successfully");
+    return true;
   } catch (error) {
-    console.error("Error ensuring E-Zwich tables:", error)
-    throw error
+    console.error("Error ensuring E-Zwich tables:", error);
+    throw error;
   }
 }
 
@@ -100,28 +101,34 @@ export async function getCardBatches(branchId: string): Promise<CardBatch[]> {
       SELECT * FROM ezwich_card_batches 
       WHERE branch_id = ${branchId} 
       ORDER BY created_at DESC
-    `
+    `;
 
     return batches.map((batch) => ({
       ...batch,
       created_at: batch.created_at.toISOString(),
-      expiry_date: batch.expiry_date ? batch.expiry_date.toISOString().split("T")[0] : "",
-    }))
+      expiry_date: batch.expiry_date
+        ? batch.expiry_date.toISOString().split("T")[0]
+        : "",
+    }));
   } catch (error) {
-    console.error("Error fetching card batches:", error)
-    throw new Error(`Failed to fetch card batches: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching card batches:", error);
+    throw new Error(
+      `Failed to fetch card batches: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 // Create card batch
 export async function createCardBatch(batchData: {
-  batch_code: string
-  quantity_received: number
-  card_type: string
-  expiry_date: string
-  branch_id: string
-  created_by: string
-  notes?: string
+  batch_code: string;
+  quantity_received: number;
+  card_type: string;
+  expiry_date: string;
+  branch_id: string;
+  created_by: string;
+  notes?: string;
 }): Promise<CardBatch> {
   try {
     const result = await sql`
@@ -143,60 +150,66 @@ export async function createCardBatch(batchData: {
         ${batchData.notes || null}
       )
       RETURNING *
-    `
+    `;
 
-    const newBatch = result[0]
+    const newBatch = result[0];
     return {
       ...newBatch,
       created_at: newBatch.created_at.toISOString(),
-      expiry_date: newBatch.expiry_date ? newBatch.expiry_date.toISOString().split("T")[0] : "",
-    }
+      expiry_date: newBatch.expiry_date
+        ? newBatch.expiry_date.toISOString().split("T")[0]
+        : "",
+    };
   } catch (error) {
-    console.error("Error creating card batch:", error)
-    throw new Error(`Failed to create card batch: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error creating card batch:", error);
+    throw new Error(
+      `Failed to create card batch: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 // Issue card
 export async function issueCard(cardData: {
-  batch_id: string
-  customer_name: string
-  customer_phone: string
-  customer_email?: string
-  date_of_birth?: string
-  gender?: string
-  id_type?: string
-  id_number?: string
-  id_expiry_date?: string
-  address_line1?: string
-  address_line2?: string
-  city?: string
-  region?: string
-  postal_code?: string
-  country?: string
-  branch_id: string
-  issued_by: string
-  fee_charged?: number
+  batch_id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_email?: string;
+  date_of_birth?: string;
+  gender?: string;
+  id_type?: string;
+  id_number?: string;
+  id_expiry_date?: string;
+  address_line1?: string;
+  address_line2?: string;
+  city?: string;
+  region?: string;
+  postal_code?: string;
+  country?: string;
+  branch_id: string;
+  issued_by: string;
+  fee_charged?: number;
 }): Promise<{ card: IssuedCard; transaction: EZwichTransaction }> {
   try {
     // Check if batch has available cards
     const batch = await sql`
       SELECT quantity_available FROM ezwich_card_batches WHERE id = ${cardData.batch_id}
-    `
+    `;
 
     if (batch.length === 0) {
-      throw new Error("Batch not found")
+      throw new Error("Batch not found");
     }
 
     if (batch[0].quantity_available <= 0) {
-      throw new Error("No cards available in this batch")
+      throw new Error("No cards available in this batch");
     }
 
-    const cardNumber = generateCardNumber()
-    const transactionReference = generateTransactionReference()
-    const issueDate = new Date().toISOString().split("T")[0]
-    const expiryDate = new Date()
-    expiryDate.setFullYear(expiryDate.getFullYear() + 5)
+    const cardNumber = generateCardNumber();
+    const transactionReference = generateTransactionReference();
+    const issueDate = new Date().toISOString().split("T")[0];
+    const expiryDate = new Date();
+    expiryDate.setFullYear(expiryDate.getFullYear() + 5);
 
     // Insert card
     const cardResult = await sql`
@@ -206,16 +219,28 @@ export async function issueCard(cardData: {
         address_line1, address_line2, city, region, postal_code, country,
         issue_date, expiry_date, branch_id, issued_by, fee_charged
       ) VALUES (
-        ${cardNumber}, ${cardData.batch_id}, ${cardData.customer_name}, ${cardData.customer_phone}, 
-        ${cardData.customer_email || null}, ${cardData.date_of_birth || null}, ${cardData.gender || null},
-        ${cardData.id_type || null}, ${cardData.id_number || null}, ${cardData.id_expiry_date || null},
-        ${cardData.address_line1 || null}, ${cardData.address_line2 || null}, ${cardData.city || null},
-        ${cardData.region || null}, ${cardData.postal_code || null}, ${cardData.country || "Ghana"},
-        ${issueDate}, ${expiryDate.toISOString().split("T")[0]}, ${cardData.branch_id}, 
+        ${cardNumber}, ${cardData.batch_id}, ${cardData.customer_name}, ${
+      cardData.customer_phone
+    }, 
+        ${cardData.customer_email || null}, ${
+      cardData.date_of_birth || null
+    }, ${cardData.gender || null},
+        ${cardData.id_type || null}, ${cardData.id_number || null}, ${
+      cardData.id_expiry_date || null
+    },
+        ${cardData.address_line1 || null}, ${cardData.address_line2 || null}, ${
+      cardData.city || null
+    },
+        ${cardData.region || null}, ${cardData.postal_code || null}, ${
+      cardData.country || "Ghana"
+    },
+        ${issueDate}, ${expiryDate.toISOString().split("T")[0]}, ${
+      cardData.branch_id
+    }, 
         ${cardData.issued_by}, ${cardData.fee_charged || 15.0}
       )
       RETURNING *
-    `
+    `;
 
     // Insert transaction record
     const transactionResult = await sql`
@@ -224,47 +249,57 @@ export async function issueCard(cardData: {
         transaction_amount, fee_amount, branch_id, processed_by, status,
         batch_id, card_issued_id, notes
       ) VALUES (
-        ${transactionReference}, 'card_issuance', ${cardData.customer_name}, ${cardData.customer_phone},
-        ${cardData.fee_charged || 15.0}, 0, ${cardData.branch_id}, ${cardData.issued_by}, 'completed',
+        ${transactionReference}, 'card_issuance', ${cardData.customer_name}, ${
+      cardData.customer_phone
+    },
+        ${cardData.fee_charged || 15.0}, 0, ${cardData.branch_id}, ${
+      cardData.issued_by
+    }, 'completed',
         ${cardData.batch_id}, ${cardResult[0].id}, 'Card issuance transaction'
       )
       RETURNING *
-    `
+    `;
 
-    const newCard = cardResult[0]
-    const newTransaction = transactionResult[0]
+    const newCard = cardResult[0];
+    const newTransaction = transactionResult[0];
 
     return {
       card: {
         ...newCard,
         created_at: newCard.created_at.toISOString(),
         issue_date: newCard.issue_date.toISOString().split("T")[0],
-        expiry_date: newCard.expiry_date ? newCard.expiry_date.toISOString().split("T")[0] : "",
+        expiry_date: newCard.expiry_date
+          ? newCard.expiry_date.toISOString().split("T")[0]
+          : "",
       },
       transaction: {
         ...newTransaction,
         transaction_date: newTransaction.transaction_date.toISOString(),
       },
-    }
+    };
   } catch (error) {
-    console.error("Error issuing card:", error)
-    throw new Error(`Failed to issue card: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error issuing card:", error);
+    throw new Error(
+      `Failed to issue card: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 // Process withdrawal
 export async function processWithdrawal(withdrawalData: {
-  card_number: string
-  customer_name: string
-  customer_phone: string
-  withdrawal_amount: number
-  fee_amount: number
-  branch_id: string
-  processed_by: string
-  cash_till_account_id?: string
-  ezwich_settlement_account_id?: string
-  terminal_id?: string
-  notes?: string
+  card_number: string;
+  customer_name: string;
+  customer_phone: string;
+  withdrawal_amount: number;
+  fee_amount: number;
+  branch_id: string;
+  processed_by: string;
+  cash_till_account_id?: string;
+  ezwich_settlement_account_id?: string;
+  terminal_id?: string;
+  notes?: string;
 }): Promise<EZwichTransaction> {
   try {
     // Verify card exists and is active
@@ -272,14 +307,14 @@ export async function processWithdrawal(withdrawalData: {
       SELECT * FROM ezwich_cards 
       WHERE card_number = ${withdrawalData.card_number} 
       AND card_status = 'active'
-    `
+    `;
 
     if (card.length === 0) {
-      throw new Error("Card not found or inactive")
+      throw new Error("Card not found or inactive");
     }
 
-    const transactionReference = generateTransactionReference()
-    const receiptNumber = `EZ-${Date.now()}`
+    const transactionReference = generateTransactionReference();
+    const receiptNumber = `EZ-${Date.now()}`;
 
     const result = await sql`
       INSERT INTO ezwich_transactions (
@@ -290,33 +325,65 @@ export async function processWithdrawal(withdrawalData: {
         ${transactionReference}, 'withdrawal', ${withdrawalData.card_number}, 
         ${withdrawalData.customer_name}, ${withdrawalData.customer_phone},
         ${withdrawalData.withdrawal_amount}, ${withdrawalData.fee_amount}, 
-        ${withdrawalData.branch_id}, ${withdrawalData.processed_by}, 'completed',
-        ${withdrawalData.cash_till_account_id || null}, ${withdrawalData.ezwich_settlement_account_id || null},
-        ${withdrawalData.terminal_id || null}, ${receiptNumber}, ${withdrawalData.notes || null}
+        ${withdrawalData.branch_id}, ${
+      withdrawalData.processed_by
+    }, 'completed',
+        ${withdrawalData.cash_till_account_id || null}, ${
+      withdrawalData.ezwich_settlement_account_id || null
+    },
+        ${withdrawalData.terminal_id || null}, ${receiptNumber}, ${
+      withdrawalData.notes || null
+    }
       )
       RETURNING *
-    `
+    `;
 
-    const newTransaction = result[0]
+    const newTransaction = result[0];
+    if (withdrawalData.customer_phone) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "E-Zwich Withdrawal Alert",
+        message: `Thank you for using our service! Your E-Zwich withdrawal of GHS ${withdrawalData.withdrawal_amount} was successful.`,
+        phone: withdrawalData.customer_phone,
+        userId: withdrawalData.processed_by,
+        metadata: { ...withdrawalData },
+      });
+    }
+    if (withdrawalData.processed_by) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "Transaction Processed",
+        message: `Your E-Zwich withdrawal to ${withdrawalData.customer_name} was successful. Amount: GHS ${withdrawalData.withdrawal_amount}.`,
+        userId: withdrawalData.processed_by,
+        metadata: { ...withdrawalData },
+      });
+    }
     return {
       ...newTransaction,
       transaction_date: newTransaction.transaction_date.toISOString(),
-    }
+    };
   } catch (error) {
-    console.error("Error processing withdrawal:", error)
-    throw new Error(`Failed to process withdrawal: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error processing withdrawal:", error);
+    throw new Error(
+      `Failed to process withdrawal: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 // Get transactions
-export async function getTransactions(branchId: string, limit = 50): Promise<EZwichTransaction[]> {
+export async function getTransactions(
+  branchId: string,
+  limit = 50
+): Promise<EZwichTransaction[]> {
   try {
     const transactions = await sql`
       SELECT * FROM ezwich_transactions 
       WHERE branch_id = ${branchId} 
       ORDER BY transaction_date DESC
       LIMIT ${limit}
-    `
+    `;
 
     return transactions.map((transaction) => ({
       ...transaction,
@@ -324,15 +391,22 @@ export async function getTransactions(branchId: string, limit = 50): Promise<EZw
       transaction_amount: Number.parseFloat(transaction.transaction_amount),
       fee_amount: Number.parseFloat(transaction.fee_amount),
       total_amount: Number.parseFloat(transaction.total_amount),
-    }))
+    }));
   } catch (error) {
-    console.error("Error fetching transactions:", error)
-    throw new Error(`Failed to fetch transactions: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching transactions:", error);
+    throw new Error(
+      `Failed to fetch transactions: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
 // Get issued cards
-export async function getIssuedCards(branchId: string, limit = 50): Promise<IssuedCard[]> {
+export async function getIssuedCards(
+  branchId: string,
+  limit = 50
+): Promise<IssuedCard[]> {
   try {
     const cards = await sql`
       SELECT c.*, cb.batch_code 
@@ -341,17 +415,23 @@ export async function getIssuedCards(branchId: string, limit = 50): Promise<Issu
       WHERE c.branch_id = ${branchId} 
       ORDER BY c.created_at DESC
       LIMIT ${limit}
-    `
+    `;
 
     return cards.map((card) => ({
       ...card,
       created_at: card.created_at.toISOString(),
       issue_date: card.issue_date.toISOString().split("T")[0],
-      expiry_date: card.expiry_date ? card.expiry_date.toISOString().split("T")[0] : "",
-    }))
+      expiry_date: card.expiry_date
+        ? card.expiry_date.toISOString().split("T")[0]
+        : "",
+    }));
   } catch (error) {
-    console.error("Error fetching issued cards:", error)
-    throw new Error(`Failed to fetch issued cards: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching issued cards:", error);
+    throw new Error(
+      `Failed to fetch issued cards: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }
 
@@ -380,25 +460,35 @@ export async function getEZwichStatistics(branchId: string) {
         FROM ezwich_transactions 
         WHERE branch_id = ${branchId}
       `,
-    ])
+    ]);
 
     return {
       batches: {
         total: Number.parseInt(batchStats[0]?.total_batches || "0"),
-        totalCardsReceived: Number.parseInt(batchStats[0]?.total_cards_received || "0"),
-        totalCardsAvailable: Number.parseInt(batchStats[0]?.total_cards_available || "0"),
+        totalCardsReceived: Number.parseInt(
+          batchStats[0]?.total_cards_received || "0"
+        ),
+        totalCardsAvailable: Number.parseInt(
+          batchStats[0]?.total_cards_available || "0"
+        ),
       },
       cards: {
         total: Number.parseInt(cardStats[0]?.total_issued || "0"),
       },
       transactions: {
         total: Number.parseInt(transactionStats[0]?.total_transactions || "0"),
-        totalWithdrawalAmount: Number.parseFloat(transactionStats[0]?.total_withdrawal_amount || "0"),
+        totalWithdrawalAmount: Number.parseFloat(
+          transactionStats[0]?.total_withdrawal_amount || "0"
+        ),
         totalFees: Number.parseFloat(transactionStats[0]?.total_fees || "0"),
       },
-    }
+    };
   } catch (error) {
-    console.error("Error fetching E-Zwich statistics:", error)
-    throw new Error(`Failed to fetch E-Zwich statistics: ${error instanceof Error ? error.message : "Unknown error"}`)
+    console.error("Error fetching E-Zwich statistics:", error);
+    throw new Error(
+      `Failed to fetch E-Zwich statistics: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 }

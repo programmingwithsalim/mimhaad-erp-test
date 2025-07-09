@@ -1,4 +1,5 @@
 import { neon } from "@neondatabase/serverless";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -97,6 +98,26 @@ export async function createPowerSale(
     const transaction = result[0];
 
     console.log("✅ [POWER] Power sale created successfully:", transaction.id);
+
+    if (data.customerPhone) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "Power Sale Alert",
+        message: `Thank you for using our service! Your power sale of GHS ${data.amount} was successful.`,
+        phone: data.customerPhone,
+        userId: data.userId,
+        metadata: { ...data },
+      });
+    }
+    if (data.userId) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "Transaction Processed",
+        message: `Your power sale to ${data.customerName} was successful. Amount: GHS ${data.amount}.`,
+        userId: data.userId,
+        metadata: { ...data },
+      });
+    }
 
     return {
       id: transaction.id,

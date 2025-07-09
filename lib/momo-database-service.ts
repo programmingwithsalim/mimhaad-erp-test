@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { GLPostingServiceEnhanced } from "./services/gl-posting-service-enhanced";
+import { NotificationService } from "@/lib/services/notification-service";
 
 // MoMo Transaction interface
 export interface MoMoTransaction {
@@ -561,6 +562,26 @@ export async function createMoMoTransaction(transactionData: {
     } catch (glError) {
       console.error("❌ [MOMO] GL posting error:", glError);
       // Continue without failing the transaction
+    }
+
+    if (transaction.phone_number) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "Transaction Alert",
+        message: `Thank you for using our service! Your MoMo transaction of GHS ${transaction.amount} was successful.`,
+        phone: transaction.phone_number,
+        userId: transaction.user_id,
+        metadata: { ...transaction },
+      });
+    }
+    if (transaction.user_id) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "Transaction Processed",
+        message: `Your MoMo transaction to ${transaction.customer_name} was successful. Amount: GHS ${transaction.amount}.`,
+        userId: transaction.user_id,
+        metadata: { ...transaction },
+      });
     }
 
     return {

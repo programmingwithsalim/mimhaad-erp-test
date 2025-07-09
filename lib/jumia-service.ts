@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { UnifiedGLPostingService } from "./services/unified-gl-posting-service";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -327,6 +328,26 @@ export async function createJumiaTransaction(
 
       // Handle float account updates based on transaction type
       await handleFloatAccountUpdates(createdTransaction, "create");
+
+      if (createdTransaction.customer_phone) {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Jumia Transaction Alert",
+          message: `Thank you for using our service! Your Jumia transaction of GHS ${createdTransaction.amount} was successful.`,
+          phone: createdTransaction.customer_phone,
+          userId: createdTransaction.user_id,
+          metadata: { ...createdTransaction },
+        });
+      }
+      if (createdTransaction.user_id) {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Transaction Processed",
+          message: `Your Jumia transaction to ${createdTransaction.customer_name} was successful. Amount: GHS ${createdTransaction.amount}.`,
+          userId: createdTransaction.user_id,
+          metadata: { ...createdTransaction },
+        });
+      }
 
       return createdTransaction;
     }

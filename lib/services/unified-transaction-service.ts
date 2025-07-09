@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { UnifiedGLPostingService } from "./unified-gl-posting-service";
 import { MissingGLMethods } from "./gl-missing-methods";
 import { AuditLoggerService } from "./audit-logger-service";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -222,6 +223,29 @@ export class UnifiedTransactionService {
         "Branch"
       );
 
+      // Notify customer
+      if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Transaction Alert",
+          message: `Thank you for using our service! Your transaction of GHS ${data.amount} was successful.`,
+          phone: data.phoneNumber || data.customerPhone,
+          email: data.customerEmail,
+          userId: data.userId,
+          metadata: { ...data },
+        });
+      }
+      // Notify user (staff)
+      if (data.userId) {
+        await NotificationService.sendTransactionAlert(data.userId, {
+          type: data.transactionType || data.type,
+          amount: data.amount,
+          service: data.serviceType || data.provider || "transaction",
+          reference: data.reference,
+          branchId: data.branchId,
+        });
+      }
+
       return {
         success: true,
         transaction: transaction[0],
@@ -376,6 +400,29 @@ export class UnifiedTransactionService {
         },
       });
 
+      // Notify customer
+      if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Transaction Alert",
+          message: `Your transaction of GHS ${data.amount} was successful.`,
+          phone: data.phoneNumber || data.customerPhone,
+          email: data.customerEmail,
+          userId: data.userId,
+          metadata: { ...data },
+        });
+      }
+      // Notify user (staff)
+      if (data.userId) {
+        await NotificationService.sendTransactionAlert(data.userId, {
+          type: data.transactionType || data.type,
+          amount: data.amount,
+          service: data.serviceType || data.provider || "transaction",
+          reference: data.reference,
+          branchId: data.branchId,
+        });
+      }
+
       return {
         success: true,
         transaction: transaction[0],
@@ -449,6 +496,29 @@ export class UnifiedTransactionService {
           { ...data, processedBy: data.userId },
           transaction[0]
         );
+
+        // Notify customer
+        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+          await NotificationService.sendNotification({
+            type: "transaction",
+            title: "Transaction Alert",
+            message: `Your transaction of GHS ${data.amount} was successful.`,
+            phone: data.phoneNumber || data.customerPhone,
+            email: data.customerEmail,
+            userId: data.userId,
+            metadata: { ...data },
+          });
+        }
+        // Notify user (staff)
+        if (data.userId) {
+          await NotificationService.sendTransactionAlert(data.userId, {
+            type: data.transactionType || data.type,
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference,
+            branchId: data.branchId,
+          });
+        }
 
         return {
           success: true,
@@ -533,6 +603,29 @@ export class UnifiedTransactionService {
           { ...data, processedBy: data.userId },
           transaction[0]
         );
+
+        // Notify customer
+        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+          await NotificationService.sendNotification({
+            type: "transaction",
+            title: "Transaction Alert",
+            message: `Your transaction of GHS ${data.amount} was successful.`,
+            phone: data.phoneNumber || data.customerPhone,
+            email: data.customerEmail,
+            userId: data.userId,
+            metadata: { ...data },
+          });
+        }
+        // Notify user (staff)
+        if (data.userId) {
+          await NotificationService.sendTransactionAlert(data.userId, {
+            type: data.transactionType || data.type,
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference,
+            branchId: data.branchId,
+          });
+        }
 
         return {
           success: true,
@@ -660,6 +753,29 @@ export class UnifiedTransactionService {
         },
       });
 
+      // Notify customer
+      if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Transaction Alert",
+          message: `Your transaction of GHS ${data.amount} was successful.`,
+          phone: data.phoneNumber || data.customerPhone,
+          email: data.customerEmail,
+          userId: data.userId,
+          metadata: { ...data },
+        });
+      }
+      // Notify user (staff)
+      if (data.userId) {
+        await NotificationService.sendTransactionAlert(data.userId, {
+          type: data.transactionType || data.type,
+          amount: data.amount,
+          service: data.serviceType || data.provider || "transaction",
+          reference: data.reference,
+          branchId: data.branchId,
+        });
+      }
+
       return {
         success: true,
         transaction: transaction[0],
@@ -696,6 +812,29 @@ export class UnifiedTransactionService {
           )
           RETURNING *
         `;
+
+        // Notify customer
+        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+          await NotificationService.sendNotification({
+            type: "transaction",
+            title: "Transaction Alert",
+            message: `Your transaction of GHS ${data.amount} was successful.`,
+            phone: data.phoneNumber || data.customerPhone,
+            email: data.customerEmail,
+            userId: data.userId,
+            metadata: { ...data },
+          });
+        }
+        // Notify user (staff)
+        if (data.userId) {
+          await NotificationService.sendTransactionAlert(data.userId, {
+            type: data.transactionType || data.type,
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference,
+            branchId: data.branchId,
+          });
+        }
 
         return {
           success: true,
@@ -780,6 +919,29 @@ export class UnifiedTransactionService {
           { ...data, processedBy: data.userId },
           transaction[0]
         );
+
+        // Notify customer
+        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
+          await NotificationService.sendNotification({
+            type: "transaction",
+            title: "Transaction Alert",
+            message: `Your transaction of GHS ${data.amount} was successful.`,
+            phone: data.phoneNumber || data.customerPhone,
+            email: data.customerEmail,
+            userId: data.userId,
+            metadata: { ...data },
+          });
+        }
+        // Notify user (staff)
+        if (data.userId) {
+          await NotificationService.sendTransactionAlert(data.userId, {
+            type: data.transactionType || data.type,
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference,
+            branchId: data.branchId,
+          });
+        }
 
         return {
           success: true,

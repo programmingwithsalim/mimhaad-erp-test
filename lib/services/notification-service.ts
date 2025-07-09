@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { EmailTemplates } from "@/lib/email-templates";
 
 export interface NotificationConfig {
   email_enabled: boolean;
@@ -301,34 +302,42 @@ export class NotificationService {
         return { success: false, error: "No email address configured" };
       }
 
-      // In a real implementation, you would integrate with an email service like:
-      // - SendGrid
-      // - AWS SES
-      // - Mailgun
-      // - Resend
-
-      console.log("📧 Sending email notification to:", prefs.email_address);
-      console.log("Subject:", data.title);
-      console.log("Message:", data.message);
-
-      // Simulate email sending with a delay
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // For testing purposes, we'll log the email content
-      console.log(`
-        ===== EMAIL NOTIFICATION =====
-        To: ${prefs.email_address}
-        Subject: ${data.title}
-        
-        ${data.message}
-        
-        Priority: ${data.priority}
-        Type: ${data.type}
-        Timestamp: ${new Date().toISOString()}
-        ==============================
-      `);
-
-      return { success: true, message: "Email notification sent successfully" };
+      // Use the real EmailService
+      const { EmailService } = await import("@/lib/email-service");
+      let template;
+      let templateData;
+      if (data.type === "transaction") {
+        template = "transactionAlert";
+        templateData = {
+          userName: prefs.email_address,
+          transactionDetails: {
+            ...data.metadata,
+            message: data.message,
+          },
+        };
+      } else if (data.type === "login") {
+        template = "verification";
+        templateData = { userName: prefs.email_address, ...data.metadata };
+      } else if (data.type === "low_balance") {
+        template = "lowBalanceAlert";
+        templateData = { userName: prefs.email_address, ...data.metadata };
+      } else {
+        template = "welcome";
+        templateData = { userName: prefs.email_address, ...data.metadata };
+      }
+      const sent = await EmailService.sendEmail(
+        prefs.email_address,
+        template,
+        templateData
+      );
+      if (sent) {
+        return {
+          success: true,
+          message: "Email notification sent successfully",
+        };
+      } else {
+        return { success: false, error: "Failed to send email via provider" };
+      }
     } catch (error) {
       console.error("Email notification error:", error);
       return {
@@ -394,9 +403,9 @@ export class NotificationService {
               ).toString("base64")}`,
             },
             body: JSON.stringify({
-              From: senderId,
-              To: phone,
-              Content: message,
+              from: senderId,
+              to: phone,
+              content: message,
             }),
           }
         );
@@ -469,6 +478,100 @@ export class NotificationService {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Push send failed",
+      };
+    }
+  }
+
+  // Send only an SMS for testing purposes
+  static async sendSMSNotificationOnly(
+    userId: string,
+    config: any,
+    testPhone: string
+  ) {
+    try {
+      // Compose a test message
+      const message =
+        "This is a test SMS notification to verify your SMS settings are working correctly.";
+      const provider = config.smsProvider || config.sms_provider || "hubtel";
+      const apiKey = config.smsApiKey || config.sms_api_key;
+      const apiSecret = config.smsApiSecret || config.sms_api_secret;
+      const senderId = config.smsSenderId || config.sms_sender_id;
+      const phone = testPhone;
+
+      if (!apiKey || !senderId || !phone) {
+        return { success: false, error: "Missing SMS config or phone number" };
+      }
+
+      if (provider === "smsonlinegh") {
+        // SMSOnlineGH API
+        const response = await fetch(
+          "https://api.smsonlinegh.com/v4/message/sms/send",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              sender: senderId,
+              message,
+              recipients: [phone],
+            }),
+          }
+        );
+        const result = await response.json();
+        if (result.status === "success" || result.status === true) {
+          return { success: true, message: "SMS sent via SMSOnlineGH" };
+        } else {
+          return {
+            success: false,
+            error: result.message || "SMSOnlineGH send failed",
+          };
+        }
+      } else if (provider === "hubtel") {
+        // Hubtel API
+        const response = await fetch(
+          "https://sms.hubtel.com/v1/messages/send",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Basic ${Buffer.from(
+                `${apiKey}:${apiSecret}`
+              ).toString("base64")}`,
+            },
+            body: JSON.stringify({
+              from: senderId,
+              to: phone,
+              content: message,
+            }),
+          }
+        );
+        const result = await response.json();
+        if (result.Status === 0 || result.status === "Success") {
+          return { success: true, message: "SMS sent via Hubtel" };
+        } else {
+          return {
+            success: false,
+            error: result.Message || result.message || "Hubtel send failed",
+          };
+        }
+      }
+
+      // Simulate SMS sending with a delay
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      console.log(
+        `\n===== TEST SMS NOTIFICATION =====\nTo: ${phone}\nMessage: ${message}\nProvider: ${provider}\nTimestamp: ${new Date().toISOString()}\n============================\n`
+      );
+      return {
+        success: true,
+        message: "SMS notification sent successfully (simulated)",
+      };
+    } catch (error) {
+      console.error("SMS notification error:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "SMS send failed",
       };
     }
   }

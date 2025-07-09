@@ -1,5 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { UnifiedGLPostingService } from "./services/unified-gl-posting-service";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -379,6 +380,26 @@ export async function createWithdrawalTransaction(withdrawalData: {
       });
     } catch (glError) {
       console.error("[GL] Failed to post E-Zwich withdrawal to GL:", glError);
+    }
+
+    if (withdrawalData.customer_phone) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "E-Zwich Withdrawal Alert",
+        message: `Thank you for using our service! Your E-Zwich withdrawal of GHS ${withdrawalData.amount} was successful.`,
+        phone: withdrawalData.customer_phone,
+        userId: withdrawalData.processed_by,
+        metadata: { ...withdrawalData },
+      });
+    }
+    if (withdrawalData.processed_by) {
+      await NotificationService.sendNotification({
+        type: "transaction",
+        title: "Transaction Processed",
+        message: `Your E-Zwich withdrawal to ${withdrawalData.customer_name} was successful. Amount: GHS ${withdrawalData.amount}.`,
+        userId: withdrawalData.processed_by,
+        metadata: { ...withdrawalData },
+      });
     }
 
     return {
