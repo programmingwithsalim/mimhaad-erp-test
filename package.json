@@ -64,6 +64,7 @@
     "next-themes": "latest",
     "nodemailer": "latest",
     "path": "latest",
+    "pdf-lib": "^1.17.1",
     "react": "^18",
     "react-chartjs-2": "latest",
     "react-day-picker": "latest",
@@ -79,6 +80,7 @@
     "util": "latest",
     "uuid": "latest",
     "vaul": "latest",
+    "xlsx": "^0.18.5",
     "zod": "latest",
     "zustand": "latest"
   },

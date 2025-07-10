@@ -153,7 +153,8 @@ export function EnhancedAdminDashboard({
     return <div className="h-4 w-4" />;
   };
 
-  const getServiceIcon = (service: string) => {
+  const getServiceIcon = (service: string | undefined | null) => {
+    if (!service || typeof service !== "string") return <Activity className="h-4 w-4" />;
     switch (service.toLowerCase()) {
       case "momo":
         return <Smartphone className="h-4 w-4" />;
@@ -181,29 +182,34 @@ export function EnhancedAdminDashboard({
     }, 1000);
   };
 
-  // Mock chart data for demonstration
-  const mockChartData = [
-    { date: "Mon", transactions: 45, volume: 12500, commission: 625 },
-    { date: "Tue", transactions: 52, volume: 15800, commission: 790 },
-    { date: "Wed", transactions: 38, volume: 11200, commission: 560 },
-    { date: "Thu", transactions: 61, volume: 18900, commission: 945 },
-    { date: "Fri", transactions: 48, volume: 14200, commission: 710 },
-    { date: "Sat", transactions: 35, volume: 9800, commission: 490 },
-    { date: "Sun", transactions: 42, volume: 11800, commission: 590 },
-  ];
+  // Use real chart data from API instead of mock data
+  const chartData = totalStats.chartData && totalStats.chartData.length > 0 
+    ? totalStats.chartData.slice(-7).map((day: any) => ({
+        date: new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' }),
+        transactions: day.transactions,
+        volume: day.volume,
+        commission: day.commission,
+      }))
+    : [
+        { date: "Mon", transactions: 0, volume: 0, commission: 0 },
+        { date: "Tue", transactions: 0, volume: 0, commission: 0 },
+        { date: "Wed", transactions: 0, volume: 0, commission: 0 },
+        { date: "Thu", transactions: 0, volume: 0, commission: 0 },
+        { date: "Fri", transactions: 0, volume: 0, commission: 0 },
+        { date: "Sat", transactions: 0, volume: 0, commission: 0 },
+        { date: "Sun", transactions: 0, volume: 0, commission: 0 },
+      ];
 
-  const mockServiceBreakdown = [
-    { service: "MoMo", transactions: 120, volume: 45000, commission: 2250 },
-    {
-      service: "Agency Banking",
-      transactions: 85,
-      volume: 32000,
-      commission: 1600,
-    },
-    { service: "E-Zwich", transactions: 65, volume: 28000, commission: 1400 },
-    { service: "Power", transactions: 95, volume: 18000, commission: 900 },
-    { service: "Jumia", transactions: 45, volume: 12000, commission: 600 },
-  ];
+  // Use real service breakdown from API
+  const serviceBreakdown = totalStats.serviceBreakdown && totalStats.serviceBreakdown.length > 0
+    ? totalStats.serviceBreakdown
+    : [
+        { service: "MoMo", transactions: 0, volume: 0, commission: 0 },
+        { service: "Agency Banking", transactions: 0, volume: 0, commission: 0 },
+        { service: "E-Zwich", transactions: 0, volume: 0, commission: 0 },
+        { service: "Power", transactions: 0, volume: 0, commission: 0 },
+        { service: "Jumia", transactions: 0, volume: 0, commission: 0 },
+      ];
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -382,7 +388,7 @@ export function EnhancedAdminDashboard({
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockServiceBreakdown.map((service) => (
+                  {serviceBreakdown.map((service) => (
                     <div
                       key={service.service}
                       className="flex items-center justify-between"
@@ -452,7 +458,7 @@ export function EnhancedAdminDashboard({
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockChartData.slice(-7).map((day) => (
+                  {chartData.map((day) => (
                     <div
                       key={day.date}
                       className="flex items-center justify-between"
@@ -620,7 +626,7 @@ export function EnhancedAdminDashboard({
               </CardHeader>
               <CardContent>
                 <div className="h-64 flex items-end justify-between gap-2">
-                  {mockChartData.map((day, index) => (
+                  {chartData.map((day, index) => (
                     <div key={day.date} className="flex flex-col items-center">
                       <div
                         className="w-8 bg-primary rounded-t"
@@ -647,7 +653,7 @@ export function EnhancedAdminDashboard({
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {mockServiceBreakdown.map((service) => (
+                  {serviceBreakdown.map((service) => (
                     <div
                       key={service.service}
                       className="flex items-center justify-between"
@@ -663,7 +669,7 @@ export function EnhancedAdminDashboard({
                         <div className="text-sm text-muted-foreground">
                           {(
                             (service.volume /
-                              mockServiceBreakdown.reduce(
+                              serviceBreakdown.reduce(
                                 (sum, s) => sum + s.volume,
                                 0
                               )) *

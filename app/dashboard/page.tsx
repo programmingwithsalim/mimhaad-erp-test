@@ -155,9 +155,14 @@ export default function DashboardPage() {
         branchName: user?.branchName,
       });
 
-      const response = await fetch("/api/dashboard/statistics", {
-        credentials: "include",
-      });
+      const response = await fetch(
+        `/api/dashboard/statistics?userRole=${encodeURIComponent(
+          userRole || ""
+        )}&userBranchId=${encodeURIComponent(user?.branchId || "")}`,
+        {
+          credentials: "include",
+        }
+      );
 
       console.log("Dashboard API response status:", response.status);
 
@@ -186,51 +191,41 @@ export default function DashboardPage() {
   };
 
   const transformApiData = (apiData: any): DashboardStats => {
-    console.log("Transforming API data:", apiData);
-
-    // Extract data from the new API structure
-    const overview = apiData.overview || {};
-    const services = apiData.services || {};
-    const today = apiData.today || {};
-
-    const totalTransactions = overview.totalTransactions || 0;
-    const totalVolume = overview.totalVolume || 0;
-    const totalCommission = overview.totalCommissions || 0;
-
-    // Transform service breakdown from the new structure
-    const serviceBreakdown = apiData.serviceBreakdown || [
-      { service: "MoMo", transactions: 0, volume: 0, commission: 0 },
-      { service: "Agency Banking", transactions: 0, volume: 0, commission: 0 },
-      { service: "E-Zwich", transactions: 0, volume: 0, commission: 0 },
-      { service: "Power", transactions: 0, volume: 0, commission: 0 },
-      { service: "Jumia", transactions: 0, volume: 0, commission: 0 },
-    ];
+    // Map serviceStats to serviceBreakdown format with today's data
+    const serviceBreakdown = Array.isArray(apiData.serviceStats)
+      ? apiData.serviceStats.map((s: any) => ({
+          service: s.service,
+          transactions: s.todayTransactions || 0,
+          volume: s.todayVolume || 0,
+          commission: s.todayFees || 0,
+        }))
+      : [];
 
     return {
-      totalTransactions,
-      totalVolume,
-      totalCommission,
-      activeUsers: apiData.users?.activeUsers || 0,
-      todayTransactions: today.transactions || 0,
-      todayVolume: today.volume || 0,
-      todayCommission: today.commission || 0,
+      totalTransactions: apiData.totalTransactions || 0,
+      totalVolume: apiData.totalVolume || 0,
+      totalCommission: apiData.totalCommissions || 0,
+      activeUsers: apiData.activeUsers || 0,
+      todayTransactions: apiData.todayTransactions || 0,
+      todayVolume: apiData.todayVolume || 0,
+      todayCommission: apiData.todayCommission || 0,
       serviceBreakdown,
       recentActivity: apiData.recentActivity || [],
       floatAlerts: apiData.floatAlerts || [],
-      chartData: apiData.chartData || [],
+      chartData: apiData.dailyBreakdown || [],
       financialMetrics: apiData.financialMetrics || {},
-      revenueAnalysis: apiData.revenueAnalysis || [],
-      teamPerformance: apiData.teamPerformance || [],
-      dailyOperations: apiData.dailyOperations || [],
-      serviceMetrics: apiData.serviceMetrics || [],
+      revenueAnalysis: [],
+      teamPerformance: [],
+      dailyOperations: [],
+      serviceMetrics: [],
       systemAlerts: apiData.systemAlerts || 0,
       pendingApprovals: apiData.pendingApprovals || 0,
-      users: apiData.users || {},
-      branches: apiData.branches || [],
-      branchMetrics: apiData.branchMetrics || [],
-      expenses: apiData.expenses || {},
-      commissions: apiData.commissions || {},
-      float: apiData.float || {},
+      users: apiData.users || { totalUsers: 0, activeUsers: 0 },
+      branches: apiData.branchStats || [],
+      branchMetrics: [],
+      expenses: {},
+      commissions: {},
+      float: {},
     };
   };
 

@@ -118,7 +118,9 @@ export function EnhancedFinanceDashboard({
     return "text-gray-600";
   };
 
-  const getServiceIcon = (service: string) => {
+  const getServiceIcon = (service: string | undefined | null) => {
+    if (!service || typeof service !== "string")
+      return <Activity className="h-4 w-4" />;
     switch (service.toLowerCase()) {
       case "momo":
         return <Activity className="h-4 w-4" />;

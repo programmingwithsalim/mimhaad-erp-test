@@ -135,15 +135,15 @@ export async function GET(request: NextRequest) {
         SELECT branch_id, id, amount, fee FROM momo_transactions 
         WHERE created_at BETWEEN ${startDate.toISOString()} AND ${now.toISOString()}
         UNION ALL
-        SELECT branch_id, id, amount, fee FROM e_zwich_withdrawals 
+        SELECT branch_id::text, id, amount, fee FROM e_zwich_withdrawals 
         WHERE created_at BETWEEN ${startDate.toISOString()} AND ${now.toISOString()}
         UNION ALL
-        SELECT branch_id, id, amount, fee FROM power_transactions 
+        SELECT branch_id::text, id, amount, fee FROM power_transactions 
         WHERE created_at BETWEEN ${startDate.toISOString()} AND ${now.toISOString()}
         UNION ALL
-        SELECT branch_id, id, amount, fee FROM jumia_transactions 
+        SELECT branch_id::text, id, amount, fee FROM jumia_transactions 
         WHERE created_at BETWEEN ${startDate.toISOString()} AND ${now.toISOString()}
-      ) t ON b.id = t.branch_id
+      ) t ON b.id::text = t.branch_id
       GROUP BY b.id, b.name, b.location
       ORDER BY total_volume DESC
     `
@@ -187,7 +187,7 @@ export async function GET(request: NextRequest) {
         COUNT(*) as total_accounts,
         COALESCE(SUM(current_balance), 0) as total_balance,
         COALESCE(AVG(current_balance), 0) as average_balance,
-        COUNT(CASE WHEN current_balance < minimum_balance THEN 1 END) as low_balance_accounts,
+        COUNT(CASE WHEN current_balance < min_threshold THEN 1 END) as low_balance_accounts,
         COALESCE(MIN(current_balance), 0) as min_balance,
         COALESCE(MAX(current_balance), 0) as max_balance
       FROM float_accounts 
@@ -263,7 +263,12 @@ export async function GET(request: NextRequest) {
         : 0;
 
     const floatMetricsEnhanced = {
-      ...floatMetrics,
+      totalAccounts: Number(floatMetrics.total_accounts || 0),
+      totalBalance: Number(floatMetrics.total_balance || 0),
+      averageBalance: Number(floatMetrics.average_balance || 0),
+      lowBalanceAccounts: Number(floatMetrics.low_balance_accounts || 0),
+      minBalance: Number(floatMetrics.min_balance || 0),
+      maxBalance: Number(floatMetrics.max_balance || 0),
       utilizationRate: Math.min(utilizationRate, 100),
     };
 
@@ -283,6 +288,26 @@ export async function GET(request: NextRequest) {
       averageTransactionValue: transactionMetrics.avg_transaction_value,
       topPerformingService: topPerformingService.service,
       growthRate: 5.2, // Placeholder - implement actual calculation
+    };
+
+    // Calculate customer metrics (placeholder for now)
+    const customerMetrics = {
+      uniqueCustomers: 850, // Placeholder
+      totalCustomers: 1200, // Placeholder
+      repeatCustomers: 650, // Placeholder
+      repeatCustomerRate: 76.5, // Placeholder
+      newCustomers: 150, // Placeholder
+    };
+
+    // Add userActivity to match frontend expectations
+    const userActivity = {
+      activeUsers: transactionMetrics.total_transactions > 0 ? 25 : 0, // Placeholder
+      topPerformers: [], // This would need a separate query for user performance
+      branchActivity: branchPerformance.map((branch) => ({
+        branch: branch.name,
+        transactions: branch.total_transactions,
+        volume: branch.total_volume,
+      })),
     };
 
     return NextResponse.json({
@@ -305,13 +330,7 @@ export async function GET(request: NextRequest) {
         servicePerformance,
         branchPerformance,
         timeSeriesData,
-        customerMetrics: {
-          uniqueCustomers: 850, // Placeholder
-          totalCustomers: 1200, // Placeholder
-          repeatCustomers: 650, // Placeholder
-          repeatCustomerRate: 76.5, // Placeholder
-          newCustomers: 150, // Placeholder
-        },
+        customerMetrics,
         floatMetrics: floatMetricsEnhanced,
         summary,
         transactionStats: {
@@ -319,19 +338,26 @@ export async function GET(request: NextRequest) {
           totalVolume: transactionMetrics.total_volume,
           averageTransaction: transactionMetrics.avg_transaction_value,
           successRate: 98.5, // Placeholder
-          dailyTrends: timeSeriesData,
+          dailyTrends: timeSeriesData.map((item) => ({
+            date: item.date,
+            transactions: item.transactionCount,
+            volume: item.volume,
+          })),
         },
         revenueBreakdown: {
           totalRevenue,
           byService: servicePerformance.reduce((acc, service) => {
-            acc[service.service] = service.totalFees;
+            acc[service.service.toLowerCase()] = service.totalFees;
             return acc;
           }, {} as Record<string, number>),
           monthlyTrends: timeSeriesData.map((item) => ({
-            month: item.date,
+            month: new Date(item.date).toLocaleString("default", {
+              month: "short",
+            }),
             revenue: item.fees,
           })),
         },
+        userActivity,
         lastUpdated: new Date().toISOString(),
       },
     });
@@ -357,16 +383,41 @@ export async function GET(request: NextRequest) {
           profitMargin: 62.2,
         },
         servicePerformance: [
-          { service: "momo", transactions: 450, volume: 162000, fees: 8100 },
+          {
+            service: "momo",
+            transactionCount: 450,
+            totalVolume: 162000,
+            totalFees: 8100,
+            avgTransactionValue: 360,
+          },
           {
             service: "agencyBanking",
-            transactions: 320,
-            volume: 128000,
-            fees: 6400,
+            transactionCount: 320,
+            totalVolume: 128000,
+            totalFees: 6400,
+            avgTransactionValue: 400,
           },
-          { service: "ezwich", transactions: 180, volume: 72000, fees: 3600 },
-          { service: "power", transactions: 200, volume: 60000, fees: 3000 },
-          { service: "jumia", transactions: 100, volume: 28000, fees: 1400 },
+          {
+            service: "ezwich",
+            transactionCount: 180,
+            totalVolume: 72000,
+            totalFees: 3600,
+            avgTransactionValue: 400,
+          },
+          {
+            service: "power",
+            transactionCount: 200,
+            totalVolume: 60000,
+            totalFees: 3000,
+            avgTransactionValue: 300,
+          },
+          {
+            service: "jumia",
+            transactionCount: 100,
+            totalVolume: 28000,
+            totalFees: 1400,
+            avgTransactionValue: 280,
+          },
         ],
         branchPerformance: [
           {
@@ -478,6 +529,27 @@ export async function GET(request: NextRequest) {
             jumia: 1400,
           },
           monthlyTrends: [],
+        },
+        userActivity: {
+          activeUsers: 25,
+          topPerformers: [],
+          branchActivity: [
+            {
+              branch: "Main Branch",
+              transactions: 450,
+              volume: 162000,
+            },
+            {
+              branch: "North Branch",
+              transactions: 320,
+              volume: 115200,
+            },
+            {
+              branch: "South Branch",
+              transactions: 280,
+              volume: 100800,
+            },
+          ],
         },
         lastUpdated: new Date().toISOString(),
       },

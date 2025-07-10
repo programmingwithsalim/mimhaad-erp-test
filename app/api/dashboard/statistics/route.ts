@@ -5,189 +5,114 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    // Get parameters from query
     const { searchParams } = new URL(request.url);
-    const startDate =
-      searchParams.get("startDate") ||
-      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const endDate = searchParams.get("endDate") || new Date().toISOString();
-    const userRole = searchParams.get("userRole");
-    const userBranchId = searchParams.get("userBranchId");
+    const userRole = searchParams.get('userRole');
+    const userBranchId = searchParams.get('userBranchId');
 
-    // Role-based access control
-    const isAdmin = userRole === "Admin";
-    const isFinance = userRole === "Finance";
-    const isManager = userRole === "Manager";
-    const isOperations = userRole === "Operations";
-    const isCashier = userRole === "Cashier";
+    // Get today's date for filtering
+    const today = new Date().toISOString().split('T')[0];
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    // Determine effective branch filter
-    const effectiveBranchId = isAdmin ? null : userBranchId;
+    // Total branches
+    const branchRes = await sql`SELECT COUNT(*) AS total FROM branches WHERE status = 'active'`;
+    const totalBranches = Number(branchRes[0]?.total || 0);
 
-    // Build branch filter for SQL queries
-    const branchFilter = effectiveBranchId ? `AND branch_id = '${effectiveBranchId}'` : "";
+    // Total users
+    const userRes = await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active'`;
+    const totalUsers = Number(userRes[0]?.total || 0);
 
-    // Get comprehensive transaction statistics with aggregation
-    const transactionStatsQuery = `
-      SELECT 
-        COUNT(*) as total_transactions,
-        COALESCE(SUM(amount), 0) as total_volume,
-        COALESCE(SUM(fee), 0) as total_fees,
-        COALESCE(AVG(amount), 0) as avg_transaction_value,
-        COUNT(DISTINCT user_id) as unique_users,
-        COUNT(DISTINCT branch_id) as active_branches
-      FROM (
-        SELECT amount, fee, user_id, branch_id FROM agency_banking_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee, user_id, branch_id FROM momo_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee, user_id, branch_id FROM e_zwich_withdrawals 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee, user_id, branch_id FROM power_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee, user_id, branch_id FROM jumia_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'active' ${branchFilter}
-      ) as all_transactions
-    `;
-
-    // Get today's statistics
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-
-    const todayStatsQuery = `
-      SELECT 
-        COUNT(*) as today_transactions,
-        COALESCE(SUM(amount), 0) as today_volume,
-        COALESCE(SUM(fee), 0) as today_fees
-      FROM (
-        SELECT amount, fee FROM agency_banking_transactions 
-        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee FROM momo_transactions 
-        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee FROM e_zwich_withdrawals 
-        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee FROM power_transactions 
-        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT amount, fee FROM jumia_transactions 
-        WHERE created_at BETWEEN '${todayStart.toISOString()}' AND '${todayEnd.toISOString()}' 
-        AND status = 'active' ${branchFilter}
-      ) as today_transactions
-    `;
-
-    // Get service breakdown with aggregation
-    const serviceBreakdownQuery = `
-      SELECT 
-        service_type,
-        COUNT(*) as transaction_count,
-        COALESCE(SUM(amount), 0) as total_volume,
-        COALESCE(SUM(fee), 0) as total_fees,
-        COALESCE(AVG(amount), 0) as avg_transaction_value
-      FROM (
-        SELECT 'MoMo' as service_type, amount, fee FROM momo_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT 'Agency Banking' as service_type, amount, fee FROM agency_banking_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT 'E-Zwich' as service_type, amount, fee FROM e_zwich_withdrawals 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT 'Power' as service_type, amount, fee FROM power_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT 'Jumia' as service_type, amount, fee FROM jumia_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'active' ${branchFilter}
-      ) as service_data
-      GROUP BY service_type
-      ORDER BY total_volume DESC
-    `;
-
-    // Get recent activity with aggregation
-    const recentActivityQuery = `
-      SELECT 
-        'agency_banking' as service,
-        id,
-        amount,
-        customer_name,
-        created_at,
-        'Agency Banking' as service_name
-      FROM agency_banking_transactions 
-      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-      AND status = 'completed' ${branchFilter}
-      UNION ALL
-      SELECT 
-        'momo' as service,
-        id,
-        amount,
-        customer_name,
-        created_at,
-        'MoMo' as service_name
+    // Today's MoMo transactions
+    const momoTodayRes = await sql`
+      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
       FROM momo_transactions 
-      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-      AND status = 'completed' ${branchFilter}
-      UNION ALL
-      SELECT 
-        'e_zwich' as service,
-        id,
-        amount,
-        customer_name,
-        created_at,
-        'E-Zwich' as service_name
-      FROM e_zwich_withdrawals 
-      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-      AND status = 'completed' ${branchFilter}
-      UNION ALL
-      SELECT 
-        'power' as service,
-        id,
-        amount,
-        customer_name,
-        created_at,
-        'Power' as service_name
-      FROM power_transactions 
-      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-      AND status = 'completed' ${branchFilter}
-      UNION ALL
-      SELECT 
-        'jumia' as service,
-        id,
-        amount,
-        customer_name,
-        created_at,
-        'Jumia' as service_name
-      FROM jumia_transactions 
-      WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-      AND status = 'active' ${branchFilter}
-      ORDER BY created_at DESC
-      LIMIT 10
+      WHERE status = 'completed' AND DATE(created_at) = ${today}
     `;
+    const todayMomoTransactions = Number(momoTodayRes[0]?.total || 0);
+    const todayMomoVolume = Number(momoTodayRes[0]?.volume || 0);
 
-    // Get float alerts with aggregation
-    const floatAlertsQuery = `
+    // Total MoMo transactions
+    const momoRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM momo_transactions WHERE status = 'completed'`;
+    const totalMomoTransactions = Number(momoRes[0]?.total || 0);
+    const totalMomoVolume = Number(momoRes[0]?.volume || 0);
+
+    // Today's Agency Banking transactions
+    const agencyTodayRes = await sql`
+      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+      FROM agency_banking_transactions 
+      WHERE status = 'completed' AND DATE(created_at) = ${today}
+    `;
+    const todayAgencyTransactions = Number(agencyTodayRes[0]?.total || 0);
+    const todayAgencyVolume = Number(agencyTodayRes[0]?.volume || 0);
+
+    // Total Agency Banking transactions
+    const agencyRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM agency_banking_transactions WHERE status = 'completed'`;
+    const totalAgencyTransactions = Number(agencyRes[0]?.total || 0);
+    const totalAgencyVolume = Number(agencyRes[0]?.volume || 0);
+
+    // Today's E-Zwich withdrawals
+    const ezwichTodayRes = await sql`
+      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+      FROM e_zwich_withdrawals 
+      WHERE status = 'completed' AND DATE(created_at) = ${today}
+    `;
+    const todayEzwichTransactions = Number(ezwichTodayRes[0]?.total || 0);
+    const todayEzwichVolume = Number(ezwichTodayRes[0]?.volume || 0);
+
+    // Total E-Zwich withdrawals
+    const ezwichRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM e_zwich_withdrawals WHERE status = 'completed'`;
+    const totalEzwichTransactions = Number(ezwichRes[0]?.total || 0);
+    const totalEzwichVolume = Number(ezwichRes[0]?.volume || 0);
+
+    // Today's Power transactions
+    const powerTodayRes = await sql`
+      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+      FROM power_transactions 
+      WHERE status = 'completed' AND DATE(created_at) = ${today}
+    `;
+    const todayPowerTransactions = Number(powerTodayRes[0]?.total || 0);
+    const todayPowerVolume = Number(powerTodayRes[0]?.volume || 0);
+
+    // Total Power transactions
+    const powerRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM power_transactions WHERE status = 'completed'`;
+    const totalPowerTransactions = Number(powerRes[0]?.total || 0);
+    const totalPowerVolume = Number(powerRes[0]?.volume || 0);
+
+    // Today's Jumia transactions
+    const jumiaTodayRes = await sql`
+      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+      FROM jumia_transactions 
+      WHERE status = 'active' AND DATE(created_at) = ${today}
+    `;
+    const todayJumiaTransactions = Number(jumiaTodayRes[0]?.total || 0);
+    const todayJumiaVolume = Number(jumiaTodayRes[0]?.volume || 0);
+
+    // Total Jumia transactions
+    const jumiaRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM jumia_transactions WHERE status = 'active'`;
+    const totalJumiaTransactions = Number(jumiaRes[0]?.total || 0);
+    const totalJumiaVolume = Number(jumiaRes[0]?.volume || 0);
+
+    // Today's commissions
+    const commissionTodayRes = await sql`
+      SELECT COALESCE(SUM(amount),0) AS total 
+      FROM commissions 
+      WHERE status = 'approved' AND DATE(created_at) = ${today}
+    `;
+    const todayCommissions = Number(commissionTodayRes[0]?.total || 0);
+
+    // Total commissions
+    const commissionRes = await sql`SELECT COALESCE(SUM(amount),0) AS total FROM commissions WHERE status = 'approved'`;
+    const totalCommissions = Number(commissionRes[0]?.total || 0);
+
+    // Active users
+    const activeUserRes = await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active'`;
+    const activeUsers = Number(activeUserRes[0]?.total || 0);
+
+    // Pending approvals (commissions)
+    const pendingRes = await sql`SELECT COUNT(*) AS total FROM commissions WHERE status = 'pending'`;
+    const pendingApprovals = Number(pendingRes[0]?.total || 0);
+
+    // Float alerts - accounts below threshold
+    const floatAlertsRes = await sql`
       SELECT 
         id,
         account_type as provider,
@@ -195,999 +120,190 @@ export async function GET(request: NextRequest) {
         current_balance,
         min_threshold as threshold,
         CASE 
-          WHEN current_balance < min_threshold THEN 'critical'
-          WHEN current_balance < (min_threshold * 1.5) THEN 'warning'
-          ELSE 'normal'
+          WHEN current_balance <= min_threshold * 0.5 THEN 'critical'
+          ELSE 'warning'
         END as severity
       FROM float_accounts 
-      WHERE is_active = true 
-      AND (current_balance < min_threshold OR current_balance < (min_threshold * 1.5))
-      ${branchFilter}
-      ORDER BY current_balance ASC
+      WHERE current_balance <= min_threshold AND is_active = true
+    `;
+    const floatAlerts = floatAlertsRes.map((row: any) => ({
+      id: row.id,
+      provider: row.provider,
+      service: row.service,
+      current_balance: Number(row.current_balance),
+      threshold: Number(row.threshold),
+      severity: row.severity,
+    }));
+
+    // Recent activity with better structure
+    const activityRes = await sql`
+      SELECT 
+        id, 
+        action_type, 
+        description, 
+        username, 
+        created_at, 
+        status,
+        entity_type,
+        entity_id
+      FROM audit_logs 
+      ORDER BY created_at DESC 
       LIMIT 10
     `;
+    const recentActivity = activityRes.map((row: any) => ({
+      id: row.id,
+      type: row.action_type,
+      service: row.entity_type || 'system',
+      amount: 0, // Will be calculated if needed
+      timestamp: row.created_at,
+      user: row.username,
+      description: row.description,
+      status: row.status,
+    }));
 
-    // Get chart data with daily aggregation
-    const chartDataQuery = `
+    // Branch stats
+    const branchStatsRes = await sql`SELECT id, name, code, region, status FROM branches`;
+    const branchStats = branchStatsRes;
+
+    // Daily breakdown for the last 7 days
+    const dailyBreakdownRes = await sql`
       SELECT 
         DATE(created_at) as date,
-        COUNT(*) as transaction_count,
-        COALESCE(SUM(amount), 0) as volume,
-        COALESCE(SUM(fee), 0) as fees
+        COUNT(*) as transactions,
+        COALESCE(SUM(amount), 0) as volume
       FROM (
-        SELECT created_at, amount, fee FROM agency_banking_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
+        SELECT created_at, amount FROM momo_transactions WHERE status = 'completed'
         UNION ALL
-        SELECT created_at, amount, fee FROM momo_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
+        SELECT created_at, amount FROM agency_banking_transactions WHERE status = 'completed'
         UNION ALL
-        SELECT created_at, amount, fee FROM e_zwich_withdrawals 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
+        SELECT created_at, amount FROM e_zwich_withdrawals WHERE status = 'completed'
         UNION ALL
-        SELECT created_at, amount, fee FROM power_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'completed' ${branchFilter}
+        SELECT created_at, amount FROM power_transactions WHERE status = 'completed'
         UNION ALL
-        SELECT created_at, amount, fee FROM jumia_transactions 
-        WHERE created_at BETWEEN '${startDate}' AND '${endDate}' 
-        AND status = 'active' ${branchFilter}
-      ) as all_transactions
+        SELECT created_at, amount FROM jumia_transactions WHERE status = 'active'
+      ) combined_transactions
+      WHERE created_at >= NOW() - INTERVAL '7 days'
       GROUP BY DATE(created_at)
-      ORDER BY date
+      ORDER BY date DESC
     `;
+    const dailyBreakdown = dailyBreakdownRes.map((row: any) => ({
+      date: row.date,
+      transactions: Number(row.transactions),
+      volume: Number(row.volume),
+      commission: Number(row.volume) * 0.05, // 5% commission estimate
+    }));
 
-    // Execute all queries in parallel
-    const [
-      transactionStatsResult,
-      todayStatsResult,
-      serviceBreakdownResult,
-      recentActivityResult,
-      floatAlertsResult,
-      chartDataResult,
-      agencyBankingStats,
-      momoStats,
-      ezwichStats,
-      jumiaStats,
-      powerStats,
-      floatStats,
-      commissionStats,
-      expenseStats,
-      userStats,
-      branchStats,
-    ] = await Promise.all([
-      sql.unsafe(transactionStatsQuery),
-      sql.unsafe(todayStatsQuery),
-      sql.unsafe(serviceBreakdownQuery),
-      sql.unsafe(recentActivityQuery),
-      sql.unsafe(floatAlertsQuery),
-      sql.unsafe(chartDataQuery),
-      getAgencyBankingStats(startDate, endDate, effectiveBranchId),
-      getMomoStats(startDate, endDate, effectiveBranchId),
-      getEzwichStats(startDate, endDate, effectiveBranchId),
-      getJumiaStats(startDate, endDate, effectiveBranchId),
-      getPowerStats(startDate, endDate, effectiveBranchId),
-      getFloatStats(effectiveBranchId),
-      getCommissionStats(startDate, endDate, effectiveBranchId),
-      getExpenseStats(startDate, endDate, effectiveBranchId),
-      getUserStats(effectiveBranchId),
-      getBranchStats(isAdmin),
-    ]);
-
-    // Process results
-    const totalTransactions = Number(transactionStatsResult[0]?.total_transactions || 0);
-    const totalVolume = Number(transactionStatsResult[0]?.total_volume || 0);
-    const totalFees = Number(transactionStatsResult[0]?.total_fees || 0);
-    const avgTransactionValue = Number(transactionStatsResult[0]?.avg_transaction_value || 0);
-    const uniqueUsers = Number(transactionStatsResult[0]?.unique_users || 0);
-    const activeBranches = Number(transactionStatsResult[0]?.active_branches || 0);
-
-    const todayTransactions = Number(todayStatsResult[0]?.today_transactions || 0);
-    const todayVolume = Number(todayStatsResult[0]?.today_volume || 0);
-    const todayFees = Number(todayStatsResult[0]?.today_fees || 0);
-
-    const serviceBreakdown = Array.isArray(serviceBreakdownResult)
-      ? serviceBreakdownResult.map((service: any) => ({
-          service: service.service_type,
-          transactions: Number(service.transaction_count || 0),
-          volume: Number(service.total_volume || 0),
-          commission: Number(service.total_fees || 0),
-          avgTransactionValue: Number(service.avg_transaction_value || 0),
-        }))
-      : [];
-
-    const recentActivity = Array.isArray(recentActivityResult)
-      ? recentActivityResult.map((activity: any) => ({
-          id: activity.id,
-          type: 'transaction',
-          service: activity.service_name,
-          amount: Number(activity.amount || 0),
-          timestamp: activity.created_at,
-          user: activity.customer_name || 'Unknown',
-        }))
-      : [];
-
-    const floatAlerts = Array.isArray(floatAlertsResult)
-      ? floatAlertsResult.map((alert: any) => ({
-          id: alert.id,
-          provider: alert.provider,
-          service: alert.service,
-          current_balance: Number(alert.current_balance || 0),
-          threshold: Number(alert.threshold || 0),
-          severity: alert.severity,
-        }))
-      : [];
-
-    const chartData = Array.isArray(chartDataResult)
-      ? chartDataResult.map((row: any) => ({
-          date: row.date,
-          transactions: Number(row.transaction_count || 0),
-          volume: Number(row.volume || 0),
-          commission: Number(row.fees || 0),
-        }))
-      : [];
-
-    // Calculate totals from individual service stats
-    const totalCommissions = commissionStats.total;
-    const totalExpenses = expenseStats.total;
-
-    // Role-specific data filtering
-    const responseData: any = {
-      overview: {
-        totalTransactions,
-        totalVolume,
-        totalCommissions,
-        totalExpenses,
-        netRevenue: totalCommissions - totalExpenses,
-        avgTransactionValue,
-        uniqueUsers,
-        activeBranches,
+    // Service stats with today's and total metrics
+    const serviceStats = [
+      { 
+        service: "MoMo", 
+        todayTransactions: todayMomoTransactions,
+        todayVolume: todayMomoVolume,
+        totalTransactions: totalMomoTransactions, 
+        totalVolume: totalMomoVolume,
+        todayFees: todayMomoVolume * 0.02, // 2% fee estimate
+        totalBalance: 0, // Will be calculated from float accounts
+        weeklyGrowth: 0, // Will be calculated
+        monthlyGrowth: 0 // Will be calculated
       },
-      today: {
-        transactions: todayTransactions,
-        volume: todayVolume,
-        commission: todayFees,
+      { 
+        service: "Agency Banking", 
+        todayTransactions: todayAgencyTransactions,
+        todayVolume: todayAgencyVolume,
+        totalTransactions: totalAgencyTransactions, 
+        totalVolume: totalAgencyVolume,
+        todayFees: todayAgencyVolume * 0.01, // 1% fee estimate
+        totalBalance: 0,
+        weeklyGrowth: 0,
+        monthlyGrowth: 0
       },
-      services: {
-        agencyBanking: agencyBankingStats,
-        momo: momoStats,
-        ezwich: ezwichStats,
-        jumia: jumiaStats,
-        power: powerStats,
+      { 
+        service: "E-Zwich", 
+        todayTransactions: todayEzwichTransactions,
+        todayVolume: todayEzwichVolume,
+        totalTransactions: totalEzwichTransactions, 
+        totalVolume: totalEzwichVolume,
+        todayFees: todayEzwichVolume * 0.015, // 1.5% fee estimate
+        totalBalance: 0,
+        weeklyGrowth: 0,
+        monthlyGrowth: 0
       },
-      serviceBreakdown,
-      recentActivity,
-      floatAlerts,
-      chartData,
-      float: floatStats,
-      commissions: commissionStats,
-      expenses: expenseStats,
-    };
+      { 
+        service: "Power", 
+        todayTransactions: todayPowerTransactions,
+        todayVolume: todayPowerVolume,
+        totalTransactions: totalPowerTransactions, 
+        totalVolume: totalPowerVolume,
+        todayFees: todayPowerVolume * 0.03, // 3% fee estimate
+        totalBalance: 0,
+        weeklyGrowth: 0,
+        monthlyGrowth: 0
+      },
+      { 
+        service: "Jumia", 
+        todayTransactions: todayJumiaTransactions,
+        todayVolume: todayJumiaVolume,
+        totalTransactions: totalJumiaTransactions, 
+        totalVolume: totalJumiaVolume,
+        todayFees: todayJumiaVolume * 0.025, // 2.5% fee estimate
+        totalBalance: 0,
+        weeklyGrowth: 0,
+        monthlyGrowth: 0
+      },
+    ];
 
-    // Add role-specific data
-    if (isAdmin) {
-      responseData.users = userStats;
-      responseData.branches = branchStats;
-      responseData.systemAlerts = await getSystemAlerts();
-      responseData.pendingApprovals = await getPendingApprovals();
-    }
+    // Calculate totals
+    const todayTransactions = serviceStats.reduce((sum, service) => sum + service.todayTransactions, 0);
+    const todayVolume = serviceStats.reduce((sum, service) => sum + service.todayVolume, 0);
+    const todayFees = serviceStats.reduce((sum, service) => sum + service.todayFees, 0);
+    const totalTransactions = serviceStats.reduce((sum, service) => sum + service.totalTransactions, 0);
+    const totalVolume = serviceStats.reduce((sum, service) => sum + service.totalVolume, 0);
 
-    if (isFinance) {
-      responseData.financialMetrics = await getFinancialMetrics(
-        startDate,
-        endDate,
-        effectiveBranchId
-      );
-      responseData.revenueAnalysis = await getRevenueAnalysis(
-        startDate,
-        endDate,
-        effectiveBranchId
-      );
-    }
-
-    if (isManager) {
-      responseData.teamPerformance = await getTeamPerformance(
-        startDate,
-        endDate,
-        effectiveBranchId
-      );
-      responseData.branchMetrics = await getBranchMetrics(effectiveBranchId);
-    }
-
-    if (isOperations || isCashier) {
-      responseData.dailyOperations = await getDailyOperations(
-        startDate,
-        endDate,
-        effectiveBranchId
-      );
-      responseData.serviceMetrics = await getServiceMetrics(
-        startDate,
-        endDate,
-        effectiveBranchId
-      );
-    }
+    // System alerts count
+    const systemAlerts = floatAlerts.length + pendingApprovals;
 
     return NextResponse.json({
-      success: true,
-      data: responseData,
+      // Basic stats
+      totalBranches,
+      totalUsers,
+      totalCommissions,
+      activeUsers,
+      pendingApprovals,
+      systemAlerts,
+      
+      // Today's metrics
+      todayTransactions,
+      todayVolume,
+      todayCommission: todayFees,
+      
+      // Total metrics
+      totalTransactions,
+      totalVolume,
+      
+      // Detailed data
+      recentActivity,
+      branchStats,
+      serviceStats,
+      floatAlerts,
+      dailyBreakdown,
+      
+      // User stats
+      users: {
+        totalUsers,
+        activeUsers,
+      },
+      
+      // Financial metrics
+      financialMetrics: {
+        totalRevenue: totalVolume,
+        totalCommission: totalCommissions,
+        todayRevenue: todayVolume,
+        todayCommission: todayFees,
+        averageTransactionValue: totalTransactions > 0 ? totalVolume / totalTransactions : 0,
+      },
     });
   } catch (error) {
-    console.error("Error fetching dashboard statistics:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch dashboard statistics",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
-  }
-}
-
-async function getAgencyBankingStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as volume,
-        COALESCE(SUM(fee), 0) as fees
-      FROM agency_banking_transactions 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      AND status = 'completed'
-      AND (is_reversal IS NULL OR is_reversal = false)
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      volume: Number.parseFloat(result[0]?.volume || "0"),
-      fees: Number.parseFloat(result[0]?.fees || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching agency banking stats:", error);
-    return { count: 0, volume: 0, fees: 0 };
-  }
-}
-
-async function getMomoStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as volume,
-        COALESCE(SUM(fee), 0) as fees
-      FROM momo_transactions 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      AND (is_reversal IS NULL OR is_reversal = false)
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      volume: Number.parseFloat(result[0]?.volume || "0"),
-      fees: Number.parseFloat(result[0]?.fees || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching momo stats:", error);
-    return { count: 0, volume: 0, fees: 0 };
-  }
-}
-
-async function getEzwichStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as volume,
-        COALESCE(SUM(fee), 0) as fees
-      FROM e_zwich_withdrawals 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      volume: Number.parseFloat(result[0]?.volume || "0"),
-      fees: Number.parseFloat(result[0]?.fees || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching E-Zwich stats:", error);
-    return { count: 0, volume: 0, fees: 0 };
-  }
-}
-
-async function getJumiaStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as volume,
-        COALESCE(SUM(fee), 0) as fees
-      FROM jumia_transactions 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      volume: Number.parseFloat(result[0]?.volume || "0"),
-      fees: Number.parseFloat(result[0]?.fees || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching Jumia stats:", error);
-    return { count: 0, volume: 0, fees: 0 };
-  }
-}
-
-async function getPowerStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as volume,
-        COALESCE(SUM(fee), 0) as fees
-      FROM power_transactions 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      volume: Number.parseFloat(result[0]?.volume || "0"),
-      fees: Number.parseFloat(result[0]?.fees || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching power stats:", error);
-    return { count: 0, volume: 0, fees: 0 };
-  }
-}
-
-async function getFloatStats(branchId?: string | null) {
-  try {
-    const branchFilter = branchId ? `WHERE branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as total_accounts,
-        COALESCE(SUM(current_balance), 0) as total_balance,
-        COALESCE(SUM(CASE WHEN current_balance < min_threshold THEN 1 ELSE 0 END), 0) as low_balance_accounts
-      FROM float_accounts
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      totalAccounts: Number.parseInt(result[0]?.total_accounts || "0"),
-      totalBalance: Number.parseFloat(result[0]?.total_balance || "0"),
-      lowBalanceAccounts: Number.parseInt(
-        result[0]?.low_balance_accounts || "0"
-      ),
-    };
-  } catch (error) {
-    console.error("Error fetching float stats:", error);
-    return { totalAccounts: 0, totalBalance: 0, lowBalanceAccounts: 0 };
-  }
-}
-
-async function getCommissionStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total,
-        COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending
-      FROM commissions 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      total: Number.parseFloat(result[0]?.total || "0"),
-      approved: Number.parseFloat(result[0]?.approved || "0"),
-      pending: Number.parseFloat(result[0]?.pending || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching commission stats:", error);
-    return { count: 0, total: 0, approved: 0, pending: 0 };
-  }
-}
-
-async function getExpenseStats(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    const branchFilter = branchId ? `AND branch_id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total,
-        COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending
-      FROM expenses 
-      WHERE created_at BETWEEN ${startDate} AND ${endDate}
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      count: Number.parseInt(result[0]?.count || "0"),
-      total: Number.parseFloat(result[0]?.total || "0"),
-      approved: Number.parseFloat(result[0]?.approved || "0"),
-      pending: Number.parseFloat(result[0]?.pending || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching expense stats:", error);
-    return { count: 0, total: 0, approved: 0, pending: 0 };
-  }
-}
-
-async function getChartData(
-  startDate: string,
-  endDate: string,
-  branchId?: string
-) {
-  try {
-    // Get daily transaction data for the last 30 days
-    const result = await sql`
-      WITH date_series AS (
-        SELECT generate_series(
-          ${startDate}::date,
-          ${endDate}::date,
-          '1 day'::interval
-        )::date as date
-      ),
-      daily_stats AS (
-        SELECT 
-          date_trunc('day', created_at)::date as date,
-          'agency_banking' as service,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM agency_banking_transactions 
-        WHERE created_at BETWEEN ${startDate} AND ${endDate}
-        AND (${branchId ? sql`branch_id = ${branchId}` : sql`TRUE`})
-        GROUP BY date_trunc('day', created_at)::date
-        
-        UNION ALL
-        
-        SELECT 
-          date_trunc('day', created_at)::date as date,
-          'momo' as service,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM momo_transactions 
-        WHERE created_at BETWEEN ${startDate} AND ${endDate}
-        AND (${branchId ? sql`branch_id = ${branchId}` : sql`TRUE`})
-        GROUP BY date_trunc('day', created_at)::date
-        
-        UNION ALL
-        
-        SELECT 
-          date_trunc('day', created_at)::date as date,
-          'ezwich' as service,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM e_zwich_withdrawals 
-        WHERE created_at BETWEEN ${startDate} AND ${endDate}
-        AND (${branchId ? sql`branch_id = ${branchId}` : sql`TRUE`})
-        GROUP BY date_trunc('day', created_at)::date
-        
-        UNION ALL
-        
-        SELECT 
-          date_trunc('day', created_at)::date as date,
-          'jumia' as service,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM jumia_transactions 
-        WHERE created_at BETWEEN ${startDate} AND ${endDate}
-        AND (${branchId ? sql`branch_id = ${branchId}` : sql`TRUE`})
-        GROUP BY date_trunc('day', created_at)::date
-        
-        UNION ALL
-        
-        SELECT 
-          date_trunc('day', created_at)::date as date,
-          'power' as service,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM power_transactions 
-        WHERE created_at BETWEEN ${startDate} AND ${endDate}
-        AND (${branchId ? sql`branch_id = ${branchId}` : sql`TRUE`})
-        GROUP BY date_trunc('day', created_at)::date
-      )
-      SELECT 
-        ds.date,
-        COALESCE(SUM(CASE WHEN ds2.service = 'agency_banking' THEN ds2.transactions ELSE 0 END), 0) as agency_banking_transactions,
-        COALESCE(SUM(CASE WHEN ds2.service = 'momo' THEN ds2.transactions ELSE 0 END), 0) as momo_transactions,
-        COALESCE(SUM(CASE WHEN ds2.service = 'ezwich' THEN ds2.transactions ELSE 0 END), 0) as ezwich_transactions,
-        COALESCE(SUM(CASE WHEN ds2.service = 'jumia' THEN ds2.transactions ELSE 0 END), 0) as jumia_transactions,
-        COALESCE(SUM(CASE WHEN ds2.service = 'power' THEN ds2.transactions ELSE 0 END), 0) as power_transactions,
-        COALESCE(SUM(ds2.volume), 0) as total_volume
-      FROM date_series ds
-      LEFT JOIN daily_stats ds2 ON ds.date = ds2.date
-      GROUP BY ds.date
-      ORDER BY ds.date
-    `;
-
-    return result.map((row) => ({
-      date: row.date,
-      agencyBanking: Number.parseInt(row.agency_banking_transactions || "0"),
-      momo: Number.parseInt(row.momo_transactions || "0"),
-      ezwich: Number.parseInt(row.ezwich_transactions || "0"),
-      jumia: Number.parseInt(row.jumia_transactions || "0"),
-      power: Number.parseInt(row.power_transactions || "0"),
-      totalVolume: Number.parseFloat(row.total_volume || "0"),
-    }));
-  } catch (error) {
-    console.error("Error fetching chart data:", error);
-    return [];
-  }
-}
-
-async function getUserStats(branchId?: string | null) {
-  try {
-    const branchFilter = branchId
-      ? `WHERE primary_branch_id = '${branchId}'`
-      : "";
-    const result = await sql`
-      SELECT 
-        COUNT(*) as total_users,
-        COUNT(CASE WHEN last_login > NOW() - INTERVAL '24 hours' THEN 1 END) as active_users
-      FROM users
-      ${sql.unsafe(branchFilter)}
-    `;
-    return {
-      totalUsers: Number.parseInt(result[0]?.total_users || "0"),
-      activeUsers: Number.parseInt(result[0]?.active_users || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching user stats:", error);
-    return { totalUsers: 0, activeUsers: 0 };
-  }
-}
-
-async function getBranchStats(isAdmin: boolean) {
-  if (!isAdmin) return { totalBranches: 0, activeBranches: 0 };
-
-  try {
-    const result = await sql`
-      SELECT 
-        COUNT(*) as total_branches,
-        COUNT(CASE WHEN status = 'active' THEN 1 END) as active_branches
-      FROM branches
-    `;
-    return {
-      totalBranches: Number.parseInt(result[0]?.total_branches || "0"),
-      activeBranches: Number.parseInt(result[0]?.active_branches || "0"),
-    };
-  } catch (error) {
-    console.error("Error fetching branch stats:", error);
-    return { totalBranches: 0, activeBranches: 0 };
-  }
-}
-
-async function getSystemAlerts() {
-  try {
-    const result = await sql`
-      SELECT COUNT(*) as alert_count
-      FROM notifications
-      WHERE status = 'unread'
-    `;
-    return Number.parseInt(result[0]?.alert_count || "0");
-  } catch (error) {
-    console.error("Error fetching system alerts:", error);
-    return 0;
-  }
-}
-
-async function getPendingApprovals() {
-  try {
-    const result = await sql`
-      SELECT COUNT(*) as pending_count
-      FROM expenses
-      WHERE status = 'pending'
-    `;
-    return Number.parseInt(result[0]?.pending_count || "0");
-  } catch (error) {
-    console.error("Error fetching pending approvals:", error);
-    return 0;
-  }
-}
-
-async function getFinancialMetrics(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    // Branch filter for each table
-    const agencyBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const momoBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const ezwichBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const jumiaBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const powerBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const expenseBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-
-    // Revenue: sum of all completed transaction amounts
-    const [agency, momo, ezwich, jumia, power, expenses] = await Promise.all([
-      sql`SELECT COALESCE(SUM(amount),0) as revenue FROM agency_banking_transactions WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${agencyBranch}`,
-      sql`SELECT COALESCE(SUM(amount),0) as revenue FROM momo_transactions WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${momoBranch}`,
-      sql`SELECT COALESCE(SUM(amount),0) as revenue FROM e_zwich_withdrawals WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${ezwichBranch}`,
-      sql`SELECT COALESCE(SUM(amount),0) as revenue FROM jumia_transactions WHERE status = 'active' AND created_at BETWEEN ${startDate} AND ${endDate} ${jumiaBranch}`,
-      sql`SELECT COALESCE(SUM(amount),0) as revenue FROM power_transactions WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${powerBranch}`,
-      sql`SELECT COALESCE(SUM(amount),0) as expenses FROM expenses WHERE status = 'approved' AND created_at BETWEEN ${startDate} AND ${endDate} ${expenseBranch}`,
-    ]);
-
-    const totalRevenue =
-      parseFloat(agency[0].revenue || 0) +
-      parseFloat(momo[0].revenue || 0) +
-      parseFloat(ezwich[0].revenue || 0) +
-      parseFloat(jumia[0].revenue || 0) +
-      parseFloat(power[0].revenue || 0);
-    const totalExpenses = parseFloat(expenses[0].expenses || 0);
-    const netProfit = totalRevenue - totalExpenses;
-
-    return {
-      totalRevenue,
-      totalExpenses,
-      netProfit,
-    };
-  } catch (error) {
-    console.error("Error fetching financial metrics:", error);
-    return { totalRevenue: 0, totalExpenses: 0, netProfit: 0 };
-  }
-}
-
-async function getRevenueAnalysis(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    // Branch filter for each table
-    const agencyBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const momoBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const ezwichBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const jumiaBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const powerBranch = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-
-    // Query each service type separately for performance
-    const [agency, momo, ezwich, jumia, power] = await Promise.all([
-      sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as revenue FROM agency_banking_transactions WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${agencyBranch}`,
-      sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as revenue FROM momo_transactions WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${momoBranch}`,
-      sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as revenue FROM e_zwich_withdrawals WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${ezwichBranch}`,
-      sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as revenue FROM jumia_transactions WHERE status = 'active' AND created_at BETWEEN ${startDate} AND ${endDate} ${jumiaBranch}`,
-      sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as revenue FROM power_transactions WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${powerBranch}`,
-    ]);
-
-    return [
-      {
-        service: "agency_banking",
-        transactions: parseInt(agency[0].transactions || 0),
-        revenue: parseFloat(agency[0].revenue || 0),
-      },
-      {
-        service: "momo",
-        transactions: parseInt(momo[0].transactions || 0),
-        revenue: parseFloat(momo[0].revenue || 0),
-      },
-      {
-        service: "ezwich",
-        transactions: parseInt(ezwich[0].transactions || 0),
-        revenue: parseFloat(ezwich[0].revenue || 0),
-      },
-      {
-        service: "jumia",
-        transactions: parseInt(jumia[0].transactions || 0),
-        revenue: parseFloat(jumia[0].revenue || 0),
-      },
-      {
-        service: "power",
-        transactions: parseInt(power[0].transactions || 0),
-        revenue: parseFloat(power[0].revenue || 0),
-      },
-    ];
-  } catch (error) {
-    console.error("Error fetching revenue analysis:", error);
-    return [];
-  }
-}
-
-async function getTeamPerformance(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    // For each transaction table, get user_id, user name, count, and volume
-    const branchAgency = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchMomo = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchEzwich = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchJumia = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchPower = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-
-    // Agency Banking
-    const agency = await sql`
-      SELECT user_id, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM agency_banking_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${branchAgency}
-      GROUP BY user_id
-    `;
-    // Momo
-    const momo = await sql`
-      SELECT user_id, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM momo_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${branchMomo}
-      GROUP BY user_id
-    `;
-    // Ezwich
-    const ezwich = await sql`
-      SELECT user_id, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM e_zwich_withdrawals
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${branchEzwich}
-      GROUP BY user_id
-    `;
-    // Jumia
-    const jumia = await sql`
-      SELECT user_id, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM jumia_transactions
-      WHERE status = 'active' AND created_at BETWEEN ${startDate} AND ${endDate} ${branchJumia}
-      GROUP BY user_id
-    `;
-    // Power
-    const power = await sql`
-      SELECT user_id, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM power_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} ${branchPower}
-      GROUP BY user_id
-    `;
-    // Merge all results by user_id
-    const userMap = new Map();
-    const addToMap = (rows) => {
-      for (const row of rows) {
-        if (!row.user_id) continue;
-        if (!userMap.has(row.user_id)) {
-          userMap.set(row.user_id, {
-            user_id: row.user_id,
-            transactions: 0,
-            volume: 0,
-          });
-        }
-        const u = userMap.get(row.user_id);
-        u.transactions += parseInt(row.transactions || 0);
-        u.volume += parseFloat(row.volume || 0);
-      }
-    };
-    [agency, momo, ezwich, jumia, power].forEach(addToMap);
-    // Get user names
-    const userIds = Array.from(userMap.keys());
-    let names = [];
-    if (userIds.length > 0) {
-      names =
-        await sql`SELECT id, CONCAT(first_name, ' ', last_name) as name FROM users WHERE id IN (${userIds})`;
-    }
-    const nameMap = new Map(names.map((u) => [u.id, u.name]));
-    // Build result
-    const result = Array.from(userMap.values()).map((u) => ({
-      name: nameMap.get(u.user_id) || "Unknown",
-      transactions: u.transactions,
-      volume: u.volume,
-    }));
-    // Sort by volume desc, limit 10
-    return result.sort((a, b) => b.volume - a.volume).slice(0, 10);
-  } catch (error) {
-    console.error("Error fetching team performance:", error);
-    return [];
-  }
-}
-
-async function getBranchMetrics(branchId?: string | null) {
-  try {
-    const branchFilter = branchId ? `WHERE id = '${branchId}'` : "";
-    const result = await sql`
-      SELECT 
-        name,
-        location,
-        status,
-        created_at
-      FROM branches
-      ${sql.unsafe(branchFilter)}
-    `;
-    return result.map((row: any) => ({
-      name: row.name,
-      location: row.location,
-      status: row.status,
-      createdAt: row.created_at,
-    }));
-  } catch (error) {
-    console.error("Error fetching branch metrics:", error);
-    return [];
-  }
-}
-
-async function getDailyOperations(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    // For each transaction table, get daily count and volume
-    const branchAgency = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchMomo = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchEzwich = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchJumia = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchPower = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    // Agency
-    const agency = await sql`
-      SELECT DATE(created_at) as date, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM agency_banking_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchAgency}
-      GROUP BY DATE(created_at)
-    `;
-    // Momo
-    const momo = await sql`
-      SELECT DATE(created_at) as date, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM momo_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchMomo}
-      GROUP BY DATE(created_at)
-    `;
-    // Ezwich
-    const ezwich = await sql`
-      SELECT DATE(created_at) as date, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM e_zwich_withdrawals
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchEzwich}
-      GROUP BY DATE(created_at)
-    `;
-    // Jumia
-    const jumia = await sql`
-      SELECT DATE(created_at) as date, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM jumia_transactions
-      WHERE status = 'active' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchJumia}
-      GROUP BY DATE(created_at)
-    `;
-    // Power
-    const power = await sql`
-      SELECT DATE(created_at) as date, COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume
-      FROM power_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchPower}
-      GROUP BY DATE(created_at)
-    `;
-    // Merge by date
-    const dateMap = new Map();
-    const addToMap = (rows) => {
-      for (const row of rows) {
-        if (!row.date) continue;
-        const key = row.date.toISOString().slice(0, 10);
-        if (!dateMap.has(key)) {
-          dateMap.set(key, { date: key, transactions: 0, volume: 0 });
-        }
-        const d = dateMap.get(key);
-        d.transactions += parseInt(row.transactions || 0);
-        d.volume += parseFloat(row.volume || 0);
-      }
-    };
-    [agency, momo, ezwich, jumia, power].forEach(addToMap);
-    // Sort by date desc, limit 7
-    return Array.from(dateMap.values())
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 7);
-  } catch (error) {
-    console.error("Error fetching daily operations:", error);
-    return [];
-  }
-}
-
-async function getServiceMetrics(
-  startDate: string,
-  endDate: string,
-  branchId?: string | null
-) {
-  try {
-    // For each transaction table, get count, volume, avg_amount
-    const branchAgency = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchMomo = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchEzwich = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchJumia = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    const branchPower = branchId ? sql`AND branch_id = ${branchId}` : sql``;
-    // Agency
-    const agency = await sql`
-      SELECT COUNT(*) as count, COALESCE(SUM(amount),0) as volume, COALESCE(AVG(amount),0) as avg_amount
-      FROM agency_banking_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchAgency}
-    `;
-    // Momo
-    const momo = await sql`
-      SELECT COUNT(*) as count, COALESCE(SUM(amount),0) as volume, COALESCE(AVG(amount),0) as avg_amount
-      FROM momo_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchMomo}
-    `;
-    // Ezwich
-    const ezwich = await sql`
-      SELECT COUNT(*) as count, COALESCE(SUM(amount),0) as volume, COALESCE(AVG(amount),0) as avg_amount
-      FROM e_zwich_withdrawals
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchEzwich}
-    `;
-    // Jumia
-    const jumia = await sql`
-      SELECT COUNT(*) as count, COALESCE(SUM(amount),0) as volume, COALESCE(AVG(amount),0) as avg_amount
-      FROM jumia_transactions
-      WHERE status = 'active' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchJumia}
-    `;
-    // Power
-    const power = await sql`
-      SELECT COUNT(*) as count, COALESCE(SUM(amount),0) as volume, COALESCE(AVG(amount),0) as avg_amount
-      FROM power_transactions
-      WHERE status = 'completed' AND created_at BETWEEN ${startDate} AND ${endDate} 
-      AND (is_reversal IS NULL OR is_reversal = false) ${branchPower}
-    `;
-    return [
-      {
-        service: "agency_banking",
-        count: parseInt(agency[0].count || 0),
-        volume: parseFloat(agency[0].volume || 0),
-        avgAmount: parseFloat(agency[0].avg_amount || 0),
-      },
-      {
-        service: "momo",
-        count: parseInt(momo[0].count || 0),
-        volume: parseFloat(momo[0].volume || 0),
-        avgAmount: parseFloat(momo[0].avg_amount || 0),
-      },
-      {
-        service: "ezwich",
-        count: parseInt(ezwich[0].count || 0),
-        volume: parseFloat(ezwich[0].volume || 0),
-        avgAmount: parseFloat(ezwich[0].avg_amount || 0),
-      },
-      {
-        service: "jumia",
-        count: parseInt(jumia[0].count || 0),
-        volume: parseFloat(jumia[0].volume || 0),
-        avgAmount: parseFloat(jumia[0].avg_amount || 0),
-      },
-      {
-        service: "power",
-        count: parseInt(power[0].count || 0),
-        volume: parseFloat(power[0].volume || 0),
-        avgAmount: parseFloat(power[0].avg_amount || 0),
-      },
-    ];
-  } catch (error) {
-    console.error("Error fetching service metrics:", error);
-    return [];
+    console.error("Dashboard stats error:", error);
+    return NextResponse.json({ error: "Failed to load dashboard stats" }, { status: 500 });
   }
 }

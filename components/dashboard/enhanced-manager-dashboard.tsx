@@ -119,21 +119,23 @@ export function EnhancedManagerDashboard({
   };
 
   const getServiceIcon = (service: string) => {
-    switch (service.toLowerCase()) {
-      case "momo":
-        return <Activity className="h-4 w-4" />;
-      case "power":
-        return <Activity className="h-4 w-4" />;
-      case "e-zwich":
-      case "ezwich":
-        return <Activity className="h-4 w-4" />;
-      case "agency-banking":
-      case "agency banking":
-        return <Building2 className="h-4 w-4" />;
-      case "jumia":
-        return <Activity className="h-4 w-4" />;
-      default:
-        return <Activity className="h-4 w-4" />;
+    if (!service || typeof service !== "string") {
+      switch (service?.toLowerCase()) {
+        case "momo":
+          return <Activity className="h-4 w-4" />;
+        case "power":
+          return <Activity className="h-4 w-4" />;
+        case "e-zwich":
+        case "ezwich":
+          return <Activity className="h-4 w-4" />;
+        case "agency-banking":
+        case "agency banking":
+          return <Building2 className="h-4 w-4" />;
+        case "jumia":
+          return <Activity className="h-4 w-4" />;
+        default:
+          return <Activity className="h-4 w-4" />;
+      }
     }
   };
 

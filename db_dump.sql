@@ -18,13 +18,11 @@ SET client_min_messages = warning;
 SET row_security = off;
 
 --
--- Name: neon_auth; Type: SCHEMA; Schema: -; Owner: neondb_owner
+-- Name: neon_auth; Type: SCHEMA; Schema: -; Owner: -
 --
 
 CREATE SCHEMA neon_auth;
 
-
-ALTER SCHEMA neon_auth OWNER TO neondb_owner;
 
 --
 -- Name: uuid-ossp; Type: EXTENSION; Schema: -; Owner: -
@@ -34,14 +32,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA public;
 
 
 --
--- Name: EXTENSION "uuid-ossp"; Type: COMMENT; Schema: -; Owner: 
---
-
-COMMENT ON EXTENSION "uuid-ossp" IS 'generate universally unique identifiers (UUIDs)';
-
-
---
--- Name: agency_transaction_status; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: agency_transaction_status; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.agency_transaction_status AS ENUM (
@@ -55,24 +46,20 @@ CREATE TYPE public.agency_transaction_status AS ENUM (
 );
 
 
-ALTER TYPE public.agency_transaction_status OWNER TO neondb_owner;
-
 --
--- Name: agency_transaction_type; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: agency_transaction_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.agency_transaction_type AS ENUM (
     'deposit',
     'withdrawal',
-    'interbank',
+    'interbank_transfer',
     'commission'
 );
 
 
-ALTER TYPE public.agency_transaction_type OWNER TO neondb_owner;
-
 --
--- Name: batch_status; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: batch_status; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.batch_status AS ENUM (
@@ -83,10 +70,8 @@ CREATE TYPE public.batch_status AS ENUM (
 );
 
 
-ALTER TYPE public.batch_status OWNER TO neondb_owner;
-
 --
--- Name: card_status; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: card_status; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.card_status AS ENUM (
@@ -97,10 +82,8 @@ CREATE TYPE public.card_status AS ENUM (
 );
 
 
-ALTER TYPE public.card_status OWNER TO neondb_owner;
-
 --
--- Name: reversal_status_enum; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: reversal_status_enum; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.reversal_status_enum AS ENUM (
@@ -111,10 +94,8 @@ CREATE TYPE public.reversal_status_enum AS ENUM (
 );
 
 
-ALTER TYPE public.reversal_status_enum OWNER TO neondb_owner;
-
 --
--- Name: transaction_status; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: transaction_status; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.transaction_status AS ENUM (
@@ -128,10 +109,8 @@ CREATE TYPE public.transaction_status AS ENUM (
 );
 
 
-ALTER TYPE public.transaction_status OWNER TO neondb_owner;
-
 --
--- Name: transaction_type; Type: TYPE; Schema: public; Owner: neondb_owner
+-- Name: transaction_type; Type: TYPE; Schema: public; Owner: -
 --
 
 CREATE TYPE public.transaction_type AS ENUM (
@@ -142,10 +121,8 @@ CREATE TYPE public.transaction_type AS ENUM (
 );
 
 
-ALTER TYPE public.transaction_type OWNER TO neondb_owner;
-
 --
--- Name: update_batch_quantity_on_issuance(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_batch_quantity_on_issuance(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_batch_quantity_on_issuance() RETURNS trigger
@@ -169,10 +146,8 @@ CREATE FUNCTION public.update_batch_quantity_on_issuance() RETURNS trigger
       $$;
 
 
-ALTER FUNCTION public.update_batch_quantity_on_issuance() OWNER TO neondb_owner;
-
 --
--- Name: update_momo_transactions_updated_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_momo_transactions_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_momo_transactions_updated_at() RETURNS trigger
@@ -185,10 +160,8 @@ CREATE FUNCTION public.update_momo_transactions_updated_at() RETURNS trigger
       $$;
 
 
-ALTER FUNCTION public.update_momo_transactions_updated_at() OWNER TO neondb_owner;
-
 --
--- Name: update_power_transactions_updated_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_power_transactions_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_power_transactions_updated_at() RETURNS trigger
@@ -201,10 +174,8 @@ CREATE FUNCTION public.update_power_transactions_updated_at() RETURNS trigger
       $$;
 
 
-ALTER FUNCTION public.update_power_transactions_updated_at() OWNER TO neondb_owner;
-
 --
--- Name: update_stock_movements_updated_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_stock_movements_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_stock_movements_updated_at() RETURNS trigger
@@ -217,10 +188,8 @@ CREATE FUNCTION public.update_stock_movements_updated_at() RETURNS trigger
       $$;
 
 
-ALTER FUNCTION public.update_stock_movements_updated_at() OWNER TO neondb_owner;
-
 --
--- Name: update_timestamp(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_timestamp(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_timestamp() RETURNS trigger
@@ -233,10 +202,8 @@ CREATE FUNCTION public.update_timestamp() RETURNS trigger
       $$;
 
 
-ALTER FUNCTION public.update_timestamp() OWNER TO neondb_owner;
-
 --
--- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_updated_at_column(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_updated_at_column() RETURNS trigger
@@ -249,10 +216,8 @@ END;
 $$;
 
 
-ALTER FUNCTION public.update_updated_at_column() OWNER TO neondb_owner;
-
 --
--- Name: update_user_notification_settings_updated_at(); Type: FUNCTION; Schema: public; Owner: neondb_owner
+-- Name: update_user_notification_settings_updated_at(); Type: FUNCTION; Schema: public; Owner: -
 --
 
 CREATE FUNCTION public.update_user_notification_settings_updated_at() RETURNS trigger
@@ -265,14 +230,12 @@ END;
 $$;
 
 
-ALTER FUNCTION public.update_user_notification_settings_updated_at() OWNER TO neondb_owner;
-
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
 
 --
--- Name: users_sync; Type: TABLE; Schema: neon_auth; Owner: neondb_owner
+-- Name: users_sync; Type: TABLE; Schema: neon_auth; Owner: -
 --
 
 CREATE TABLE neon_auth.users_sync (
@@ -286,14 +249,12 @@ CREATE TABLE neon_auth.users_sync (
 );
 
 
-ALTER TABLE neon_auth.users_sync OWNER TO neondb_owner;
-
 --
--- Name: agency_banking_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: agency_banking_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.agency_banking_transactions (
-    id character varying(50) NOT NULL,
+    id character varying(50) DEFAULT gen_random_uuid() NOT NULL,
     type public.agency_transaction_type NOT NULL,
     amount numeric(15,2) NOT NULL,
     fee numeric(10,2) DEFAULT 0 NOT NULL,
@@ -313,14 +274,15 @@ CREATE TABLE public.agency_banking_transactions (
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL,
     metadata jsonb,
-    deleted boolean DEFAULT false
+    deleted boolean DEFAULT false,
+    original_transaction_id uuid,
+    is_reversal boolean DEFAULT false,
+    notes text
 );
 
 
-ALTER TABLE public.agency_banking_transactions OWNER TO neondb_owner;
-
 --
--- Name: audit_logs; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: audit_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.audit_logs (
@@ -349,10 +311,8 @@ CREATE TABLE public.audit_logs (
 );
 
 
-ALTER TABLE public.audit_logs OWNER TO neondb_owner;
-
 --
--- Name: audit_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: audit_logs_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.audit_logs_id_seq
@@ -364,17 +324,15 @@ CREATE SEQUENCE public.audit_logs_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.audit_logs_id_seq OWNER TO neondb_owner;
-
 --
--- Name: audit_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: audit_logs_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.audit_logs_id_seq OWNED BY public.audit_logs.id;
 
 
 --
--- Name: branches; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: branches; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.branches (
@@ -395,10 +353,8 @@ CREATE TABLE public.branches (
 );
 
 
-ALTER TABLE public.branches OWNER TO neondb_owner;
-
 --
--- Name: commissions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: commissions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.commissions (
@@ -428,14 +384,14 @@ CREATE TABLE public.commissions (
     receipt_size character varying,
     receipt_type character varying,
     receipt_data character varying,
+    is_reversal boolean DEFAULT false,
+    original_transaction_id uuid,
     CONSTRAINT commissions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'paid'::character varying, 'rejected'::character varying])::text[])))
 );
 
 
-ALTER TABLE public.commissions OWNER TO neondb_owner;
-
 --
--- Name: e_zwich_card_issuances; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_card_issuances; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.e_zwich_card_issuances (
@@ -468,9 +424,12 @@ CREATE TABLE public.e_zwich_card_issuances (
     city character varying(255),
     region character varying(255),
     postal_code character varying(10),
-    user_id character varying(255),
+    user_id uuid,
     processed_by character varying(255),
     username character varying(100),
+    is_reversal boolean DEFAULT false,
+    original_transaction_id uuid,
+    fee numeric DEFAULT 0 NOT NULL,
     CONSTRAINT e_zwich_card_issuances_gender_check CHECK (((gender)::text = ANY ((ARRAY['male'::character varying, 'female'::character varying, 'other'::character varying])::text[]))),
     CONSTRAINT e_zwich_card_issuances_id_type_check CHECK (((id_type)::text = ANY ((ARRAY['ghana_card'::character varying, 'voters_id'::character varying, 'passport'::character varying, 'drivers_license'::character varying])::text[]))),
     CONSTRAINT e_zwich_card_issuances_payment_method_check CHECK (((payment_method)::text = ANY ((ARRAY['cash'::character varying, 'momo'::character varying, 'bank_transfer'::character varying])::text[]))),
@@ -478,10 +437,8 @@ CREATE TABLE public.e_zwich_card_issuances (
 );
 
 
-ALTER TABLE public.e_zwich_card_issuances OWNER TO neondb_owner;
-
 --
--- Name: e_zwich_partner_accounts; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_partner_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.e_zwich_partner_accounts (
@@ -500,33 +457,8 @@ CREATE TABLE public.e_zwich_partner_accounts (
 );
 
 
-ALTER TABLE public.e_zwich_partner_accounts OWNER TO neondb_owner;
-
 --
--- Name: e_zwich_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
---
-
-CREATE TABLE public.e_zwich_transactions (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    transaction_type character varying(50) NOT NULL,
-    amount numeric(15,2) NOT NULL,
-    fee numeric(15,2) DEFAULT 0,
-    customer_name character varying(255) NOT NULL,
-    customer_phone character varying(20),
-    card_number character varying(50),
-    reference character varying(100),
-    status character varying(20) DEFAULT 'completed'::character varying,
-    branch_id uuid NOT NULL,
-    user_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    deleted boolean DEFAULT false
-);
-
-
-ALTER TABLE public.e_zwich_transactions OWNER TO neondb_owner;
-
---
--- Name: e_zwich_withdrawals; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_withdrawals; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.e_zwich_withdrawals (
@@ -535,7 +467,7 @@ CREATE TABLE public.e_zwich_withdrawals (
     card_number character varying(20) NOT NULL,
     customer_name character varying(255) NOT NULL,
     amount numeric(12,2) NOT NULL,
-    fee numeric(10,2) DEFAULT 0.00,
+    fee numeric(10,2) DEFAULT 0,
     total_amount numeric(12,2) GENERATED ALWAYS AS ((amount + fee)) STORED,
     partner_bank character varying(100) NOT NULL,
     customer_phone character varying(20),
@@ -548,14 +480,16 @@ CREATE TABLE public.e_zwich_withdrawals (
     settlement_account_id uuid,
     notes text,
     user_id uuid,
-    processed_by character varying(255)
+    processed_by character varying(255),
+    original_transaction_id uuid,
+    is_reversal boolean DEFAULT false,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    branch_name character varying
 );
 
 
-ALTER TABLE public.e_zwich_withdrawals OWNER TO neondb_owner;
-
 --
--- Name: expense_heads; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: expense_heads; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.expense_heads (
@@ -571,10 +505,8 @@ CREATE TABLE public.expense_heads (
 );
 
 
-ALTER TABLE public.expense_heads OWNER TO neondb_owner;
-
 --
--- Name: expenses; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: expenses; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.expenses (
@@ -603,15 +535,15 @@ CREATE TABLE public.expenses (
     notes character varying(255),
     payment_method character varying(50) DEFAULT 'cash'::character varying,
     metadata jsonb DEFAULT '{}'::jsonb,
+    is_reversal boolean DEFAULT false,
+    original_transaction_id uuid,
     CONSTRAINT expenses_amount_check CHECK ((amount > (0)::numeric)),
     CONSTRAINT expenses_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying, 'paid'::character varying])::text[])))
 );
 
 
-ALTER TABLE public.expenses OWNER TO neondb_owner;
-
 --
--- Name: ezwich_card_batches; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: ezwich_card_batches; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ezwich_card_batches (
@@ -639,10 +571,47 @@ CREATE TABLE public.ezwich_card_batches (
 );
 
 
-ALTER TABLE public.ezwich_card_batches OWNER TO neondb_owner;
+--
+-- Name: ezwich_card_issuance; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.ezwich_card_issuance (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    card_number character varying(20) NOT NULL,
+    batch_id uuid,
+    customer_name character varying(255) NOT NULL,
+    customer_phone character varying(20) NOT NULL,
+    customer_email character varying(255),
+    date_of_birth date,
+    gender character varying(10),
+    id_type character varying(50),
+    id_number character varying(50),
+    id_expiry_date date,
+    address_line1 character varying(255),
+    address_line2 character varying(255),
+    city character varying(100),
+    region character varying(100),
+    postal_code character varying(20),
+    country character varying(100) DEFAULT 'Ghana'::character varying,
+    card_status character varying(20) DEFAULT 'active'::character varying,
+    issue_date date DEFAULT CURRENT_DATE,
+    expiry_date date,
+    branch_id uuid NOT NULL,
+    issued_by uuid NOT NULL,
+    fee_charged numeric(10,2) DEFAULT 15.00,
+    customer_photo text,
+    id_front_image text,
+    id_back_image text,
+    payment_method character varying(50),
+    partner_bank character varying(100),
+    notes text,
+    created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+);
+
 
 --
--- Name: ezwich_cards; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: ezwich_cards; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ezwich_cards (
@@ -674,10 +643,8 @@ CREATE TABLE public.ezwich_cards (
 );
 
 
-ALTER TABLE public.ezwich_cards OWNER TO neondb_owner;
-
 --
--- Name: ezwich_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: ezwich_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.ezwich_transactions (
@@ -693,40 +660,13 @@ CREATE TABLE public.ezwich_transactions (
     user_id character varying(255) NOT NULL,
     settlement_account_id character varying(255),
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+    updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    fee double precision
 );
 
 
-ALTER TABLE public.ezwich_transactions OWNER TO neondb_owner;
-
 --
--- Name: ezwich_withdrawals; Type: TABLE; Schema: public; Owner: neondb_owner
---
-
-CREATE TABLE public.ezwich_withdrawals (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    transaction_reference character varying(50) NOT NULL,
-    card_number character varying(20) NOT NULL,
-    customer_name character varying(100) NOT NULL,
-    customer_phone character varying(15) NOT NULL,
-    amount numeric(10,2) NOT NULL,
-    fee numeric(10,2) DEFAULT 0,
-    total_amount numeric(10,2) GENERATED ALWAYS AS ((amount + fee)) STORED,
-    branch_id character varying(50) NOT NULL,
-    processed_by character varying(255) NOT NULL,
-    status character varying(20) DEFAULT 'completed'::character varying,
-    transaction_date timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    terminal_id character varying(50),
-    receipt_number character varying(50),
-    notes text,
-    created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-
-ALTER TABLE public.ezwich_withdrawals OWNER TO neondb_owner;
-
---
--- Name: fee_config; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: fee_config; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.fee_config (
@@ -750,10 +690,8 @@ CREATE TABLE public.fee_config (
 );
 
 
-ALTER TABLE public.fee_config OWNER TO neondb_owner;
-
 --
--- Name: fee_config_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: fee_config_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.fee_config_id_seq
@@ -765,17 +703,15 @@ CREATE SEQUENCE public.fee_config_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.fee_config_id_seq OWNER TO neondb_owner;
-
 --
--- Name: fee_config_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: fee_config_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.fee_config_id_seq OWNED BY public.fee_config.id;
 
 
 --
--- Name: float_accounts; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: float_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.float_accounts (
@@ -794,16 +730,15 @@ CREATE TABLE public.float_accounts (
     last_updated timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     isezwichpartner boolean DEFAULT false,
     notes text,
-    CONSTRAINT valid_account_type CHECK (((account_type)::text = ANY ((ARRAY['cash-in-till'::character varying, 'e-zwich'::character varying, 'power'::character varying, 'momo'::character varying, 'agency-banking'::character varying])::text[]))),
+    account_name character varying(255),
+    CONSTRAINT valid_account_type CHECK (((account_type)::text = ANY ((ARRAY['cash-in-till'::character varying, 'e-zwich'::character varying, 'power'::character varying, 'momo'::character varying, 'agency-banking'::character varying, 'jumia'::character varying])::text[]))),
     CONSTRAINT valid_balance CHECK ((current_balance >= (0)::numeric)),
     CONSTRAINT valid_thresholds CHECK (((min_threshold >= (0)::numeric) AND (max_threshold >= min_threshold)))
 );
 
 
-ALTER TABLE public.float_accounts OWNER TO neondb_owner;
-
 --
--- Name: float_accounts_with_branch; Type: VIEW; Schema: public; Owner: neondb_owner
+-- Name: float_accounts_with_branch; Type: VIEW; Schema: public; Owner: -
 --
 
 CREATE VIEW public.float_accounts_with_branch AS
@@ -828,10 +763,8 @@ CREATE VIEW public.float_accounts_with_branch AS
      JOIN public.branches b ON ((fa.branch_id = b.id)));
 
 
-ALTER VIEW public.float_accounts_with_branch OWNER TO neondb_owner;
-
 --
--- Name: float_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: float_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.float_transactions (
@@ -856,10 +789,8 @@ CREATE TABLE public.float_transactions (
 );
 
 
-ALTER TABLE public.float_transactions OWNER TO neondb_owner;
-
 --
--- Name: gl_account_balances; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: gl_account_balances; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.gl_account_balances (
@@ -872,10 +803,8 @@ CREATE TABLE public.gl_account_balances (
 );
 
 
-ALTER TABLE public.gl_account_balances OWNER TO neondb_owner;
-
 --
--- Name: gl_account_balances_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: gl_account_balances_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.gl_account_balances_id_seq
@@ -887,42 +816,38 @@ CREATE SEQUENCE public.gl_account_balances_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.gl_account_balances_id_seq OWNER TO neondb_owner;
-
 --
--- Name: gl_account_balances_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: gl_account_balances_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.gl_account_balances_id_seq OWNED BY public.gl_account_balances.id;
 
 
 --
--- Name: gl_accounts; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: gl_accounts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.gl_accounts (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
-    code character varying(20) NOT NULL,
-    name character varying(255) NOT NULL,
-    type character varying(50) NOT NULL,
+    code character varying(64) NOT NULL,
+    name character varying(128) NOT NULL,
+    type character varying(32) NOT NULL,
     parent_id uuid,
     balance numeric(15,2) DEFAULT 0,
     is_active boolean DEFAULT true,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
     branch_id uuid,
-    CONSTRAINT gl_accounts_type_check CHECK (((type)::text = ANY ((ARRAY['Asset'::character varying, 'Liability'::character varying, 'Equity'::character varying, 'Revenue'::character varying, 'Expense'::character varying])::text[])))
+    CONSTRAINT gl_accounts_type_check CHECK (((type)::text = ANY (ARRAY[('Asset'::character varying)::text, ('Liability'::character varying)::text, ('Equity'::character varying)::text, ('Revenue'::character varying)::text, ('Expense'::character varying)::text])))
 );
 
 
-ALTER TABLE public.gl_accounts OWNER TO neondb_owner;
-
 --
--- Name: gl_journal_entries; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: gl_journal_entries; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.gl_journal_entries (
-    id uuid NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
     transaction_id uuid NOT NULL,
     account_id uuid NOT NULL,
     account_code character varying(100) NOT NULL,
@@ -938,10 +863,8 @@ CREATE TABLE public.gl_journal_entries (
 );
 
 
-ALTER TABLE public.gl_journal_entries OWNER TO neondb_owner;
-
 --
--- Name: gl_mappings; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: gl_mappings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.gl_mappings (
@@ -950,17 +873,15 @@ CREATE TABLE public.gl_mappings (
     transaction_type character varying(50) NOT NULL,
     gl_account_id uuid NOT NULL,
     float_account_id uuid,
-    mapping_type character varying(50) DEFAULT 'main'::character varying,
+    mapping_type character varying(32) DEFAULT 'main'::character varying,
     is_active boolean DEFAULT true,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now()
 );
 
 
-ALTER TABLE public.gl_mappings OWNER TO neondb_owner;
-
 --
--- Name: gl_sync_logs; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: gl_sync_logs; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.gl_sync_logs (
@@ -975,10 +896,8 @@ CREATE TABLE public.gl_sync_logs (
 );
 
 
-ALTER TABLE public.gl_sync_logs OWNER TO neondb_owner;
-
 --
--- Name: gl_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: gl_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.gl_transactions (
@@ -999,50 +918,14 @@ CREATE TABLE public.gl_transactions (
     reference text,
     amount numeric,
     transaction_date date,
+    branch_id uuid,
+    branch_name character varying,
     CONSTRAINT gl_transactions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'posted'::character varying, 'reversed'::character varying])::text[])))
 );
 
 
-ALTER TABLE public.gl_transactions OWNER TO neondb_owner;
-
 --
--- Name: jumia_liability; Type: TABLE; Schema: public; Owner: neondb_owner
---
-
-CREATE TABLE public.jumia_liability (
-    id integer NOT NULL,
-    branch_id character varying(50) NOT NULL,
-    amount numeric(10,2) DEFAULT 0 NOT NULL,
-    last_updated timestamp without time zone DEFAULT CURRENT_TIMESTAMP
-);
-
-
-ALTER TABLE public.jumia_liability OWNER TO neondb_owner;
-
---
--- Name: jumia_liability_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
---
-
-CREATE SEQUENCE public.jumia_liability_id_seq
-    AS integer
-    START WITH 1
-    INCREMENT BY 1
-    NO MINVALUE
-    NO MAXVALUE
-    CACHE 1;
-
-
-ALTER SEQUENCE public.jumia_liability_id_seq OWNER TO neondb_owner;
-
---
--- Name: jumia_liability_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
---
-
-ALTER SEQUENCE public.jumia_liability_id_seq OWNED BY public.jumia_liability.id;
-
-
---
--- Name: jumia_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.jumia_transactions (
@@ -1064,15 +947,17 @@ CREATE TABLE public.jumia_transactions (
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     float_account_id uuid,
-    fee numeric,
-    deleted boolean DEFAULT false
+    fee numeric DEFAULT 0,
+    deleted boolean DEFAULT false,
+    is_reversal boolean DEFAULT false,
+    original_transaction_id uuid,
+    reference character varying,
+    payment_method character varying
 );
 
 
-ALTER TABLE public.jumia_transactions OWNER TO neondb_owner;
-
 --
--- Name: jumia_transactions_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.jumia_transactions_id_seq
@@ -1084,17 +969,15 @@ CREATE SEQUENCE public.jumia_transactions_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.jumia_transactions_id_seq OWNER TO neondb_owner;
-
 --
--- Name: jumia_transactions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.jumia_transactions_id_seq OWNED BY public.jumia_transactions.id;
 
 
 --
--- Name: login_attempts; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: login_attempts; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.login_attempts (
@@ -1108,10 +991,8 @@ CREATE TABLE public.login_attempts (
 );
 
 
-ALTER TABLE public.login_attempts OWNER TO neondb_owner;
-
 --
--- Name: momo_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: momo_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.momo_transactions (
@@ -1125,24 +1006,24 @@ CREATE TABLE public.momo_transactions (
     reference character varying(100),
     notes text,
     status character varying(20) DEFAULT 'completed'::character varying,
-    branch_id character varying(255) NOT NULL,
+    branch_id uuid NOT NULL,
     processed_by character varying(255),
     float_account_id character varying(255),
     created_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
-    user_id character varying,
+    user_id uuid,
     cash_till_affected character varying,
     float_affected character varying,
     date date,
     gl_entry_id uuid,
-    deleted boolean DEFAULT false
+    deleted boolean DEFAULT false,
+    is_reversal boolean,
+    original_transaction_id uuid
 );
 
 
-ALTER TABLE public.momo_transactions OWNER TO neondb_owner;
-
 --
--- Name: notifications; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: notifications; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.notifications (
@@ -1160,10 +1041,8 @@ CREATE TABLE public.notifications (
 );
 
 
-ALTER TABLE public.notifications OWNER TO neondb_owner;
-
 --
--- Name: partner_banks; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: partner_banks; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.partner_banks (
@@ -1181,10 +1060,8 @@ CREATE TABLE public.partner_banks (
 );
 
 
-ALTER TABLE public.partner_banks OWNER TO neondb_owner;
-
 --
--- Name: permissions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: permissions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.permissions (
@@ -1199,10 +1076,8 @@ CREATE TABLE public.permissions (
 );
 
 
-ALTER TABLE public.permissions OWNER TO neondb_owner;
-
 --
--- Name: permissions_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: permissions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.permissions_id_seq
@@ -1214,17 +1089,15 @@ CREATE SEQUENCE public.permissions_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.permissions_id_seq OWNER TO neondb_owner;
-
 --
--- Name: permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.permissions_id_seq OWNED BY public.permissions.id;
 
 
 --
--- Name: power_transactions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: power_transactions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.power_transactions (
@@ -1243,23 +1116,23 @@ CREATE TABLE public.power_transactions (
     metadata jsonb DEFAULT '{}'::jsonb,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    fee numeric,
+    fee numeric DEFAULT 0,
     float_account_id character varying(30),
     processed_by character varying(30),
     date date,
     gl_entry_id uuid,
     notes text,
     deleted boolean DEFAULT false,
+    original_transaction_id uuid,
+    is_reversal boolean DEFAULT false,
     CONSTRAINT power_transactions_amount_check CHECK ((amount > (0)::numeric)),
-    CONSTRAINT power_transactions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'completed'::character varying, 'failed'::character varying, 'cancelled'::character varying])::text[]))),
+    CONSTRAINT power_transactions_status_check CHECK (((status)::text = ANY ((ARRAY['pending'::character varying, 'completed'::character varying, 'failed'::character varying, 'reversed'::character varying, 'deleted'::character varying])::text[]))),
     CONSTRAINT power_transactions_type_check CHECK (((type)::text = ANY ((ARRAY['sale'::character varying, 'purchase'::character varying])::text[])))
 );
 
 
-ALTER TABLE public.power_transactions OWNER TO neondb_owner;
-
 --
--- Name: roles; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: roles; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.roles (
@@ -1276,10 +1149,8 @@ CREATE TABLE public.roles (
 );
 
 
-ALTER TABLE public.roles OWNER TO neondb_owner;
-
 --
--- Name: roles_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: roles_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.roles_id_seq
@@ -1291,17 +1162,15 @@ CREATE SEQUENCE public.roles_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.roles_id_seq OWNER TO neondb_owner;
-
 --
--- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: roles_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.roles_id_seq OWNED BY public.roles.id;
 
 
 --
--- Name: security_events; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: security_events; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.security_events (
@@ -1317,10 +1186,8 @@ CREATE TABLE public.security_events (
 );
 
 
-ALTER TABLE public.security_events OWNER TO neondb_owner;
-
 --
--- Name: system_config; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: system_config; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.system_config (
@@ -1337,10 +1204,8 @@ CREATE TABLE public.system_config (
 );
 
 
-ALTER TABLE public.system_config OWNER TO neondb_owner;
-
 --
--- Name: system_config_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: system_config_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.system_config_id_seq
@@ -1352,17 +1217,15 @@ CREATE SEQUENCE public.system_config_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.system_config_id_seq OWNER TO neondb_owner;
-
 --
--- Name: system_config_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: system_config_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.system_config_id_seq OWNED BY public.system_config.id;
 
 
 --
--- Name: system_settings; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: system_settings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.system_settings (
@@ -1379,10 +1242,8 @@ CREATE TABLE public.system_settings (
 );
 
 
-ALTER TABLE public.system_settings OWNER TO neondb_owner;
-
 --
--- Name: system_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: neondb_owner
+-- Name: system_settings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
 CREATE SEQUENCE public.system_settings_id_seq
@@ -1394,17 +1255,15 @@ CREATE SEQUENCE public.system_settings_id_seq
     CACHE 1;
 
 
-ALTER SEQUENCE public.system_settings_id_seq OWNER TO neondb_owner;
-
 --
--- Name: system_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: neondb_owner
+-- Name: system_settings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
 --
 
 ALTER SEQUENCE public.system_settings_id_seq OWNED BY public.system_settings.id;
 
 
 --
--- Name: user_branch_assignments; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: user_branch_assignments; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_branch_assignments (
@@ -1417,10 +1276,8 @@ CREATE TABLE public.user_branch_assignments (
 );
 
 
-ALTER TABLE public.user_branch_assignments OWNER TO neondb_owner;
-
 --
--- Name: user_notification_settings; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: user_notification_settings; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_notification_settings (
@@ -1446,15 +1303,17 @@ CREATE TABLE public.user_notification_settings (
     report_frequency character varying(20) DEFAULT 'weekly'::character varying,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
     updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    sms_provider character varying(50),
+    sms_sender_id character varying(50),
+    sms_api_key character varying(255),
+    sms_api_secret character varying(255),
     CONSTRAINT user_notification_settings_alert_frequency_check CHECK (((alert_frequency)::text = ANY ((ARRAY['immediate'::character varying, 'hourly'::character varying, 'daily'::character varying])::text[]))),
     CONSTRAINT user_notification_settings_report_frequency_check CHECK (((report_frequency)::text = ANY ((ARRAY['daily'::character varying, 'weekly'::character varying, 'monthly'::character varying])::text[])))
 );
 
 
-ALTER TABLE public.user_notification_settings OWNER TO neondb_owner;
-
 --
--- Name: user_sessions; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: user_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.user_sessions (
@@ -1464,16 +1323,14 @@ CREATE TABLE public.user_sessions (
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    ip_address inet,
+    ip_address text,
     user_agent text,
     is_active boolean DEFAULT true
 );
 
 
-ALTER TABLE public.user_sessions OWNER TO neondb_owner;
-
 --
--- Name: users; Type: TABLE; Schema: public; Owner: neondb_owner
+-- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.users (
@@ -1495,73 +1352,64 @@ CREATE TABLE public.users (
 );
 
 
-ALTER TABLE public.users OWNER TO neondb_owner;
-
 --
--- Name: audit_logs id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: audit_logs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs ALTER COLUMN id SET DEFAULT nextval('public.audit_logs_id_seq'::regclass);
 
 
 --
--- Name: fee_config id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: fee_config id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fee_config ALTER COLUMN id SET DEFAULT nextval('public.fee_config_id_seq'::regclass);
 
 
 --
--- Name: gl_account_balances id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: gl_account_balances id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_account_balances ALTER COLUMN id SET DEFAULT nextval('public.gl_account_balances_id_seq'::regclass);
 
 
 --
--- Name: jumia_liability id; Type: DEFAULT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.jumia_liability ALTER COLUMN id SET DEFAULT nextval('public.jumia_liability_id_seq'::regclass);
-
-
---
--- Name: jumia_transactions id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jumia_transactions ALTER COLUMN id SET DEFAULT nextval('public.jumia_transactions_id_seq'::regclass);
 
 
 --
--- Name: permissions id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: permissions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.permissions ALTER COLUMN id SET DEFAULT nextval('public.permissions_id_seq'::regclass);
 
 
 --
--- Name: roles id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: roles id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles ALTER COLUMN id SET DEFAULT nextval('public.roles_id_seq'::regclass);
 
 
 --
--- Name: system_config id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: system_config id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.system_config ALTER COLUMN id SET DEFAULT nextval('public.system_config_id_seq'::regclass);
 
 
 --
--- Name: system_settings id; Type: DEFAULT; Schema: public; Owner: neondb_owner
+-- Name: system_settings id; Type: DEFAULT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.system_settings ALTER COLUMN id SET DEFAULT nextval('public.system_settings_id_seq'::regclass);
 
 
 --
--- Name: users_sync users_sync_pkey; Type: CONSTRAINT; Schema: neon_auth; Owner: neondb_owner
+-- Name: users_sync users_sync_pkey; Type: CONSTRAINT; Schema: neon_auth; Owner: -
 --
 
 ALTER TABLE ONLY neon_auth.users_sync
@@ -1569,7 +1417,7 @@ ALTER TABLE ONLY neon_auth.users_sync
 
 
 --
--- Name: agency_banking_transactions agency_banking_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: agency_banking_transactions agency_banking_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.agency_banking_transactions
@@ -1577,7 +1425,7 @@ ALTER TABLE ONLY public.agency_banking_transactions
 
 
 --
--- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.audit_logs
@@ -1585,7 +1433,7 @@ ALTER TABLE ONLY public.audit_logs
 
 
 --
--- Name: branches branches_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: branches branches_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.branches
@@ -1593,7 +1441,7 @@ ALTER TABLE ONLY public.branches
 
 
 --
--- Name: branches branches_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: branches branches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.branches
@@ -1601,7 +1449,7 @@ ALTER TABLE ONLY public.branches
 
 
 --
--- Name: commissions commissions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: commissions commissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.commissions
@@ -1609,7 +1457,7 @@ ALTER TABLE ONLY public.commissions
 
 
 --
--- Name: commissions commissions_reference_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: commissions commissions_reference_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.commissions
@@ -1617,7 +1465,7 @@ ALTER TABLE ONLY public.commissions
 
 
 --
--- Name: e_zwich_card_issuances e_zwich_card_issuances_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_card_issuances e_zwich_card_issuances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_card_issuances
@@ -1625,7 +1473,7 @@ ALTER TABLE ONLY public.e_zwich_card_issuances
 
 
 --
--- Name: e_zwich_partner_accounts e_zwich_partner_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_partner_accounts e_zwich_partner_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_partner_accounts
@@ -1633,15 +1481,7 @@ ALTER TABLE ONLY public.e_zwich_partner_accounts
 
 
 --
--- Name: e_zwich_transactions e_zwich_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.e_zwich_transactions
-    ADD CONSTRAINT e_zwich_transactions_pkey PRIMARY KEY (id);
-
-
---
--- Name: e_zwich_withdrawals e_zwich_withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_withdrawals e_zwich_withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_withdrawals
@@ -1649,7 +1489,7 @@ ALTER TABLE ONLY public.e_zwich_withdrawals
 
 
 --
--- Name: e_zwich_withdrawals e_zwich_withdrawals_transaction_reference_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_withdrawals e_zwich_withdrawals_transaction_reference_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_withdrawals
@@ -1657,7 +1497,7 @@ ALTER TABLE ONLY public.e_zwich_withdrawals
 
 
 --
--- Name: expense_heads expense_heads_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: expense_heads expense_heads_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.expense_heads
@@ -1665,7 +1505,7 @@ ALTER TABLE ONLY public.expense_heads
 
 
 --
--- Name: expenses expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: expenses expenses_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.expenses
@@ -1673,7 +1513,7 @@ ALTER TABLE ONLY public.expenses
 
 
 --
--- Name: expenses expenses_reference_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: expenses expenses_reference_number_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.expenses
@@ -1681,7 +1521,7 @@ ALTER TABLE ONLY public.expenses
 
 
 --
--- Name: ezwich_card_batches ezwich_card_batches_batch_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: ezwich_card_batches ezwich_card_batches_batch_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ezwich_card_batches
@@ -1689,7 +1529,7 @@ ALTER TABLE ONLY public.ezwich_card_batches
 
 
 --
--- Name: ezwich_card_batches ezwich_card_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: ezwich_card_batches ezwich_card_batches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ezwich_card_batches
@@ -1697,7 +1537,23 @@ ALTER TABLE ONLY public.ezwich_card_batches
 
 
 --
--- Name: ezwich_cards ezwich_cards_card_number_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: ezwich_card_issuance ezwich_card_issuance_card_number_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ezwich_card_issuance
+    ADD CONSTRAINT ezwich_card_issuance_card_number_key UNIQUE (card_number);
+
+
+--
+-- Name: ezwich_card_issuance ezwich_card_issuance_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.ezwich_card_issuance
+    ADD CONSTRAINT ezwich_card_issuance_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ezwich_cards ezwich_cards_card_number_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ezwich_cards
@@ -1705,7 +1561,7 @@ ALTER TABLE ONLY public.ezwich_cards
 
 
 --
--- Name: ezwich_cards ezwich_cards_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: ezwich_cards ezwich_cards_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ezwich_cards
@@ -1713,7 +1569,7 @@ ALTER TABLE ONLY public.ezwich_cards
 
 
 --
--- Name: ezwich_transactions ezwich_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: ezwich_transactions ezwich_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ezwich_transactions
@@ -1721,23 +1577,7 @@ ALTER TABLE ONLY public.ezwich_transactions
 
 
 --
--- Name: ezwich_withdrawals ezwich_withdrawals_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.ezwich_withdrawals
-    ADD CONSTRAINT ezwich_withdrawals_pkey PRIMARY KEY (id);
-
-
---
--- Name: ezwich_withdrawals ezwich_withdrawals_transaction_reference_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.ezwich_withdrawals
-    ADD CONSTRAINT ezwich_withdrawals_transaction_reference_key UNIQUE (transaction_reference);
-
-
---
--- Name: fee_config fee_config_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: fee_config fee_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fee_config
@@ -1745,7 +1585,7 @@ ALTER TABLE ONLY public.fee_config
 
 
 --
--- Name: fee_config fee_config_service_type_transaction_type_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: fee_config fee_config_service_type_transaction_type_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.fee_config
@@ -1753,7 +1593,7 @@ ALTER TABLE ONLY public.fee_config
 
 
 --
--- Name: float_accounts float_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: float_accounts float_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.float_accounts
@@ -1761,7 +1601,7 @@ ALTER TABLE ONLY public.float_accounts
 
 
 --
--- Name: float_transactions float_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: float_transactions float_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.float_transactions
@@ -1769,7 +1609,7 @@ ALTER TABLE ONLY public.float_transactions
 
 
 --
--- Name: gl_account_balances gl_account_balances_account_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_account_balances gl_account_balances_account_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_account_balances
@@ -1777,7 +1617,7 @@ ALTER TABLE ONLY public.gl_account_balances
 
 
 --
--- Name: gl_account_balances gl_account_balances_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_account_balances gl_account_balances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_account_balances
@@ -1785,7 +1625,7 @@ ALTER TABLE ONLY public.gl_account_balances
 
 
 --
--- Name: gl_accounts gl_accounts_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_accounts gl_accounts_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_accounts
@@ -1793,7 +1633,7 @@ ALTER TABLE ONLY public.gl_accounts
 
 
 --
--- Name: gl_accounts gl_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_accounts gl_accounts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_accounts
@@ -1801,7 +1641,7 @@ ALTER TABLE ONLY public.gl_accounts
 
 
 --
--- Name: gl_journal_entries gl_journal_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_journal_entries gl_journal_entries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_journal_entries
@@ -1809,7 +1649,7 @@ ALTER TABLE ONLY public.gl_journal_entries
 
 
 --
--- Name: gl_mappings gl_mappings_branch_id_transaction_type_mapping_type_float_a_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_mappings gl_mappings_branch_id_transaction_type_mapping_type_float_a_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_mappings
@@ -1817,7 +1657,7 @@ ALTER TABLE ONLY public.gl_mappings
 
 
 --
--- Name: gl_mappings gl_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_mappings gl_mappings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_mappings
@@ -1825,7 +1665,7 @@ ALTER TABLE ONLY public.gl_mappings
 
 
 --
--- Name: gl_sync_logs gl_sync_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_sync_logs gl_sync_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_sync_logs
@@ -1833,7 +1673,7 @@ ALTER TABLE ONLY public.gl_sync_logs
 
 
 --
--- Name: gl_transactions gl_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_transactions gl_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_transactions
@@ -1841,15 +1681,7 @@ ALTER TABLE ONLY public.gl_transactions
 
 
 --
--- Name: jumia_liability jumia_liability_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.jumia_liability
-    ADD CONSTRAINT jumia_liability_pkey PRIMARY KEY (id);
-
-
---
--- Name: jumia_transactions jumia_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions jumia_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jumia_transactions
@@ -1857,7 +1689,7 @@ ALTER TABLE ONLY public.jumia_transactions
 
 
 --
--- Name: jumia_transactions jumia_transactions_transaction_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions jumia_transactions_transaction_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jumia_transactions
@@ -1865,7 +1697,7 @@ ALTER TABLE ONLY public.jumia_transactions
 
 
 --
--- Name: login_attempts login_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: login_attempts login_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.login_attempts
@@ -1873,7 +1705,7 @@ ALTER TABLE ONLY public.login_attempts
 
 
 --
--- Name: momo_transactions momo_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: momo_transactions momo_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.momo_transactions
@@ -1881,7 +1713,7 @@ ALTER TABLE ONLY public.momo_transactions
 
 
 --
--- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: notifications notifications_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notifications
@@ -1889,7 +1721,7 @@ ALTER TABLE ONLY public.notifications
 
 
 --
--- Name: partner_banks partner_banks_code_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: partner_banks partner_banks_code_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.partner_banks
@@ -1897,7 +1729,7 @@ ALTER TABLE ONLY public.partner_banks
 
 
 --
--- Name: partner_banks partner_banks_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: partner_banks partner_banks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.partner_banks
@@ -1905,7 +1737,7 @@ ALTER TABLE ONLY public.partner_banks
 
 
 --
--- Name: permissions permissions_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: permissions permissions_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.permissions
@@ -1913,7 +1745,7 @@ ALTER TABLE ONLY public.permissions
 
 
 --
--- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: permissions permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.permissions
@@ -1921,7 +1753,7 @@ ALTER TABLE ONLY public.permissions
 
 
 --
--- Name: power_transactions power_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: power_transactions power_transactions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.power_transactions
@@ -1929,7 +1761,7 @@ ALTER TABLE ONLY public.power_transactions
 
 
 --
--- Name: power_transactions power_transactions_reference_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: power_transactions power_transactions_reference_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.power_transactions
@@ -1937,7 +1769,7 @@ ALTER TABLE ONLY public.power_transactions
 
 
 --
--- Name: roles roles_name_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: roles roles_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -1945,7 +1777,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: roles roles_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.roles
@@ -1953,7 +1785,7 @@ ALTER TABLE ONLY public.roles
 
 
 --
--- Name: security_events security_events_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: security_events security_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.security_events
@@ -1961,7 +1793,7 @@ ALTER TABLE ONLY public.security_events
 
 
 --
--- Name: system_config system_config_config_key_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: system_config system_config_config_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.system_config
@@ -1969,7 +1801,7 @@ ALTER TABLE ONLY public.system_config
 
 
 --
--- Name: system_config system_config_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: system_config system_config_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.system_config
@@ -1977,7 +1809,7 @@ ALTER TABLE ONLY public.system_config
 
 
 --
--- Name: system_settings system_settings_key_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: system_settings system_settings_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.system_settings
@@ -1985,7 +1817,7 @@ ALTER TABLE ONLY public.system_settings
 
 
 --
--- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: system_settings system_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.system_settings
@@ -1993,7 +1825,7 @@ ALTER TABLE ONLY public.system_settings
 
 
 --
--- Name: e_zwich_partner_accounts unique_branch_bank_account; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_partner_accounts unique_branch_bank_account; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_partner_accounts
@@ -2001,15 +1833,7 @@ ALTER TABLE ONLY public.e_zwich_partner_accounts
 
 
 --
--- Name: jumia_liability unique_branch_liability; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
---
-
-ALTER TABLE ONLY public.jumia_liability
-    ADD CONSTRAINT unique_branch_liability UNIQUE (branch_id);
-
-
---
--- Name: user_branch_assignments user_branch_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_branch_assignments user_branch_assignments_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_branch_assignments
@@ -2017,7 +1841,7 @@ ALTER TABLE ONLY public.user_branch_assignments
 
 
 --
--- Name: user_branch_assignments user_branch_assignments_user_id_branch_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_branch_assignments user_branch_assignments_user_id_branch_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_branch_assignments
@@ -2025,7 +1849,7 @@ ALTER TABLE ONLY public.user_branch_assignments
 
 
 --
--- Name: user_notification_settings user_notification_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_notification_settings user_notification_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_notification_settings
@@ -2033,7 +1857,7 @@ ALTER TABLE ONLY public.user_notification_settings
 
 
 --
--- Name: user_notification_settings user_notification_settings_user_id_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_notification_settings user_notification_settings_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_notification_settings
@@ -2041,7 +1865,7 @@ ALTER TABLE ONLY public.user_notification_settings
 
 
 --
--- Name: user_sessions user_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_sessions user_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_sessions
@@ -2049,7 +1873,7 @@ ALTER TABLE ONLY public.user_sessions
 
 
 --
--- Name: user_sessions user_sessions_session_token_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_sessions user_sessions_session_token_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_sessions
@@ -2057,7 +1881,7 @@ ALTER TABLE ONLY public.user_sessions
 
 
 --
--- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: users users_email_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -2065,7 +1889,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: users users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -2073,714 +1897,840 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: users_sync_deleted_at_idx; Type: INDEX; Schema: neon_auth; Owner: neondb_owner
+-- Name: users_sync_deleted_at_idx; Type: INDEX; Schema: neon_auth; Owner: -
 --
 
 CREATE INDEX users_sync_deleted_at_idx ON neon_auth.users_sync USING btree (deleted_at);
 
 
 --
--- Name: idx_agency_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_branch_id ON public.agency_banking_transactions USING btree (branch_id);
 
 
 --
--- Name: idx_agency_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_created_at ON public.agency_banking_transactions USING btree (created_at);
 
 
 --
--- Name: idx_agency_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_status ON public.agency_banking_transactions USING btree (status);
 
 
 --
--- Name: idx_agency_transactions_account_number; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_account_number; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_account_number ON public.agency_banking_transactions USING btree (account_number);
 
 
 --
--- Name: idx_agency_transactions_branch_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_branch_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_branch_date ON public.agency_banking_transactions USING btree (branch_id, date);
 
 
 --
--- Name: idx_agency_transactions_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_branch_id ON public.agency_banking_transactions USING btree (branch_id);
 
 
 --
--- Name: idx_agency_transactions_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_date ON public.agency_banking_transactions USING btree (date);
 
 
 --
--- Name: idx_agency_transactions_partner_bank_code; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agency_transactions_is_reversal ON public.agency_banking_transactions USING btree (is_reversal);
+
+
+--
+-- Name: idx_agency_transactions_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_agency_transactions_original_id ON public.agency_banking_transactions USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_agency_transactions_partner_bank_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_partner_bank_code ON public.agency_banking_transactions USING btree (partner_bank_code);
 
 
 --
--- Name: idx_agency_transactions_partner_bank_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_partner_bank_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_partner_bank_id ON public.agency_banking_transactions USING btree (partner_bank_id);
 
 
 --
--- Name: idx_agency_transactions_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_status ON public.agency_banking_transactions USING btree (status);
 
 
 --
--- Name: idx_agency_transactions_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_agency_transactions_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_agency_transactions_user_id ON public.agency_banking_transactions USING btree (user_id);
 
 
 --
--- Name: idx_audit_logs_action_type; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_action_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_action_type ON public.audit_logs USING btree (action_type);
 
 
 --
--- Name: idx_audit_logs_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_branch_id ON public.audit_logs USING btree (branch_id);
 
 
 --
--- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_created_at ON public.audit_logs USING btree (created_at);
 
 
 --
--- Name: idx_audit_logs_entity_type; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_entity_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_entity_type ON public.audit_logs USING btree (entity_type);
 
 
 --
--- Name: idx_audit_logs_severity; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_severity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_severity ON public.audit_logs USING btree (severity);
 
 
 --
--- Name: idx_audit_logs_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_status ON public.audit_logs USING btree (status);
 
 
 --
--- Name: idx_audit_logs_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_audit_logs_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_audit_logs_user_id ON public.audit_logs USING btree (user_id);
 
 
 --
--- Name: idx_branches_code; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_branches_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_branches_code ON public.branches USING btree (code);
 
 
 --
--- Name: idx_branches_name; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_branches_name; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_branches_name ON public.branches USING btree (name);
 
 
 --
--- Name: idx_branches_region; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_branches_region; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_branches_region ON public.branches USING btree (region);
 
 
 --
--- Name: idx_branches_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_branches_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_branches_status ON public.branches USING btree (status);
 
 
 --
--- Name: idx_card_batches_branch; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_card_batches_branch; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_card_batches_branch ON public.ezwich_card_batches USING btree (branch_id);
 
 
 --
--- Name: idx_card_batches_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_card_batches_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_card_batches_status ON public.ezwich_card_batches USING btree (status);
 
 
 --
--- Name: idx_commissions_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_branch_id ON public.commissions USING btree (branch_id);
 
 
 --
--- Name: idx_commissions_commission_rate; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_commission_rate; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_commission_rate ON public.commissions USING btree (commission_rate);
 
 
 --
--- Name: idx_commissions_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_created_at ON public.commissions USING btree (created_at);
 
 
 --
--- Name: idx_commissions_month; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_commissions_is_reversal ON public.commissions USING btree (is_reversal);
+
+
+--
+-- Name: idx_commissions_month; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_month ON public.commissions USING btree (month);
 
 
 --
--- Name: idx_commissions_source; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_commissions_original_id ON public.commissions USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_commissions_source; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_source ON public.commissions USING btree (source);
 
 
 --
--- Name: idx_commissions_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_status ON public.commissions USING btree (status);
 
 
 --
--- Name: idx_commissions_transaction_volume; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_commissions_transaction_volume; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_commissions_transaction_volume ON public.commissions USING btree (transaction_volume);
 
 
 --
--- Name: idx_e_zwich_batches_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_e_zwich_batches_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_e_zwich_batches_branch_id ON public.ezwich_card_batches USING btree (branch_id);
 
 
 --
--- Name: idx_e_zwich_batches_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_e_zwich_batches_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_e_zwich_batches_status ON public.ezwich_card_batches USING btree (status);
 
 
 --
--- Name: idx_e_zwich_partner_accounts_active; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_e_zwich_partner_accounts_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_e_zwich_partner_accounts_active ON public.e_zwich_partner_accounts USING btree (is_active);
 
 
 --
--- Name: idx_e_zwich_partner_accounts_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_e_zwich_partner_accounts_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_e_zwich_partner_accounts_branch_id ON public.e_zwich_partner_accounts USING btree (branch_id);
 
 
 --
--- Name: idx_expense_heads_category; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expense_heads_category; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expense_heads_category ON public.expense_heads USING btree (category);
 
 
 --
--- Name: idx_expense_heads_is_active; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expense_heads_is_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expense_heads_is_active ON public.expense_heads USING btree (is_active);
 
 
 --
--- Name: idx_expenses_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expenses_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expenses_branch_id ON public.expenses USING btree (branch_id);
 
 
 --
--- Name: idx_expenses_created_by; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expenses_created_by; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expenses_created_by ON public.expenses USING btree (created_by);
 
 
 --
--- Name: idx_expenses_expense_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expenses_expense_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expenses_expense_date ON public.expenses USING btree (expense_date);
 
 
 --
--- Name: idx_expenses_expense_head_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expenses_expense_head_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expenses_expense_head_id ON public.expenses USING btree (expense_head_id);
 
 
 --
--- Name: idx_expenses_reference_number; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expenses_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_expenses_is_reversal ON public.expenses USING btree (is_reversal);
+
+
+--
+-- Name: idx_expenses_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_expenses_original_id ON public.expenses USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_expenses_reference_number; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expenses_reference_number ON public.expenses USING btree (reference_number);
 
 
 --
--- Name: idx_expenses_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_expenses_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_expenses_status ON public.expenses USING btree (status);
 
 
 --
--- Name: idx_ezwich_batches_batch_code; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_batches_batch_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_batches_batch_code ON public.ezwich_card_batches USING btree (batch_code);
 
 
 --
--- Name: idx_ezwich_batches_branch; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_batches_branch; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_batches_branch ON public.ezwich_card_batches USING btree (branch_id);
 
 
 --
--- Name: idx_ezwich_batches_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_batches_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_batches_created_at ON public.ezwich_card_batches USING btree (created_at);
 
 
 --
--- Name: idx_ezwich_batches_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_batches_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_batches_status ON public.ezwich_card_batches USING btree (status);
 
 
 --
--- Name: idx_ezwich_issuances_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_issuances_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_issuances_branch_id ON public.e_zwich_card_issuances USING btree (branch_id);
 
 
 --
--- Name: idx_ezwich_issuances_card_number; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_issuances_card_number; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_issuances_card_number ON public.e_zwich_card_issuances USING btree (card_number);
 
 
 --
--- Name: idx_ezwich_issuances_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_issuances_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_issuances_created_at ON public.e_zwich_card_issuances USING btree (created_at);
 
 
 --
--- Name: idx_ezwich_withdrawals_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_transactions_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ezwich_transactions_is_reversal ON public.e_zwich_withdrawals USING btree (is_reversal);
+
+
+--
+-- Name: idx_ezwich_transactions_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_ezwich_transactions_original_id ON public.e_zwich_withdrawals USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_ezwich_withdrawals_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_withdrawals_branch_id ON public.e_zwich_withdrawals USING btree (branch_id);
 
 
 --
--- Name: idx_ezwich_withdrawals_card_number; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_withdrawals_card_number; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_withdrawals_card_number ON public.e_zwich_withdrawals USING btree (card_number);
 
 
 --
--- Name: idx_ezwich_withdrawals_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_ezwich_withdrawals_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_ezwich_withdrawals_created_at ON public.e_zwich_withdrawals USING btree (created_at);
 
 
 --
--- Name: idx_float_accounts_account_type; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_float_accounts_account_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_float_accounts_account_type ON public.float_accounts USING btree (account_type);
 
 
 --
--- Name: idx_float_accounts_active; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_float_accounts_active; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_float_accounts_active ON public.float_accounts USING btree (is_active);
 
 
 --
--- Name: idx_float_accounts_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_float_accounts_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_float_accounts_branch_id ON public.float_accounts USING btree (branch_id);
 
 
 --
--- Name: idx_float_accounts_branch_type; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_float_accounts_branch_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_float_accounts_branch_type ON public.float_accounts USING btree (branch_id, account_type);
 
 
 --
--- Name: idx_float_accounts_isezwichpartner; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_float_accounts_isezwichpartner; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_float_accounts_isezwichpartner ON public.float_accounts USING btree (isezwichpartner);
 
 
 --
--- Name: idx_float_accounts_provider; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_float_accounts_provider; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_float_accounts_provider ON public.float_accounts USING btree (provider);
 
 
 --
--- Name: idx_gl_account_balances_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_gl_account_balances_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_gl_account_balances_branch_id ON public.gl_account_balances USING btree (branch_id);
 
 
 --
--- Name: idx_gl_accounts_code; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_gl_accounts_code; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_gl_accounts_code ON public.gl_accounts USING btree (code);
 
 
 --
--- Name: idx_gl_accounts_parent; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_gl_accounts_parent; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_gl_accounts_parent ON public.gl_accounts USING btree (parent_id);
 
 
 --
--- Name: idx_gl_accounts_type; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_gl_accounts_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_gl_accounts_type ON public.gl_accounts USING btree (type);
 
 
 --
--- Name: idx_gl_transactions_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_gl_transactions_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_gl_transactions_date ON public.gl_transactions USING btree (date);
 
 
 --
--- Name: idx_gl_transactions_source; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_gl_transactions_source; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_gl_transactions_source ON public.gl_transactions USING btree (source_transaction_id);
 
 
 --
--- Name: idx_jumia_branch_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_jumia_branch_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_jumia_branch_date ON public.jumia_transactions USING btree (branch_id, created_at);
 
 
 --
--- Name: idx_jumia_tracking; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_jumia_tracking; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_jumia_tracking ON public.jumia_transactions USING btree (tracking_id);
 
 
 --
--- Name: idx_jumia_transactions_branch_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_jumia_transactions_branch_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_jumia_transactions_branch_date ON public.jumia_transactions USING btree (branch_id, created_at);
 
 
 --
--- Name: idx_jumia_type_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_jumia_transactions_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jumia_transactions_is_reversal ON public.jumia_transactions USING btree (is_reversal);
+
+
+--
+-- Name: idx_jumia_transactions_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_jumia_transactions_original_id ON public.jumia_transactions USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_jumia_type_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_jumia_type_status ON public.jumia_transactions USING btree (transaction_type, status);
 
 
 --
--- Name: idx_login_attempts_email; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_login_attempts_email; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_login_attempts_email ON public.login_attempts USING btree (email, "timestamp");
 
 
 --
--- Name: idx_login_attempts_ip; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_login_attempts_ip; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_login_attempts_ip ON public.login_attempts USING btree (ip_address, "timestamp");
 
 
 --
--- Name: idx_power_transactions_branch_date; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_momo_transactions_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_momo_transactions_is_reversal ON public.momo_transactions USING btree (is_reversal);
+
+
+--
+-- Name: idx_momo_transactions_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_momo_transactions_original_id ON public.momo_transactions USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_power_transactions_branch_date; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_branch_date ON public.power_transactions USING btree (branch_id, created_at);
 
 
 --
--- Name: idx_power_transactions_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_power_transactions_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_branch_id ON public.power_transactions USING btree (branch_id);
 
 
 --
--- Name: idx_power_transactions_created_at; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_power_transactions_created_at; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_created_at ON public.power_transactions USING btree (created_at);
 
 
 --
--- Name: idx_power_transactions_provider; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_power_transactions_is_reversal; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_power_transactions_is_reversal ON public.power_transactions USING btree (is_reversal);
+
+
+--
+-- Name: idx_power_transactions_original_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_power_transactions_original_id ON public.power_transactions USING btree (original_transaction_id);
+
+
+--
+-- Name: idx_power_transactions_provider; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_provider ON public.power_transactions USING btree (provider);
 
 
 --
--- Name: idx_power_transactions_reference; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_power_transactions_reference; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_reference ON public.power_transactions USING btree (reference);
 
 
 --
--- Name: idx_power_transactions_type; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_power_transactions_type; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_type ON public.power_transactions USING btree (type);
 
 
 --
--- Name: idx_power_transactions_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_power_transactions_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_power_transactions_user_id ON public.power_transactions USING btree (user_id);
 
 
 --
--- Name: idx_security_events_user; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_security_events_user; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_security_events_user ON public.security_events USING btree (user_id, "timestamp");
 
 
 --
--- Name: idx_system_config_category; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_system_config_category; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_system_config_category ON public.system_config USING btree (category);
 
 
 --
--- Name: idx_system_config_key; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_system_config_key; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_system_config_key ON public.system_config USING btree (config_key);
 
 
 --
--- Name: idx_user_branch_branch_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_user_branch_branch_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_branch_branch_id ON public.user_branch_assignments USING btree (branch_id);
 
 
 --
--- Name: idx_user_branch_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_user_branch_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_branch_user_id ON public.user_branch_assignments USING btree (user_id);
 
 
 --
--- Name: idx_user_notification_settings_email_notifications; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_user_notification_settings_email_notifications; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_notification_settings_email_notifications ON public.user_notification_settings USING btree (email_notifications);
 
 
 --
--- Name: idx_user_notification_settings_sms_notifications; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_user_notification_settings_sms_notifications; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_notification_settings_sms_notifications ON public.user_notification_settings USING btree (sms_notifications);
 
 
 --
--- Name: idx_user_notification_settings_user_id; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_user_notification_settings_user_id; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_user_notification_settings_user_id ON public.user_notification_settings USING btree (user_id);
 
 
 --
--- Name: idx_users_email; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_users_email; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_email ON public.users USING btree (email);
 
 
 --
--- Name: idx_users_primary_branch; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_users_primary_branch; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_primary_branch ON public.users USING btree (primary_branch_id);
 
 
 --
--- Name: idx_users_role; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_users_role; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_role ON public.users USING btree (role);
 
 
 --
--- Name: idx_users_status; Type: INDEX; Schema: public; Owner: neondb_owner
+-- Name: idx_users_status; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX idx_users_status ON public.users USING btree (status);
 
 
 --
--- Name: power_transactions trigger_power_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: unique_cash_in_till_per_branch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_cash_in_till_per_branch ON public.float_accounts USING btree (branch_id) WHERE ((account_type)::text = 'cash-in-till'::text);
+
+
+--
+-- Name: unique_jumia_per_branch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_jumia_per_branch ON public.float_accounts USING btree (branch_id) WHERE ((account_type)::text = 'jumia'::text);
+
+
+--
+-- Name: unique_power_per_branch; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX unique_power_per_branch ON public.float_accounts USING btree (branch_id) WHERE ((account_type)::text = 'power'::text);
+
+
+--
+-- Name: power_transactions trigger_power_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER trigger_power_transactions_updated_at BEFORE UPDATE ON public.power_transactions FOR EACH ROW EXECUTE FUNCTION public.update_power_transactions_updated_at();
 
 
 --
--- Name: agency_banking_transactions update_agency_banking_transactions_timestamp; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: agency_banking_transactions update_agency_banking_transactions_timestamp; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_agency_banking_transactions_timestamp BEFORE UPDATE ON public.agency_banking_transactions FOR EACH ROW EXECUTE FUNCTION public.update_timestamp();
 
 
 --
--- Name: agency_banking_transactions update_agency_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: agency_banking_transactions update_agency_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_agency_transactions_updated_at BEFORE UPDATE ON public.agency_banking_transactions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: commissions update_commissions_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: commissions update_commissions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_commissions_updated_at BEFORE UPDATE ON public.commissions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: expense_heads update_expense_heads_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_withdrawals update_e_zwich_withdrawals_updated_at; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER update_e_zwich_withdrawals_updated_at BEFORE UPDATE ON public.e_zwich_withdrawals FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
+
+
+--
+-- Name: expense_heads update_expense_heads_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_expense_heads_updated_at BEFORE UPDATE ON public.expense_heads FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: expenses update_expenses_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: expenses update_expenses_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_expenses_updated_at BEFORE UPDATE ON public.expenses FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: e_zwich_card_issuances update_ezwich_issuances_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_card_issuances update_ezwich_issuances_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_ezwich_issuances_updated_at BEFORE UPDATE ON public.e_zwich_card_issuances FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: float_accounts update_float_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: float_accounts update_float_accounts_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_float_accounts_updated_at BEFORE UPDATE ON public.float_accounts FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: power_transactions update_power_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: power_transactions update_power_transactions_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_power_transactions_updated_at BEFORE UPDATE ON public.power_transactions FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
 --
--- Name: user_notification_settings update_user_notification_settings_updated_at; Type: TRIGGER; Schema: public; Owner: neondb_owner
+-- Name: user_notification_settings update_user_notification_settings_updated_at; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER update_user_notification_settings_updated_at BEFORE UPDATE ON public.user_notification_settings FOR EACH ROW EXECUTE FUNCTION public.update_user_notification_settings_updated_at();
 
 
 --
--- Name: expenses expenses_expense_head_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: expenses expenses_expense_head_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.expenses
@@ -2788,7 +2738,7 @@ ALTER TABLE ONLY public.expenses
 
 
 --
--- Name: ezwich_cards ezwich_cards_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: ezwich_cards ezwich_cards_batch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.ezwich_cards
@@ -2796,7 +2746,7 @@ ALTER TABLE ONLY public.ezwich_cards
 
 
 --
--- Name: agency_banking_transactions fk_agency_transactions_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: agency_banking_transactions fk_agency_transactions_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.agency_banking_transactions
@@ -2804,7 +2754,7 @@ ALTER TABLE ONLY public.agency_banking_transactions
 
 
 --
--- Name: expenses fk_expenses_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: expenses fk_expenses_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.expenses
@@ -2812,7 +2762,7 @@ ALTER TABLE ONLY public.expenses
 
 
 --
--- Name: expenses fk_expenses_expense_head; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: expenses fk_expenses_expense_head; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.expenses
@@ -2820,7 +2770,7 @@ ALTER TABLE ONLY public.expenses
 
 
 --
--- Name: e_zwich_card_issuances fk_ezwich_issuances_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_card_issuances fk_ezwich_issuances_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_card_issuances
@@ -2828,7 +2778,7 @@ ALTER TABLE ONLY public.e_zwich_card_issuances
 
 
 --
--- Name: e_zwich_withdrawals fk_ezwich_withdrawals_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: e_zwich_withdrawals fk_ezwich_withdrawals_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.e_zwich_withdrawals
@@ -2836,7 +2786,7 @@ ALTER TABLE ONLY public.e_zwich_withdrawals
 
 
 --
--- Name: float_accounts fk_float_accounts_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: float_accounts fk_float_accounts_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.float_accounts
@@ -2844,7 +2794,7 @@ ALTER TABLE ONLY public.float_accounts
 
 
 --
--- Name: jumia_transactions fk_jumia_transactions_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: jumia_transactions fk_jumia_transactions_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.jumia_transactions
@@ -2852,7 +2802,7 @@ ALTER TABLE ONLY public.jumia_transactions
 
 
 --
--- Name: power_transactions fk_power_transactions_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: power_transactions fk_power_transactions_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.power_transactions
@@ -2860,7 +2810,7 @@ ALTER TABLE ONLY public.power_transactions
 
 
 --
--- Name: user_branch_assignments fk_user_branch_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_branch_assignments fk_user_branch_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_branch_assignments
@@ -2868,7 +2818,7 @@ ALTER TABLE ONLY public.user_branch_assignments
 
 
 --
--- Name: user_branch_assignments fk_user_branch_user; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: user_branch_assignments fk_user_branch_user; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.user_branch_assignments
@@ -2876,7 +2826,7 @@ ALTER TABLE ONLY public.user_branch_assignments
 
 
 --
--- Name: users fk_users_primary_branch; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: users fk_users_primary_branch; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.users
@@ -2884,7 +2834,7 @@ ALTER TABLE ONLY public.users
 
 
 --
--- Name: float_accounts float_accounts_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: float_accounts float_accounts_branch_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.float_accounts
@@ -2892,7 +2842,7 @@ ALTER TABLE ONLY public.float_accounts
 
 
 --
--- Name: float_transactions float_transactions_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: float_transactions float_transactions_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.float_transactions
@@ -2900,7 +2850,7 @@ ALTER TABLE ONLY public.float_transactions
 
 
 --
--- Name: float_transactions float_transactions_float_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: float_transactions float_transactions_float_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.float_transactions
@@ -2908,7 +2858,7 @@ ALTER TABLE ONLY public.float_transactions
 
 
 --
--- Name: gl_accounts gl_accounts_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_accounts gl_accounts_parent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_accounts
@@ -2916,7 +2866,7 @@ ALTER TABLE ONLY public.gl_accounts
 
 
 --
--- Name: gl_journal_entries gl_journal_entries_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_journal_entries gl_journal_entries_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_journal_entries
@@ -2924,7 +2874,7 @@ ALTER TABLE ONLY public.gl_journal_entries
 
 
 --
--- Name: gl_journal_entries gl_journal_entries_transaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_journal_entries gl_journal_entries_transaction_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_journal_entries
@@ -2932,7 +2882,7 @@ ALTER TABLE ONLY public.gl_journal_entries
 
 
 --
--- Name: gl_mappings gl_mappings_gl_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: gl_mappings gl_mappings_gl_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.gl_mappings
@@ -2940,7 +2890,7 @@ ALTER TABLE ONLY public.gl_mappings
 
 
 --
--- Name: security_events security_events_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: neondb_owner
+-- Name: security_events security_events_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.security_events
@@ -2948,14 +2898,14 @@ ALTER TABLE ONLY public.security_events
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: cloud_admin
+-- Name: DEFAULT PRIVILEGES FOR SEQUENCES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON SEQUENCES TO neon_superuser WITH GRANT OPTION;
 
 
 --
--- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: cloud_admin
+-- Name: DEFAULT PRIVILEGES FOR TABLES; Type: DEFAULT ACL; Schema: public; Owner: -
 --
 
 ALTER DEFAULT PRIVILEGES FOR ROLE cloud_admin IN SCHEMA public GRANT ALL ON TABLES TO neon_superuser WITH GRANT OPTION;

@@ -41,6 +41,7 @@ import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useToast } from "@/hooks/use-toast";
 import { ReportsFilterBar } from "@/components/reports/reports-filter-bar";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 interface Branch {
   id: string;
@@ -169,12 +170,12 @@ export default function ReportsPage() {
     }
   };
 
-  const exportReport = async (format: "pdf" | "excel" | "csv") => {
+  const exportReport = async (exportFormat: "pdf" | "excel" | "csv") => {
     try {
       const params = new URLSearchParams({
         from: format(dateRange.from, "yyyy-MM-dd"),
         to: format(dateRange.to, "yyyy-MM-dd"),
-        format,
+        format: exportFormat,
         userRole: user?.role || "",
         userBranchId: userBranchId || "",
         branch: canViewAllBranches ? selectedBranch : userBranchId || "all",
@@ -189,10 +190,10 @@ export default function ReportsPage() {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement("a");
         a.href = url;
-        a.download = `financial-report-${format}-${format(
+        a.download = `financial-report-${exportFormat}-${format(
           dateRange.from,
           "yyyy-MM-dd"
-        )}-${format(dateRange.to, "yyyy-MM-dd")}.${format}`;
+        )}-${format(dateRange.to, "yyyy-MM-dd")}.${exportFormat}`;
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
@@ -200,7 +201,7 @@ export default function ReportsPage() {
 
         toast({
           title: "Export Successful",
-          description: `Report exported as ${format.toUpperCase()}`,
+          description: `Report exported as ${exportFormat.toUpperCase()}`,
         });
       } else {
         throw new Error("Export failed");
@@ -213,6 +214,230 @@ export default function ReportsPage() {
         variant: "destructive",
       });
     }
+  };
+
+  const exportStatementOfFinancialPositionPDF = async () => {
+    // Mock data (replace with API call as needed)
+    const data = {
+      assets: {
+        current: {
+          cashAndCashEquivalents: 12595.5,
+          accountsReceivable: 0,
+          inventory: 0,
+          prepaidExpenses: 0,
+          shortTermInvestments: 0,
+          totalCurrent: 12595.5,
+        },
+        nonCurrent: {
+          propertyPlantEquipment: 0,
+          accumulatedDepreciation: 0,
+          netPropertyPlantEquipment: 0,
+          intangibleAssets: 0,
+          longTermInvestments: 0,
+          goodwill: 0,
+          totalNonCurrent: 0,
+        },
+        totalAssets: 12595.5,
+      },
+      liabilities: {
+        current: {
+          accountsPayable: 0,
+          shortTermDebt: 0,
+          accruedLiabilities: 0,
+          currentPortionLongTermDebt: 0,
+          taxesPayable: 0,
+          totalCurrent: 0,
+        },
+        nonCurrent: {
+          longTermDebt: 0,
+          deferredTaxLiabilities: 0,
+          pensionObligations: 0,
+          totalNonCurrent: 0,
+        },
+        totalLiabilities: 0,
+      },
+      equity: {
+        capitalStock: 0,
+        retainedEarnings: 0,
+        accumulatedOtherComprehensiveIncome: 0,
+        totalEquity: 0,
+      },
+    };
+
+    const pdfDoc = await PDFDocument.create();
+    const page = pdfDoc.addPage([595, 842]); // A4 size
+    const { width, height } = page.getSize();
+    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+    // Title
+    page.drawText("MIMHAAD VENTURES", {
+      x: 50,
+      y: height - 60,
+      size: 24,
+      font: fontBold,
+    });
+    page.drawText("STATEMENT OF FINANCIAL POSITION", {
+      x: 50,
+      y: height - 90,
+      size: 16,
+      font: fontBold,
+    });
+    page.drawText("As at the Period 31st December 2025", {
+      x: 50,
+      y: height - 110,
+      size: 12,
+      font: font,
+    });
+
+    // Section titles
+    page.drawText("Assets", {
+      x: 50,
+      y: height - 140,
+      size: 12,
+      font: fontBold,
+    });
+    page.drawText("Liabilities & Equities", {
+      x: 320,
+      y: height - 140,
+      size: 12,
+      font: fontBold,
+    });
+
+    // Assets section
+    let y = height - 160;
+    page.drawText("Current Assets", { x: 50, y, size: 10, font: fontBold });
+    y -= 16;
+    page.drawText("Cash and Cash Equivalents", { x: 60, y, size: 10, font });
+    page.drawText(data.assets.current.cashAndCashEquivalents.toLocaleString(), {
+      x: 200,
+      y,
+      size: 10,
+      font,
+    });
+    y -= 16;
+    page.drawText("Total Current Assets", {
+      x: 60,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    page.drawText(data.assets.current.totalCurrent.toLocaleString(), {
+      x: 200,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 24;
+    page.drawText("Non-Current Assets", { x: 50, y, size: 10, font: fontBold });
+    y -= 16;
+    page.drawText("Total Non-Current Assets", {
+      x: 60,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    page.drawText(data.assets.nonCurrent.totalNonCurrent.toLocaleString(), {
+      x: 200,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 24;
+    page.drawText("Total Assets", { x: 50, y, size: 10, font: fontBold });
+    page.drawText(data.assets.totalAssets.toLocaleString(), {
+      x: 200,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+
+    // Liabilities & Equities section
+    y = height - 160;
+    page.drawText("Current Liabilities", {
+      x: 320,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 16;
+    page.drawText("Total Current Liabilities", {
+      x: 330,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    page.drawText(data.liabilities.current.totalCurrent.toLocaleString(), {
+      x: 500,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 24;
+    page.drawText("Non-Current Liabilities", {
+      x: 320,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 16;
+    page.drawText("Total Non-Current Liabilities", {
+      x: 330,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    page.drawText(
+      data.liabilities.nonCurrent.totalNonCurrent.toLocaleString(),
+      { x: 500, y, size: 10, font: fontBold }
+    );
+    y -= 24;
+    page.drawText("Total Liabilities", { x: 320, y, size: 10, font: fontBold });
+    page.drawText(data.liabilities.totalLiabilities.toLocaleString(), {
+      x: 500,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 24;
+    page.drawText("Equities", { x: 320, y, size: 10, font: fontBold });
+    y -= 16;
+    page.drawText("Total Equities", { x: 330, y, size: 10, font: fontBold });
+    page.drawText(data.equity.totalEquity.toLocaleString(), {
+      x: 500,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    y -= 24;
+    page.drawText("Total Liabilities & Equities", {
+      x: 320,
+      y,
+      size: 10,
+      font: fontBold,
+    });
+    page.drawText(
+      (
+        data.liabilities.totalLiabilities + data.equity.totalEquity
+      ).toLocaleString(),
+      { x: 500, y, size: 10, font: fontBold }
+    );
+
+    // Download the PDF
+    const pdfBytes = await pdfDoc.save();
+    const blob = new Blob([pdfBytes], { type: "application/pdf" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "Statement_of_Financial_Position.pdf";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportIncomeStatementPDF = async () => {
+    // TODO: Implement PDF generation for Income Statement using pdf-lib
+    // Fetch data, generate PDF, and trigger download
+    alert("Income Statement PDF export coming soon!");
   };
 
   useEffect(() => {
@@ -298,7 +523,15 @@ export default function ReportsPage() {
           </Button>
           <Button variant="outline" onClick={() => exportReport("pdf")}>
             <Download className="h-4 w-4 mr-2" />
-            Export PDF
+            Export Text
+          </Button>
+          <Button variant="outline" onClick={() => exportReport("excel")}>
+            <Download className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
+          <Button variant="outline" onClick={() => exportReport("csv")}>
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
           </Button>
         </div>
       </div>
@@ -323,21 +556,6 @@ export default function ReportsPage() {
         }}
         loading={loading}
       />
-
-      {/* Debug info */}
-      {process.env.NODE_ENV === "development" && (
-        <div className="mb-4 p-4 bg-gray-100 rounded text-xs">
-          <p>
-            <strong>Debug Info:</strong>
-          </p>
-          <p>canViewAllBranches: {canViewAllBranches.toString()}</p>
-          <p>branches count: {branches.length}</p>
-          <p>selectedBranch: {selectedBranch}</p>
-          <p>userBranchId: {userBranchId}</p>
-          <p>userBranchName: {userBranchName}</p>
-          <p>branches: {JSON.stringify(branches, null, 2)}</p>
-        </div>
-      )}
 
       {/* Branch Info for Non-Admin Users */}
       {!canViewAllBranches && (
@@ -402,7 +620,7 @@ export default function ReportsPage() {
       {/* Financial Reports Tabs */}
       {!loading && (
         <Tabs defaultValue="summary" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-5">
             <TabsTrigger value="summary" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Summary
@@ -443,10 +661,6 @@ export default function ReportsPage() {
                 Operational
               </TabsTrigger>
             )}
-            <TabsTrigger value="export" className="flex items-center gap-2">
-              <Download className="h-4 w-4" />
-              Export
-            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="summary">
@@ -661,6 +875,15 @@ export default function ReportsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="outline"
+                      onClick={exportIncomeStatementPDF}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Income Statement (PDF)
+                    </Button>
+                  </div>
                   {reportData ? (
                     reportData.hasData ? (
                       <div className="space-y-6">
@@ -766,6 +989,15 @@ export default function ReportsPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="outline"
+                      onClick={exportStatementOfFinancialPositionPDF}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Statement of Financial Position (PDF)
+                    </Button>
+                  </div>
                   {reportData ? (
                     <div className="space-y-6">
                       {/* Assets */}
@@ -1073,36 +1305,6 @@ export default function ReportsPage() {
               </Card>
             </TabsContent>
           )}
-
-          <TabsContent value="export">
-            <Card>
-              <CardHeader>
-                <CardTitle>Export Reports</CardTitle>
-                <CardDescription>
-                  Download reports in various formats
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <Button onClick={() => exportReport("pdf")} className="h-20">
-                    <Download className="h-6 w-6 mr-2" />
-                    Export as PDF
-                  </Button>
-                  <Button
-                    onClick={() => exportReport("excel")}
-                    className="h-20"
-                  >
-                    <Download className="h-6 w-6 mr-2" />
-                    Export as Excel
-                  </Button>
-                  <Button onClick={() => exportReport("csv")} className="h-20">
-                    <Download className="h-6 w-6 mr-2" />
-                    Export as CSV
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
         </Tabs>
       )}
     </div>
