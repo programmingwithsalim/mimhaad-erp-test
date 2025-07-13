@@ -52,7 +52,8 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, code, location, region, phone, email, address } = body;
+    const { name, code, location, region, phone, email, address, manager } =
+      body;
 
     if (!name || !code) {
       return NextResponse.json(
@@ -74,10 +75,23 @@ export async function POST(request: NextRequest) {
     }
 
     const [branch] = await sql`
-      INSERT INTO branches (name, code, location, region, phone, email, address, status, created_at, updated_at)
-      VALUES (${name}, ${code}, ${location || ""}, ${region || ""}, ${
-      phone || ""
-    }, ${email || ""}, ${address || ""}, 'active', NOW(), NOW())
+      INSERT INTO branches (
+        name, code, location, region, phone, email, address, manager, status, staff_count, created_at, updated_at
+      )
+      VALUES (
+        ${name}, 
+        ${code}, 
+        ${location || ""}, 
+        ${region || ""}, 
+        ${phone || ""}, 
+        ${email || ""}, 
+        ${address || ""}, 
+        ${manager || "Branch Manager"}, 
+        'active', 
+        0, 
+        NOW(), 
+        NOW()
+      )
       RETURNING *
     `;
 

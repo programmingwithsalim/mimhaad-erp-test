@@ -85,8 +85,8 @@ export class UnifiedTransactionService {
 
   /**
    * MoMo Transaction Flow:
-   * Cash-In: Customer deposits cash → MoMo float decreases and cash in till increase
-   * Cash-Out: Customer withdraws cash → MoMo float increases and cash in till decrease
+   * Cash-In: Customer gives cash → Cash in till increases and MoMo float decreases
+   * Cash-Out: Customer withdraws cash → Cash in till decreases and MoMo float increases
    */
   private static async processMoMoTransaction(
     data: TransactionData

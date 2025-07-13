@@ -72,8 +72,8 @@ export async function GET(request: NextRequest) {
     }
 
     console.log("📊 Fetching transactions with optimized query:", {
-      page,
-      limit,
+          page,
+        limit,
       filters,
       userRole: user.role,
       effectiveBranchId,
@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
               LIMIT ${limit}
             `;
           }
-        } else {
+          } else {
           agencyCount =
             await sql`SELECT COUNT(*) as count FROM agency_banking_transactions`;
           if (agencyCount[0]?.count > 0) {
@@ -284,7 +284,7 @@ export async function GET(request: NextRequest) {
               LIMIT ${limit}
             `;
           }
-        } else {
+          } else {
           jumiaCount =
             await sql`SELECT COUNT(*) as count FROM jumia_transactions`;
           if (jumiaCount[0]?.count > 0) {
@@ -365,7 +365,7 @@ export async function GET(request: NextRequest) {
         limit,
       },
     });
-  } catch (error) {
+    } catch (error) {
     console.error("Error fetching transactions:", error);
 
     if (error instanceof z.ZodError) {

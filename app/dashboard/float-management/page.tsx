@@ -205,11 +205,19 @@ export default function FloatManagementPage() {
   };
 
   const canRecharge = (accountType: string) => {
+    // Only power accounts can be recharged
     return ["power"].includes(accountType?.toLowerCase());
   };
 
   const canDeposit = (accountType: string) => {
-    return ["momo", "agency-banking", "cash-in-till"].includes(
+    // MoMo and agency banking can accept deposits, but not E-Zwich
+    return ["momo", "agency-banking"].includes(accountType?.toLowerCase());
+  };
+
+  const canBeUsedAsSource = (accountType: string) => {
+    // Cash-in-till and other service accounts can be used as source for transfers
+    // Exclude power and E-Zwich from being used as source
+    return ["cash-in-till", "momo", "agency-banking", "jumia"].includes(
       accountType?.toLowerCase()
     );
   };
@@ -769,23 +777,20 @@ export default function FloatManagementPage() {
         onSuccess={handleSuccess}
       />
 
-      {selectedAccount && (
-        <Dialog
-          open={isStatementDialogOpen}
-          onOpenChange={setIsStatementDialogOpen}
-        >
-          <DialogContent>
-            <StatementGenerator
-              accountId={selectedAccount.id}
-              accountName={getAccountTypeLabel(
-                selectedAccount.account_type,
-                selectedAccount.provider
-              )}
-              onClose={() => setIsStatementDialogOpen(false)}
-            />
-          </DialogContent>
-        </Dialog>
-      )}
+      <StatementGenerator
+        account={
+          selectedAccount
+            ? {
+                id: selectedAccount.id,
+                provider: selectedAccount.provider,
+                account_type: selectedAccount.account_type,
+                current_balance: selectedAccount.current_balance,
+              }
+            : null
+        }
+        open={isStatementDialogOpen}
+        onOpenChange={setIsStatementDialogOpen}
+      />
     </div>
   );
 }

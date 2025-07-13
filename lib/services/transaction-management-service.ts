@@ -336,15 +336,15 @@ export class TransactionManagementService {
   ): boolean {
     switch (sourceModule) {
       case "momo":
-        return transactionType === "cash-in";
+        return transactionType === "cash-out"; // Cash-out is inflow (we receive MoMo credit back)
       case "agency_banking":
-        return transactionType === "deposit";
+        return transactionType === "withdrawal"; // Withdrawal is inflow (we receive agency credit back)
       case "e_zwich":
-        return transactionType === "card_issuance"; // Example, adjust as needed
+        return transactionType === "withdrawal"; // Withdrawal is inflow (we receive e-zwich credit back)
       case "power":
-        return true; // Adjust as needed
+        return false; // Power sales are always outflow (we give away power credit)
       case "jumia":
-        return true; // Adjust as needed
+        return false; // Jumia sales are always outflow (we give away jumia credit)
       default:
         return false;
     }

@@ -25,8 +25,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useManagers } from "@/hooks/use-managers"
-import type { Branch } from "@/hooks/use-branches"
+import { useManagers } from "@/hooks/use-managers";
+import type { Branch } from "@/hooks/use-branches";
 
 // Form schema with validation
 const formSchema = z.object({
@@ -37,7 +37,6 @@ const formSchema = z.object({
   manager: z.string().min(2, "Manager name must be at least 2 characters"),
   contact_phone: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
-  staff_count: z.coerce.number().int().nonnegative().optional(),
   status: z.enum(["active", "inactive"]),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -52,7 +51,11 @@ export function CreateBranchForm({
   onSubmit,
   onCancel,
 }: CreateBranchFormProps) {
-  const { managers, loading: managersLoading, error: managersError } = useManagers()
+  const {
+    managers,
+    loading: managersLoading,
+    error: managersError,
+  } = useManagers();
   const [loading, setLoading] = useState(false);
 
   // Initialize form with default values
@@ -66,7 +69,6 @@ export function CreateBranchForm({
       manager: "",
       contact_phone: "",
       email: "",
-      staff_count: 0,
       status: "active",
       address: "",
       phone: "",
@@ -202,20 +204,6 @@ export function CreateBranchForm({
                 <FormLabel>Email</FormLabel>
                 <FormControl>
                   <Input placeholder="branch@example.com" {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-
-          <FormField
-            control={form.control}
-            name="staff_count"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>Staff Count</FormLabel>
-                <FormControl>
-                  <Input type="number" min="0" {...field} />
                 </FormControl>
                 <FormMessage />
               </FormItem>

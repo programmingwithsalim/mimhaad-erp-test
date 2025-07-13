@@ -346,9 +346,11 @@ export class UnifiedGLPostingService {
     switch (data.sourceModule) {
       case "momo":
         if (data.transactionType === "cash-in") {
+          // Cash-in: Customer gives cash, we give them MoMo credit
+          // Dr. Cash in Till (increase cash), Cr. MoMo Float (increase liability)
           entries.push({
-            accountId: accounts.main,
-            accountCode: accounts.main,
+            accountId: accounts.fee, // Cash in Till account
+            accountCode: accounts.fee,
             debit: data.amount,
             credit: 0,
             description:
@@ -359,8 +361,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
+            accountId: accounts.main, // MoMo Float account
+            accountCode: accounts.main,
             debit: 0,
             credit: data.amount,
             description:
@@ -371,9 +373,11 @@ export class UnifiedGLPostingService {
             },
           });
         } else if (data.transactionType === "cash-out") {
+          // Cash-out: Customer withdraws cash from MoMo wallet
+          // Dr. MoMo Float (decrease liability), Cr. Cash in Till (decrease cash)
           entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
+            accountId: accounts.main, // MoMo Float account
+            accountCode: accounts.main,
             debit: data.amount,
             credit: 0,
             description:
@@ -384,8 +388,8 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.main,
-            accountCode: accounts.main,
+            accountId: accounts.fee, // Cash in Till account
+            accountCode: accounts.fee,
             debit: 0,
             credit: data.amount,
             description:
@@ -693,7 +697,7 @@ export class UnifiedGLPostingService {
     const fee = typeof data.fee === "string" ? parseFloat(data.fee) : data.fee;
     const totalAmount = amount + fee;
     const date = new Date(data.date).toLocaleString();
-    
+
     // Handle undefined values
     const transactionType = data.transactionType || "Transaction";
     const reference = data.reference || data.transactionId || "N/A";
