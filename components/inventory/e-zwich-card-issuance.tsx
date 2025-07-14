@@ -124,7 +124,9 @@ export function EZwichCardIssuance() {
 
       toast({
         title: "Card issued successfully",
-        description: `Card ${cardNumber} has been issued to ${customerName}.`,
+        description: `Card ${cardNumber} has been issued to ${customerName} from batch ${
+          selectedBatchData?.batch_code || "Unknown"
+        }.`,
       });
 
       // Reset form
@@ -215,11 +217,20 @@ export function EZwichCardIssuance() {
               <SelectContent>
                 {availableBatches.map((batch) => (
                   <SelectItem key={batch.id} value={batch.id}>
-                    <div className="flex items-center justify-between w-full">
-                      <span>{batch.batch_code}</span>
-                      <Badge variant="secondary" className="ml-2">
-                        {batch.quantity_available} available
-                      </Badge>
+                    <div className="flex flex-col w-full">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{batch.batch_code}</span>
+                        <Badge variant="secondary">
+                          {batch.quantity_available} available
+                        </Badge>
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {batch.partner_bank_name &&
+                          `Bank: ${batch.partner_bank_name} • `}
+                        Type: {batch.card_type} • Received:{" "}
+                        {batch.quantity_received} • Issued:{" "}
+                        {batch.quantity_issued}
+                      </div>
                     </div>
                   </SelectItem>
                 ))}
@@ -227,9 +238,41 @@ export function EZwichCardIssuance() {
             </Select>
 
             {selectedBatchData && (
-              <div className="text-sm text-muted-foreground">
-                Batch: {selectedBatchData.batch_code} • Available:{" "}
-                {selectedBatchData.quantity_available} cards
+              <div className="p-3 bg-muted rounded-lg">
+                <div className="text-sm font-medium mb-2">
+                  Selected Batch Details:
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                  <div>
+                    <span className="font-medium">Batch Code:</span>{" "}
+                    {selectedBatchData.batch_code}
+                  </div>
+                  <div>
+                    <span className="font-medium">Available:</span>{" "}
+                    {selectedBatchData.quantity_available} cards
+                  </div>
+                  <div>
+                    <span className="font-medium">Card Type:</span>{" "}
+                    {selectedBatchData.card_type}
+                  </div>
+                  <div>
+                    <span className="font-medium">Partner Bank:</span>{" "}
+                    {selectedBatchData.partner_bank_name || "N/A"}
+                  </div>
+                  <div>
+                    <span className="font-medium">Total Received:</span>{" "}
+                    {selectedBatchData.quantity_received}
+                  </div>
+                  <div>
+                    <span className="font-medium">Already Issued:</span>{" "}
+                    {selectedBatchData.quantity_issued}
+                  </div>
+                </div>
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                  <span className="font-medium text-blue-800">
+                    ⚠️ This batch will be deducted by 1 card when you issue.
+                  </span>
+                </div>
               </div>
             )}
           </div>

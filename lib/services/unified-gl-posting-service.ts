@@ -50,15 +50,17 @@ export class UnifiedGLPostingService {
         data.transactionId
       );
 
+      // Check if GL entries already exist for this transaction
       const existingTransaction = await sql`
         SELECT id FROM gl_transactions 
         WHERE source_transaction_id = ${data.transactionId} 
         AND source_module = ${data.sourceModule}
+        AND source_transaction_type = ${data.transactionType}
       `;
 
       if (existingTransaction.length > 0) {
         console.log(
-          "🔷 [GL] Transaction already exists for " +
+          "🔷 [GL] GL entries already exist for " +
             data.sourceModule +
             " transaction " +
             data.transactionId
@@ -75,7 +77,30 @@ export class UnifiedGLPostingService {
         data.branchId,
         data
       );
+
+      console.log("🔍 [DEBUG] Retrieved GL accounts for MoMo transaction:", {
+        sourceModule: data.sourceModule,
+        transactionType: data.transactionType,
+        accounts,
+        requiredMappings: ["main", "fee", "revenue", "expense", "asset"],
+      });
+
       const entries = await this.createGLEntriesForTransaction(data, accounts);
+
+      console.log("🔍 [DEBUG] Created GL entries:", {
+        sourceModule: data.sourceModule,
+        transactionType: data.transactionType,
+        amount: data.amount,
+        fee: data.fee,
+        entriesCount: entries.length,
+        entries: entries.map((entry) => ({
+          accountId: entry.accountId,
+          accountCode: entry.accountCode,
+          debit: entry.debit,
+          credit: entry.credit,
+          description: entry.description,
+        })),
+      });
 
       const totalDebits = entries.reduce((sum, entry) => sum + entry.debit, 0);
       const totalCredits = entries.reduce(
@@ -102,6 +127,13 @@ export class UnifiedGLPostingService {
       `;
 
       for (const entry of entries) {
+        console.log("🔍 [DEBUG] Saving GL entry:", {
+          accountId: entry.accountId,
+          accountCode: entry.accountCode,
+          debit: entry.debit,
+          credit: entry.credit,
+          description: entry.description,
+        });
         await sql`
           INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
           VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
@@ -110,6 +142,7 @@ export class UnifiedGLPostingService {
           entry.description
         }, ${JSON.stringify(entry.metadata || {})})
         `;
+        console.log("🔍 [DEBUG] GL entry saved successfully");
       }
 
       await this.updateAccountBalances(entries);
@@ -121,9 +154,41 @@ export class UnifiedGLPostingService {
           data.transactionId
       );
 
+      // Helper function to get user's full name
+      async function getUserFullName(userId: string): Promise<string> {
+        try {
+          if (!userId || userId === "unknown" || userId === "System") {
+            return "System User";
+          }
+
+          const users = await sql`
+            SELECT first_name, last_name, email FROM users WHERE id = ${userId}
+          `;
+
+          if (users && users.length > 0) {
+            const { first_name, last_name, email } = users[0];
+            if (first_name && last_name) {
+              return `${first_name} ${last_name}`;
+            } else if (first_name) {
+              return first_name;
+            } else if (last_name) {
+              return last_name;
+            } else if (email) {
+              return email;
+            }
+          }
+
+          return "Unknown User";
+        } catch (error) {
+          console.error(`Failed to get user name for ID ${userId}:`, error);
+          return "Unknown User";
+        }
+      }
+
+      const userName = await getUserFullName(data.processedBy);
       await AuditLoggerService.log({
         userId: data.processedBy,
-        username: data.processedBy,
+        username: userName,
         actionType: "gl_transaction_create",
         entityType: "gl_transaction",
         entityId: glTransactionId,
@@ -262,6 +327,10 @@ export class UnifiedGLPostingService {
     }
 
     // For other modules, use the original logic
+    console.log(
+      `🔍 [DEBUG] Looking for GL mappings for ${lookupType} in branch ${branchId}`
+    );
+
     const mappings = await sql`
       SELECT mapping_type, gl_account_id
       FROM gl_mappings
@@ -270,10 +339,25 @@ export class UnifiedGLPostingService {
         AND is_active = true
     `;
 
+    console.log(
+      `🔍 [DEBUG] Found ${mappings.length} GL mappings for ${lookupType}:`,
+      mappings
+    );
+
     // Build a mapping object: { main_account, fee_account, ... }
     const result: Record<string, string> = {};
     for (const row of mappings) {
       result[row.mapping_type] = row.gl_account_id;
+    }
+
+    console.log(`🔍 [DEBUG] Processed GL mappings for ${lookupType}:`, result);
+
+    // Auto-fill missing asset mapping with main account (they should be the same)
+    if (result.main && !result.asset) {
+      result.asset = result.main;
+      console.log(
+        `🔷 [GL] Auto-filled asset mapping with main account for ${lookupType}`
+      );
     }
 
     return result;
@@ -305,16 +389,16 @@ export class UnifiedGLPostingService {
     let requiredMappings: string[] = [];
     switch (data.sourceModule) {
       case "momo":
-        requiredMappings = ["main", "fee"];
+        requiredMappings = ["main", "fee", "revenue", "expense"];
         break;
       case "agency_banking":
-        requiredMappings = ["main", "fee"];
+        requiredMappings = ["main", "fee", "revenue", "expense"];
         break;
       case "e_zwich":
-        requiredMappings = ["main", "fee"];
+        requiredMappings = ["main", "fee", "revenue", "expense"];
         break;
       case "power":
-        requiredMappings = ["main", "fee"];
+        requiredMappings = ["main", "fee", "revenue", "expense"];
         break;
       case "jumia":
         // Only require 'main' for package_receipt and pod_collection
@@ -324,7 +408,7 @@ export class UnifiedGLPostingService {
         ) {
           requiredMappings = ["main"];
         } else {
-          requiredMappings = ["main", "fee"];
+          requiredMappings = ["main", "fee", "revenue", "expense"];
         }
         break;
       case "expenses":
@@ -335,6 +419,8 @@ export class UnifiedGLPostingService {
         break;
       // Add more as needed
     }
+
+    // Check for required mappings and add fallbacks
     for (const key of requiredMappings) {
       if (!accounts[key]) {
         throw new Error(
@@ -343,15 +429,34 @@ export class UnifiedGLPostingService {
       }
     }
 
+    // Add fallback mappings for asset (same as main)
+    if (!accounts.asset && accounts.main) {
+      accounts.asset = accounts.main;
+    }
+
     switch (data.sourceModule) {
       case "momo":
-        if (data.transactionType === "cash-in") {
-          // Cash-in: Customer gives cash, we give them MoMo credit
-          // Dr. Cash in Till (increase cash), Cr. MoMo Float (increase liability)
+        console.log(
+          "🔍 [DEBUG] Creating MoMo GL entries for:",
+          data.transactionType
+        );
+        if (
+          data.transactionType === "cash-in" ||
+          data.transactionType === "deposit"
+        ) {
+          console.log(
+            "🔍 [DEBUG] Creating cash-in/deposit entries - Amount:",
+            data.amount,
+            "Fee:",
+            data.fee
+          );
+          // Cash-in/Deposit: Customer gives us cash + fee, we lose only the amount from MoMo float
+          // Dr. Cash in Till (amount + fee), Cr. MoMo Float (amount only)
+          // Dr. Fee Revenue (fee), Cr. Fee Expense (fee)
           entries.push({
             accountId: accounts.fee, // Cash in Till account
-            accountCode: accounts.fee,
-            debit: data.amount,
+            accountCode: accounts.fee, // Use account ID as code if no separate code
+            debit: data.amount + data.fee, // Amount + fee goes to cash till
             credit: 0,
             description:
               "MoMo Cash-in - " + (data.customerName || data.reference),
@@ -360,11 +465,15 @@ export class UnifiedGLPostingService {
               customerName: data.customerName,
             },
           });
+          console.log(
+            "🔍 [DEBUG] Added cash-in entry 1: Dr. Cash Till",
+            data.amount + data.fee
+          );
           entries.push({
             accountId: accounts.main, // MoMo Float account
-            accountCode: accounts.main,
+            accountCode: accounts.main, // Use account ID as code if no separate code
             debit: 0,
-            credit: data.amount,
+            credit: data.amount, // Only the amount, not the fee
             description:
               "MoMo Cash-in - " + (data.customerName || data.reference),
             metadata: {
@@ -372,13 +481,48 @@ export class UnifiedGLPostingService {
               customerName: data.customerName,
             },
           });
-        } else if (data.transactionType === "cash-out") {
-          // Cash-out: Customer withdraws cash from MoMo wallet
-          // Dr. MoMo Float (decrease liability), Cr. Cash in Till (decrease cash)
+          console.log(
+            "🔍 [DEBUG] Added cash-in entry 2: Cr. MoMo Float",
+            data.amount
+          );
+          // Fee entries
+          if (data.fee > 0) {
+            entries.push({
+              accountId: accounts.revenue, // Fee Revenue account
+              accountCode: accounts.revenue, // Use account ID as code if no separate code
+              debit: 0,
+              credit: data.fee, // Fee revenue (we earn the fee)
+              description:
+                "MoMo Fee Revenue - " + (data.customerName || data.reference),
+              metadata: {
+                transactionId: data.transactionId,
+                customerName: data.customerName,
+                feeAmount: data.fee,
+              },
+            });
+            console.log(
+              "🔍 [DEBUG] Added cash-in fee entry 3: Cr. Fee Revenue",
+              data.fee
+            );
+            // Note: No Fee Expense entry for cash-in transactions
+            // We only earn the fee as revenue, no expense is incurred
+          }
+        } else if (
+          data.transactionType === "cash-out" ||
+          data.transactionType === "withdrawal"
+        ) {
+          console.log(
+            "🔍 [DEBUG] Creating cash-out/withdrawal entries - Amount:",
+            data.amount,
+            "Fee:",
+            data.fee
+          );
+          // Cash-out/Withdrawal: Customer withdraws cash, we receive amount + fee to MoMo float
+          // Dr. MoMo Float (amount + fee), Cr. Cash in Till (amount), Cr. Fee Revenue (fee)
           entries.push({
             accountId: accounts.main, // MoMo Float account
-            accountCode: accounts.main,
-            debit: data.amount,
+            accountCode: accounts.main, // Use account ID as code if no separate code
+            debit: data.amount + data.fee, // Amount + fee goes to MoMo float
             credit: 0,
             description:
               "MoMo Cash-out - " + (data.customerName || data.reference),
@@ -387,11 +531,15 @@ export class UnifiedGLPostingService {
               customerName: data.customerName,
             },
           });
+          console.log(
+            "🔍 [DEBUG] Added cash-out entry 1: Dr. MoMo Float",
+            data.amount + data.fee
+          );
           entries.push({
             accountId: accounts.fee, // Cash in Till account
-            accountCode: accounts.fee,
+            accountCode: accounts.fee, // Use account ID as code if no separate code
             debit: 0,
-            credit: data.amount,
+            credit: data.amount, // Only the amount comes from cash till
             description:
               "MoMo Cash-out - " + (data.customerName || data.reference),
             metadata: {
@@ -399,7 +547,31 @@ export class UnifiedGLPostingService {
               customerName: data.customerName,
             },
           });
+          console.log(
+            "🔍 [DEBUG] Added cash-out entry 2: Cr. Cash Till",
+            data.amount
+          );
+          if (data.fee > 0) {
+            entries.push({
+              accountId: accounts.revenue, // Fee Revenue account
+              accountCode: accounts.revenue, // Use account ID as code if no separate code
+              debit: 0,
+              credit: data.fee, // Fee revenue
+              description:
+                "MoMo Fee Revenue - " + (data.customerName || data.reference),
+              metadata: {
+                transactionId: data.transactionId,
+                customerName: data.customerName,
+                feeAmount: data.fee,
+              },
+            });
+            console.log(
+              "🔍 [DEBUG] Added cash-out fee entry 3: Cr. Fee Revenue",
+              data.fee
+            );
+          }
         }
+        console.log("🔍 [DEBUG] Total MoMo entries created:", entries.length);
         break;
 
       case "agency_banking":
@@ -462,10 +634,12 @@ export class UnifiedGLPostingService {
 
       case "e_zwich":
         if (data.transactionType === "withdrawal") {
+          // E-Zwich Withdrawal: Only withdrawal amount debited from cash in till
+          // Fee is added to the settlement account, not deducted from cash
           entries.push({
-            accountId: accounts.fee,
+            accountId: accounts.fee, // Cash in Till account
             accountCode: accounts.fee,
-            debit: data.amount,
+            debit: data.amount, // Only the withdrawal amount (not including fee)
             credit: 0,
             description:
               "E-Zwich Withdrawal - " + (data.customerName || data.reference),
@@ -475,10 +649,10 @@ export class UnifiedGLPostingService {
             },
           });
           entries.push({
-            accountId: accounts.main,
+            accountId: accounts.main, // E-Zwich Settlement Account
             accountCode: accounts.main,
             debit: 0,
-            credit: data.amount,
+            credit: data.amount, // Only the withdrawal amount
             description:
               "E-Zwich Withdrawal - " + (data.customerName || data.reference),
             metadata: {
@@ -486,6 +660,38 @@ export class UnifiedGLPostingService {
               customerName: data.customerName,
             },
           });
+
+          // Add fee to settlement account if there's a fee
+          if (data.fee > 0) {
+            entries.push({
+              accountId: accounts.revenue, // Fee Revenue account
+              accountCode: accounts.revenue,
+              debit: 0,
+              credit: data.fee, // Fee revenue
+              description:
+                "E-Zwich Withdrawal Fee - " +
+                (data.customerName || data.reference),
+              metadata: {
+                transactionId: data.transactionId,
+                customerName: data.customerName,
+                feeAmount: data.fee,
+              },
+            });
+            entries.push({
+              accountId: accounts.main, // E-Zwich Settlement Account
+              accountCode: accounts.main,
+              debit: data.fee, // Fee debited to settlement account
+              credit: 0,
+              description:
+                "E-Zwich Withdrawal Fee - " +
+                (data.customerName || data.reference),
+              metadata: {
+                transactionId: data.transactionId,
+                customerName: data.customerName,
+                feeAmount: data.fee,
+              },
+            });
+          }
         } else if (data.transactionType === "card_issuance") {
           entries.push({
             accountId: accounts.main,
@@ -498,6 +704,9 @@ export class UnifiedGLPostingService {
             metadata: {
               transactionId: data.transactionId,
               customerName: data.customerName,
+              batchId: data.metadata?.batchId,
+              batchCode: data.metadata?.batchCode,
+              cardNumber: data.metadata?.cardNumber,
             },
           });
           entries.push({
@@ -511,6 +720,9 @@ export class UnifiedGLPostingService {
             metadata: {
               transactionId: data.transactionId,
               customerName: data.customerName,
+              batchId: data.metadata?.batchId,
+              batchCode: data.metadata?.batchCode,
+              cardNumber: data.metadata?.cardNumber,
             },
           });
         }
@@ -643,33 +855,6 @@ export class UnifiedGLPostingService {
           },
         });
         break;
-    }
-
-    if (data.fee > 0 && data.transactionType !== "card_issuance") {
-      entries.push({
-        accountId: accounts.main,
-        accountCode: accounts.main,
-        debit: data.fee,
-        credit: 0,
-        description:
-          "Transaction Fee - " +
-          data.sourceModule +
-          " - " +
-          (data.customerName || data.reference),
-        metadata: { transactionId: data.transactionId, feeAmount: data.fee },
-      });
-      entries.push({
-        accountId: accounts.fee,
-        accountCode: accounts.fee,
-        debit: 0,
-        credit: data.fee,
-        description:
-          "Transaction Fee Revenue - " +
-          data.sourceModule +
-          " - " +
-          (data.customerName || data.reference),
-        metadata: { transactionId: data.transactionId, feeAmount: data.fee },
-      });
     }
 
     return entries;
@@ -1197,46 +1382,70 @@ export class UnifiedGLPostingService {
         throw new Error("No GL mappings found for commission payment");
       }
 
-      // Build accounts mapping
-      const accounts: Record<string, any> = {};
-      for (const mapping of mappings) {
-        if (mapping.mapping_type === "payment") {
-          accounts.payment = mapping.gl_account_id;
-          accounts.paymentCode = mapping.gl_account_code;
-        } else if (mapping.mapping_type === "receivable") {
-          accounts.receivable = mapping.gl_account_id;
-          accounts.receivableCode = mapping.gl_account_code;
-        }
-      }
-
-      if (!accounts.payment || !accounts.receivable) {
-        throw new Error("Missing required GL accounts for commission payment");
-      }
-
-      // Create GL entries
+      // Create commission payment entries
       const entries = [
         {
-          accountId: accounts.payment,
-          accountCode: accounts.paymentCode,
-          debit: amount + fee,
-          credit: 0,
-          description: `Commission payment to ${customerName}`,
-          metadata: { paymentMethod, customerName },
+          accountId:
+            mappings.find((m) => m.mapping_type === "main")?.gl_account_id ||
+            mappings[0].gl_account_id,
+          accountCode:
+            mappings.find((m) => m.mapping_type === "main")?.gl_account_code ||
+            mappings[0].gl_account_code,
+          debit: 0,
+          credit: amount, // Credit main account (decrease receivable)
+          description: `Commission Payment - ${reference}`,
+          metadata: {
+            transactionId,
+            paymentMethod: paymentMethod || "cash",
+            source: metadata?.source || "Unknown",
+            sourceName: metadata?.sourceName || "Unknown Partner",
+            month: metadata?.month || "",
+            status: metadata?.status || "paid",
+            originalTransactionType: transactionType,
+          },
         },
         {
-          accountId: accounts.receivable,
-          accountCode: accounts.receivableCode,
-          debit: 0,
-          credit: amount + fee,
-          description: `Commission payment to ${customerName}`,
-          metadata: { paymentMethod, customerName },
+          accountId:
+            mappings.find((m) => m.mapping_type === "commission")
+              ?.gl_account_id || mappings[0].gl_account_id,
+          accountCode:
+            mappings.find((m) => m.mapping_type === "commission")
+              ?.gl_account_code || mappings[0].gl_account_code,
+          debit: amount, // Debit commission account (decrease revenue)
+          credit: 0,
+          description: `Commission Payment - ${reference}`,
+          metadata: {
+            transactionId,
+            paymentMethod: paymentMethod || "cash",
+            source: metadata?.source || "Unknown",
+            sourceName: metadata?.sourceName || "Unknown Partner",
+            month: metadata?.month || "",
+            status: metadata?.status || "paid",
+            originalTransactionType: transactionType,
+          },
         },
       ];
+
+      // Verify entries balance
+      const totalDebits = entries.reduce((sum, entry) => sum + entry.debit, 0);
+      const totalCredits = entries.reduce(
+        (sum, entry) => sum + entry.credit,
+        0
+      );
+
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(
+          "Commission payment GL entries do not balance: Debits " +
+            totalDebits +
+            ", Credits " +
+            totalCredits
+        );
+      }
 
       // Create GL transaction record
       await sql`
         INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, ${transactionType}, ${reference}, 'posted', ${processedBy}, ${JSON.stringify(
+        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, 'commission_payment', ${`Commission Payment - ${reference}`}, 'posted', ${processedBy}, ${JSON.stringify(
         metadata || {}
       )})
       `;
@@ -1253,27 +1462,32 @@ export class UnifiedGLPostingService {
         `;
       }
 
+      // Update account balances
       await this.updateAccountBalances(entries);
 
-      console.log("🔷 [GL] Commission payment GL entries created successfully");
+      console.log(
+        "🔷 [GL] Commission payment GL entries created successfully for transaction:",
+        transactionId
+      );
 
+      // Log audit trail
       await AuditLoggerService.log({
         userId: processedBy,
         username: processedBy,
         actionType: "gl_transaction_create",
         entityType: "gl_transaction",
         entityId: glTransactionId,
-        description: "GL entries created for commission payment",
+        description: `Commission payment GL entries created for ${sourceModule} transaction`,
         details: {
           sourceTransactionId: transactionId,
           sourceModule,
-          transactionType,
+          transactionType: "commission_payment",
           amount,
           fee,
           paymentMethod,
-          customerName,
+          entriesCount: entries.length,
         },
-        severity: "medium",
+        severity: "low",
         branchId,
         branchName: branchName || "Unknown Branch",
         status: "success",
@@ -1283,644 +1497,6 @@ export class UnifiedGLPostingService {
     } catch (error) {
       console.error(
         "🔷 [GL] Error creating commission payment GL entries:",
-        error
-      );
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  static async createCardIssuanceGLEntries(
-    cardData: {
-      id: string;
-      card_number: string;
-      fee_charged: number;
-      payment_method: string;
-      partner_bank?: string;
-    },
-    processedBy: string,
-    branchId: string
-  ): Promise<{ success: boolean; glTransactionId?: string; error?: string }> {
-    try {
-      console.log(
-        "🔷 [GL] Creating card issuance GL entries for card:",
-        cardData.card_number
-      );
-
-      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
-      const glTransactionId = glTransactionIdResult[0].id;
-
-      // Get GL mappings for card issuance
-      const mappings = await sql`
-        SELECT mapping_type, gl_account_id
-        FROM gl_mappings
-        WHERE transaction_type = 'card_issuance'
-          AND branch_id = ${branchId}
-          AND is_active = true
-      `;
-
-      if (mappings.length === 0) {
-        throw new Error("No GL mappings found for card issuance");
-      }
-
-      // Get account codes and names for the mapped accounts
-      const accountIds = mappings.map((m: any) => m.gl_account_id);
-      const accounts = await sql`
-        SELECT id, code, name FROM gl_accounts 
-        WHERE id = ANY(${accountIds})
-      `;
-
-      // Build accounts mapping
-      const accountsMap: Record<string, any> = {};
-      for (const mapping of mappings) {
-        const account = accounts.find(
-          (a: any) => a.id === mapping.gl_account_id
-        );
-        if (mapping.mapping_type === "revenue") {
-          accountsMap.revenue = mapping.gl_account_id;
-          accountsMap.revenueCode = account?.code || "4000";
-          accountsMap.revenueName = account?.name || "Revenue";
-        } else if (mapping.mapping_type === "payment") {
-          accountsMap.payment = mapping.gl_account_id;
-          accountsMap.paymentCode = account?.code || "1000";
-          accountsMap.paymentName = account?.name || "Cash";
-        }
-      }
-
-      if (!accountsMap.revenue || !accountsMap.payment) {
-        throw new Error("Missing required GL accounts for card issuance");
-      }
-
-      // Create GL entries
-      const entries = [
-        {
-          accountId: accountsMap.payment,
-          accountCode: accountsMap.paymentCode,
-          debit: cardData.fee_charged,
-          credit: 0,
-          description: `Card issuance fee for ${cardData.card_number}`,
-          metadata: {
-            cardNumber: cardData.card_number,
-            paymentMethod: cardData.payment_method,
-            partnerBank: cardData.partner_bank,
-          },
-        },
-        {
-          accountId: accountsMap.revenue,
-          accountCode: accountsMap.revenueCode,
-          debit: 0,
-          credit: cardData.fee_charged,
-          description: `Card issuance fee for ${cardData.card_number}`,
-          metadata: {
-            cardNumber: cardData.card_number,
-            paymentMethod: cardData.payment_method,
-            partnerBank: cardData.partner_bank,
-          },
-        },
-      ];
-
-      // Create GL transaction record
-      await sql`
-        INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, 'e_zwich', ${
-        cardData.id
-      }, 'card_issuance', 'Card issuance fee', 'posted', ${processedBy}, ${JSON.stringify(
-        {
-          cardNumber: cardData.card_number,
-          paymentMethod: cardData.payment_method,
-        }
-      )})
-      `;
-
-      // Create journal entries
-      for (const entry of entries) {
-        await sql`
-          INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
-          VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
-          entry.accountCode
-        }, ${entry.debit}, ${entry.credit}, ${
-          entry.description
-        }, ${JSON.stringify(entry.metadata || {})})
-        `;
-      }
-
-      await this.updateAccountBalances(entries);
-
-      console.log("🔷 [GL] Card issuance GL entries created successfully");
-
-      await AuditLoggerService.log({
-        userId: processedBy,
-        username: processedBy,
-        actionType: "gl_transaction_create",
-        entityType: "gl_transaction",
-        entityId: glTransactionId,
-        description: "GL entries created for card issuance",
-        details: {
-          sourceTransactionId: cardData.id,
-          sourceModule: "e_zwich",
-          transactionType: "card_issuance",
-          amount: cardData.fee_charged,
-          cardNumber: cardData.card_number,
-          paymentMethod: cardData.payment_method,
-        },
-        severity: "medium",
-        branchId,
-        branchName: "Unknown Branch",
-        status: "success",
-      });
-
-      return { success: true, glTransactionId };
-    } catch (error) {
-      console.error("🔷 [GL] Error creating card issuance GL entries:", error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  static async createInventoryPurchaseGLEntries({
-    transactionId,
-    sourceModule,
-    transactionType,
-    amount,
-    fee,
-    customerName,
-    reference,
-    processedBy,
-    branchId,
-    branchName,
-    metadata,
-  }: UnifiedGLTransactionData): Promise<{
-    success: boolean;
-    glTransactionId?: string;
-    error?: string;
-  }> {
-    try {
-      console.log(
-        "🔷 [GL] Creating inventory purchase GL entries for transaction:",
-        transactionId
-      );
-
-      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
-      const glTransactionId = glTransactionIdResult[0].id;
-
-      // Get GL mappings for inventory purchase
-      const mappings = await sql`
-        SELECT mapping_type, gl_account_id
-        FROM gl_mappings
-        WHERE transaction_type = 'inventory_purchase'
-          AND branch_id = ${branchId}
-          AND is_active = true
-      `;
-
-      if (mappings.length === 0) {
-        throw new Error("No GL mappings found for inventory purchase");
-      }
-
-      // Get account codes and names for the mapped accounts
-      const accountIds = mappings.map((m: any) => m.gl_account_id);
-      const accounts = await sql`
-        SELECT id, code, name FROM gl_accounts 
-        WHERE id = ANY(${accountIds})
-      `;
-
-      // Build accounts mapping
-      const accountMap: Record<string, any> = {};
-      for (const mapping of mappings) {
-        const account = accounts.find(
-          (a: any) => a.id === mapping.gl_account_id
-        );
-        if (mapping.mapping_type === "inventory") {
-          accountMap.inventory = mapping.gl_account_id;
-          accountMap.inventoryCode = account?.code || "1200";
-          accountMap.inventoryName = account?.name || "Inventory";
-        } else if (mapping.mapping_type === "payable") {
-          accountMap.payable = mapping.gl_account_id;
-          accountMap.payableCode = account?.code || "2100";
-          accountMap.payableName = account?.name || "Accounts Payable";
-        } else if (mapping.mapping_type === "expense") {
-          accountMap.expense = mapping.gl_account_id;
-          accountMap.expenseCode = account?.code || "6000";
-          accountMap.expenseName = account?.name || "Expenses";
-        }
-      }
-
-      if (!accountMap.inventory || !accountMap.payable) {
-        throw new Error("Missing required GL accounts for inventory purchase");
-      }
-
-      // Create GL entries
-      const entries = [
-        {
-          accountId: accountMap.inventory,
-          accountCode: accountMap.inventoryCode,
-          debit: amount,
-          credit: 0,
-          description: `Inventory purchase: ${reference}`,
-          metadata: {
-            batchCode: metadata?.batch_code,
-            quantity: metadata?.quantity,
-            unitCost: metadata?.unit_cost,
-            partnerBank: metadata?.partner_bank_name,
-            transactionType: "inventory_purchase",
-          },
-        },
-        {
-          accountId: accountMap.payable,
-          accountCode: accountMap.payableCode,
-          debit: 0,
-          credit: amount,
-          description: `Payable to ${
-            customerName || metadata?.partner_bank_name
-          } for ${reference}`,
-          metadata: {
-            batchCode: metadata?.batch_code,
-            partnerBankId: metadata?.partner_bank_id,
-            partnerBankName: metadata?.partner_bank_name,
-            transactionType: "inventory_purchase",
-          },
-        },
-      ];
-
-      // If expense account is mapped, create additional entry
-      if (accountMap.expense) {
-        entries.push({
-          accountId: accountMap.expense,
-          accountCode: accountMap.expenseCode,
-          debit: amount,
-          credit: 0,
-          description: `Expense for inventory purchase: ${reference}`,
-          metadata: {
-            batchCode: metadata?.batch_code,
-            quantity: metadata?.quantity,
-            unitCost: metadata?.unit_cost,
-            partnerBank: metadata?.partner_bank_name,
-            transactionType: "inventory_purchase",
-          },
-        });
-        // Offset the expense with a credit to inventory
-        entries.push({
-          accountId: accountMap.inventory,
-          accountCode: accountMap.inventoryCode,
-          debit: 0,
-          credit: amount,
-          description: `Inventory transfer for expense: ${reference}`,
-          metadata: {
-            batchCode: metadata?.batch_code,
-            quantity: metadata?.quantity,
-            unitCost: metadata?.unit_cost,
-            partnerBank: metadata?.partner_bank_name,
-            transactionType: "inventory_purchase",
-          },
-        });
-      }
-
-      // Create GL transaction record
-      await sql`
-        INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, ${transactionType}, ${reference}, 'posted', ${processedBy}, ${JSON.stringify(
-        metadata || {}
-      )})
-      `;
-
-      // Create journal entries
-      for (const entry of entries) {
-        await sql`
-          INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
-          VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
-          entry.accountCode
-        }, ${entry.debit}, ${entry.credit}, ${
-          entry.description
-        }, ${JSON.stringify(entry.metadata || {})})
-        `;
-      }
-
-      await this.updateAccountBalances(entries);
-
-      console.log("🔷 [GL] Inventory purchase GL entries created successfully");
-
-      await AuditLoggerService.log({
-        userId: processedBy,
-        username: processedBy,
-        actionType: "gl_transaction_create",
-        entityType: "gl_transaction",
-        entityId: glTransactionId,
-        description: "GL entries created for inventory purchase",
-        details: {
-          sourceTransactionId: transactionId,
-          sourceModule,
-          transactionType,
-          amount,
-          customerName,
-          reference,
-          batchCode: metadata?.batch_code,
-          partnerBank: metadata?.partner_bank_name,
-        },
-        severity: "medium",
-        branchId,
-        branchName: branchName || "Unknown Branch",
-        status: "success",
-      });
-
-      return { success: true, glTransactionId };
-    } catch (error) {
-      console.error(
-        "🔷 [GL] Error creating inventory purchase GL entries:",
-        error
-      );
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  static async createInventoryAdjustmentGLEntries({
-    transactionId,
-    sourceModule,
-    transactionType,
-    amount,
-    fee,
-    customerName,
-    reference,
-    processedBy,
-    branchId,
-    branchName,
-    metadata,
-  }: UnifiedGLTransactionData): Promise<{
-    success: boolean;
-    glTransactionId?: string;
-    error?: string;
-  }> {
-    try {
-      console.log(
-        "🔷 [GL] Creating inventory adjustment GL entries for transaction:",
-        transactionId
-      );
-
-      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
-      const glTransactionId = glTransactionIdResult[0].id;
-
-      // Get GL mappings for inventory adjustment
-      const mappings = await sql`
-        SELECT mapping_type, gl_account_id
-        FROM gl_mappings
-        WHERE transaction_type = 'inventory_adjustment'
-          AND branch_id = ${branchId}
-          AND is_active = true
-      `;
-
-      if (mappings.length === 0) {
-        throw new Error("No GL mappings found for inventory adjustment");
-      }
-
-      // Get account codes and names for the mapped accounts
-      const accountIds = mappings.map((m: any) => m.gl_account_id);
-      const accounts = await sql`
-        SELECT id, code, name FROM gl_accounts 
-        WHERE id = ANY(${accountIds})
-      `;
-
-      // Build accounts mapping
-      const accountMap: Record<string, any> = {};
-      for (const mapping of mappings) {
-        const account = accounts.find(
-          (a: any) => a.id === mapping.gl_account_id
-        );
-        if (mapping.mapping_type === "inventory") {
-          accountMap.inventory = mapping.gl_account_id;
-          accountMap.inventoryCode = account?.code || "1200";
-          accountMap.inventoryName = account?.name || "Inventory";
-        } else if (mapping.mapping_type === "adjustment") {
-          accountMap.adjustment = mapping.gl_account_id;
-          accountMap.adjustmentCode = account?.code || "6000";
-          accountMap.adjustmentName = account?.name || "Adjustments";
-        }
-      }
-
-      if (!accountMap.inventory || !accountMap.adjustment) {
-        throw new Error(
-          "Missing required GL accounts for inventory adjustment"
-        );
-      }
-
-      // Create GL entries
-      const entries = [
-        {
-          accountId: accountMap.inventory,
-          accountCode: accountMap.inventoryCode,
-          debit: amount,
-          credit: 0,
-          description: `Inventory adjustment - ${reference}`,
-          metadata: { customerName, adjustmentType: "increase" },
-        },
-        {
-          accountId: accountMap.adjustment,
-          accountCode: accountMap.adjustmentCode,
-          debit: 0,
-          credit: amount,
-          description: `Inventory adjustment - ${reference}`,
-          metadata: { customerName, adjustmentType: "increase" },
-        },
-      ];
-
-      // Create GL transaction record
-      await sql`
-        INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, ${transactionType}, ${reference}, 'posted', ${processedBy}, ${JSON.stringify(
-        metadata || {}
-      )})
-      `;
-
-      // Create journal entries
-      for (const entry of entries) {
-        await sql`
-          INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
-          VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
-          entry.accountCode
-        }, ${entry.debit}, ${entry.credit}, ${
-          entry.description
-        }, ${JSON.stringify(entry.metadata || {})})
-        `;
-      }
-
-      await this.updateAccountBalances(entries);
-
-      console.log(
-        "🔷 [GL] Inventory adjustment GL entries created successfully"
-      );
-
-      await AuditLoggerService.log({
-        userId: processedBy,
-        username: processedBy,
-        actionType: "gl_transaction_create",
-        entityType: "gl_transaction",
-        entityId: glTransactionId,
-        description: "GL entries created for inventory adjustment",
-        details: {
-          sourceTransactionId: transactionId,
-          sourceModule,
-          transactionType,
-          amount,
-          customerName,
-        },
-        severity: "medium",
-        branchId,
-        branchName: branchName || "Unknown Branch",
-        status: "success",
-      });
-
-      return { success: true, glTransactionId };
-    } catch (error) {
-      console.error(
-        "🔷 [GL] Error creating inventory adjustment GL entries:",
-        error
-      );
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  static async createInventoryReversalGLEntries({
-    transactionId,
-    sourceModule,
-    transactionType,
-    amount,
-    fee,
-    customerName,
-    reference,
-    processedBy,
-    branchId,
-    branchName,
-    metadata,
-  }: UnifiedGLTransactionData): Promise<{
-    success: boolean;
-    glTransactionId?: string;
-    error?: string;
-  }> {
-    try {
-      console.log(
-        "🔷 [GL] Creating inventory reversal GL entries for transaction:",
-        transactionId
-      );
-
-      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
-      const glTransactionId = glTransactionIdResult[0].id;
-
-      // Get GL mappings for inventory reversal
-      const mappings = await sql`
-        SELECT mapping_type, gl_account_id
-        FROM gl_mappings
-        WHERE transaction_type = 'inventory_reversal'
-          AND branch_id = ${branchId}
-          AND is_active = true
-      `;
-
-      if (mappings.length === 0) {
-        throw new Error("No GL mappings found for inventory reversal");
-      }
-
-      // Get account codes and names for the mapped accounts
-      const accountIds = mappings.map((m: any) => m.gl_account_id);
-      const accounts = await sql`
-        SELECT id, code, name FROM gl_accounts 
-        WHERE id = ANY(${accountIds})
-      `;
-
-      // Build accounts mapping
-      const accountMap: Record<string, any> = {};
-      for (const mapping of mappings) {
-        const account = accounts.find(
-          (a: any) => a.id === mapping.gl_account_id
-        );
-        if (mapping.mapping_type === "inventory") {
-          accountMap.inventory = mapping.gl_account_id;
-          accountMap.inventoryCode = account?.code || "1200";
-          accountMap.inventoryName = account?.name || "Inventory";
-        } else if (mapping.mapping_type === "reversal") {
-          accountMap.reversal = mapping.gl_account_id;
-          accountMap.reversalCode = account?.code || "6000";
-          accountMap.reversalName = account?.name || "Reversals";
-        }
-      }
-
-      if (!accountMap.inventory || !accountMap.reversal) {
-        throw new Error("Missing required GL accounts for inventory reversal");
-      }
-
-      // Create GL entries (reverse the original purchase)
-      const entries = [
-        {
-          accountId: accountMap.reversal,
-          accountCode: accountMap.reversalCode,
-          debit: amount,
-          credit: 0,
-          description: `Inventory reversal - ${reference}`,
-          metadata: { customerName, reversalType: "deletion" },
-        },
-        {
-          accountId: accountMap.inventory,
-          accountCode: accountMap.inventoryCode,
-          debit: 0,
-          credit: amount,
-          description: `Inventory reversal - ${reference}`,
-          metadata: { customerName, reversalType: "deletion" },
-        },
-      ];
-
-      // Create GL transaction record
-      await sql`
-        INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, ${transactionType}, ${reference}, 'posted', ${
-        processedBy || "system"
-      }, ${JSON.stringify(metadata || {})})
-      `;
-
-      // Create journal entries
-      for (const entry of entries) {
-        await sql`
-          INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
-          VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
-          entry.accountCode
-        }, ${entry.debit}, ${entry.credit}, ${
-          entry.description
-        }, ${JSON.stringify(entry.metadata || {})})
-        `;
-      }
-
-      await this.updateAccountBalances(entries);
-
-      console.log("🔷 [GL] Inventory reversal GL entries created successfully");
-
-      await AuditLoggerService.log({
-        userId: processedBy,
-        username: processedBy,
-        actionType: "gl_transaction_create",
-        entityType: "gl_transaction",
-        entityId: glTransactionId,
-        description: "GL entries created for inventory reversal",
-        details: {
-          sourceTransactionId: transactionId,
-          sourceModule,
-          transactionType,
-          amount,
-          customerName,
-        },
-        severity: "medium",
-        branchId,
-        branchName: branchName || "Unknown Branch",
-        status: "success",
-      });
-
-      return { success: true, glTransactionId };
-    } catch (error) {
-      console.error(
-        "🔷 [GL] Error creating inventory reversal GL entries:",
         error
       );
       return {

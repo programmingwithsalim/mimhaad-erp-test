@@ -87,12 +87,9 @@ export function useCardBatches() {
       setLoading(true);
       setError(null);
 
-      // Admin can fetch all batches or filter by branch
-      // Non-admin users can only fetch their branch's batches
-      const targetBranchId =
-        userRole === "Admin" && selectedBranchId && selectedBranchId !== "all"
-          ? selectedBranchId
-          : branchId;
+      // For admins, always fetch all batches and filter on frontend
+      // For non-admins, fetch only their branch's batches
+      const targetBranchId = userRole === "Admin" ? "all" : branchId;
 
       console.log(
         `📖 Fetching batches for branch: ${targetBranchId}, user: ${userName}, role: ${userRole}`
@@ -122,9 +119,27 @@ export function useCardBatches() {
       console.log("API Response:", result);
 
       if (result.success) {
-        setBatches(result.data || []);
+        let filteredBatches = result.data || [];
+
+        // For admins, filter by selected branch if specified
+        if (
+          userRole === "Admin" &&
+          selectedBranchId &&
+          selectedBranchId !== "all"
+        ) {
+          filteredBatches = filteredBatches.filter(
+            (batch: any) => batch.branch_id === selectedBranchId
+          );
+          console.log(
+            `🔍 [ADMIN] Filtered to ${filteredBatches.length} batches for branch ${selectedBranchId}`
+          );
+        }
+
+        setBatches(filteredBatches);
         console.log(
-          `✅ Successfully loaded ${result.data?.length || 0} batches`
+          `✅ Successfully loaded ${filteredBatches.length} batches (${
+            result.data?.length || 0
+          } total)`
         );
       } else {
         const errorMsg =

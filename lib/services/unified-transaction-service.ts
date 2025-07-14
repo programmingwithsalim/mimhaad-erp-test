@@ -6,6 +6,37 @@ import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
+// Helper function to get user's full name
+async function getUserFullName(userId: string): Promise<string> {
+  try {
+    if (!userId || userId === "unknown" || userId === "System") {
+      return "System User";
+    }
+
+    const users = await sql`
+      SELECT first_name, last_name, email FROM users WHERE id = ${userId}
+    `;
+
+    if (users && users.length > 0) {
+      const { first_name, last_name, email } = users[0];
+      if (first_name && last_name) {
+        return `${first_name} ${last_name}`;
+      } else if (first_name) {
+        return first_name;
+      } else if (last_name) {
+        return last_name;
+      } else if (email) {
+        return email;
+      }
+    }
+
+    return "Unknown User";
+  } catch (error) {
+    console.error(`Failed to get user name for ID ${userId}:`, error);
+    return "Unknown User";
+  }
+}
+
 export interface TransactionData {
   serviceType: "momo" | "agency_banking" | "e_zwich" | "power" | "jumia";
   transactionType: string;
@@ -136,24 +167,29 @@ export class UnifiedTransactionService {
         data.transactionType === "cash-in" ||
         data.transactionType === "deposit"
       ) {
-        // Cash-In/Deposit: MoMo float decreases, cash in till increases
-        momoFloatChange = -(data.amount + data.fee);
-        cashTillChange = data.amount + data.fee;
+        // Cash-In/Deposit: Customer gives us cash + fee, we lose only the amount from MoMo float
+        // We receive: amount + fee (goes to cash till)
+        // We lose: amount (from MoMo float)
+        momoFloatChange = -data.amount; // Only the amount, not the fee
+        cashTillChange = data.amount + data.fee; // Amount + fee goes to cash till
 
-        // Validate MoMo float balance
-        if (momoFloat.current_balance < data.amount + data.fee) {
+        // Validate MoMo float balance (only need the amount, not the fee)
+        if (momoFloat.current_balance < data.amount) {
           return { success: false, error: "Insufficient MoMo float balance" };
         }
       } else if (
         data.transactionType === "cash-out" ||
         data.transactionType === "withdrawal"
       ) {
-        // Cash-Out/Withdrawal: MoMo float increases, cash in till decreases
-        momoFloatChange = data.amount + data.fee;
-        cashTillChange = -(data.amount + data.fee);
+        // Cash-Out/Withdrawal: Customer withdraws cash, we receive amount + fee to MoMo float
+        // Customer gives us: amount + fee from their MoMo account
+        // Customer receives: amount only in cash
+        // We keep: fee as revenue
+        momoFloatChange = data.amount + data.fee; // We receive amount + fee to our MoMo float
+        cashTillChange = -data.amount; // We only pay the amount in cash (not the fee)
 
-        // Validate cash in till balance
-        if (cashTill.current_balance < data.amount + data.fee) {
+        // Validate cash in till balance (only need the amount, not the fee)
+        if (cashTill.current_balance < data.amount) {
           return { success: false, error: "Insufficient cash in till balance" };
         }
       }
@@ -200,7 +236,7 @@ export class UnifiedTransactionService {
       // Log audit
       await AuditLoggerService.log({
         userId: data.userId,
-        username: data.processedBy || data.userId,
+        username: await getUserFullName(data.processedBy || data.userId),
         actionType: `momo_${data.transactionType}`,
         entityType: "transaction",
         entityId: transaction[0].id,
@@ -382,9 +418,10 @@ export class UnifiedTransactionService {
       );
 
       // Log audit
+      const userName = await getUserFullName(data.userId);
       await AuditLoggerService.log({
         userId: data.userId,
-        username: data.processedBy || data.userId,
+        username: userName,
         actionType: `agency_banking_${data.transactionType}`,
         entityType: "transaction",
         entityId: transaction[0].id,
@@ -526,7 +563,7 @@ export class UnifiedTransactionService {
           message: "E-Zwich card issuance processed successfully",
         };
       } else if (data.transactionType === "withdrawal") {
-        // Withdrawal: E-Zwich settlement increases, cash in till decreases
+        // Withdrawal: E-Zwich settlement increases by amount + fee, cash in till decreases by amount only
         const ezwichSettlementAccount = await sql`
           SELECT * FROM float_accounts 
           WHERE branch_id = ${data.branchId}
@@ -560,8 +597,8 @@ export class UnifiedTransactionService {
         const ezwichSettlement = ezwichSettlementAccount[0];
         const cashTill = cashTillAccount[0];
 
-        // Validate cash in till balance
-        if (cashTill.current_balance < data.amount + data.fee) {
+        // Validate cash in till balance (only for withdrawal amount, not fee)
+        if (cashTill.current_balance < data.amount) {
           return { success: false, error: "Insufficient cash in till balance" };
         }
 
@@ -580,7 +617,7 @@ export class UnifiedTransactionService {
           RETURNING *
         `;
 
-        // Update E-Zwich settlement balance (increases)
+        // Update E-Zwich settlement balance (increases by amount + fee)
         await sql`
           UPDATE float_accounts 
           SET current_balance = current_balance + ${
@@ -589,12 +626,10 @@ export class UnifiedTransactionService {
           WHERE id = ${ezwichSettlement.id}
         `;
 
-        // Update cash in till balance (decreases)
+        // Update cash in till balance (decreases by amount only, fee stays as revenue)
         await sql`
           UPDATE float_accounts 
-          SET current_balance = current_balance - ${
-            data.amount + data.fee
-          }, updated_at = NOW()
+          SET current_balance = current_balance - ${data.amount}, updated_at = NOW()
           WHERE id = ${cashTill.id}
         `;
 
@@ -734,9 +769,10 @@ export class UnifiedTransactionService {
       );
 
       // Log audit
+      const userName = await getUserFullName(data.userId);
       await AuditLoggerService.log({
         userId: data.userId,
-        username: data.processedBy || data.userId,
+        username: userName,
         actionType: "power_sale",
         entityType: "transaction",
         entityId: transaction[0].id,
@@ -749,7 +785,7 @@ export class UnifiedTransactionService {
           amount: data.amount,
           fee: data.fee,
           provider: data.provider,
-          meter_number: meterNumber,
+          meterNumber,
         },
       });
 
@@ -1139,7 +1175,7 @@ export class UnifiedTransactionService {
       // Log audit
       await AuditLoggerService.log({
         userId: userId,
-        username: processedBy,
+        username: await getUserFullName(processedBy),
         actionType: "transaction_reversal",
         entityType: sourceModule,
         entityId: transactionId,
@@ -1168,7 +1204,7 @@ export class UnifiedTransactionService {
       // Log audit failure
       await AuditLoggerService.log({
         userId: userId,
-        username: processedBy,
+        username: await getUserFullName(processedBy),
         actionType: "transaction_reversal",
         entityType: sourceModule,
         entityId: transactionId,
@@ -1273,7 +1309,7 @@ export class UnifiedTransactionService {
       // Log audit
       await AuditLoggerService.log({
         userId: userId,
-        username: processedBy,
+        username: await getUserFullName(processedBy),
         actionType: "transaction_edit",
         entityType: sourceModule,
         entityId: transactionId,
@@ -1303,7 +1339,7 @@ export class UnifiedTransactionService {
       // Log audit failure
       await AuditLoggerService.log({
         userId: userId,
-        username: processedBy,
+        username: await getUserFullName(processedBy),
         actionType: "transaction_edit",
         entityType: sourceModule,
         entityId: transactionId,
@@ -1395,7 +1431,7 @@ export class UnifiedTransactionService {
       // Log audit
       await AuditLoggerService.log({
         userId: userId,
-        username: processedBy,
+        username: await getUserFullName(processedBy),
         actionType: "transaction_deletion",
         entityType: sourceModule,
         entityId: transactionId,
@@ -1422,7 +1458,7 @@ export class UnifiedTransactionService {
       // Log audit failure
       await AuditLoggerService.log({
         userId: userId,
-        username: processedBy,
+        username: await getUserFullName(processedBy),
         actionType: "transaction_deletion",
         entityType: sourceModule,
         entityId: transactionId,
@@ -2303,5 +2339,677 @@ export class UnifiedTransactionService {
         );
         break;
     }
+  }
+
+  /**
+   * Get transactions with filtering and pagination
+   */
+  static async getTransactions({
+    branchId,
+    serviceType,
+    provider,
+    limit = 50,
+    offset = 0,
+  }: {
+    branchId: string;
+    serviceType?: string;
+    provider?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{
+    success: boolean;
+    transactions?: any[];
+    pagination?: any;
+    error?: string;
+  }> {
+    try {
+      console.log(`📋 Fetching transactions for branch: ${branchId}`);
+
+      let transactions: any[] = [];
+      let totalCount = 0;
+
+      // Build the query based on serviceType
+      if (serviceType === "momo") {
+        // Fetch MoMo transactions
+        const momoTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            type as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id
+          FROM momo_transactions
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
+
+        const countResult = await sql`
+          SELECT COUNT(*)::int as count 
+          FROM momo_transactions 
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+        `;
+
+        transactions = momoTransactions.map((t) => ({
+          id: t.id,
+          customerName: t.customer_name,
+          phoneNumber: t.phone_number,
+          amount: t.amount,
+          fee: t.fee,
+          type: t.transaction_type,
+          provider: t.provider,
+          reference: t.reference,
+          status: t.status,
+          date: t.created_at,
+          branchId: t.branch_id,
+          userId: t.user_id,
+          floatAccountId: t.float_account_id,
+          serviceType: "momo",
+        }));
+
+        totalCount = countResult[0]?.count || 0;
+      } else if (serviceType === "agency_banking") {
+        // Fetch Agency Banking transactions
+        const agencyTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id
+          FROM agency_banking_transactions
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
+
+        const countResult = await sql`
+          SELECT COUNT(*)::int as count 
+          FROM agency_banking_transactions 
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+        `;
+
+        transactions = agencyTransactions.map((t) => ({
+          id: t.id,
+          customerName: t.customer_name,
+          phoneNumber: t.phone_number,
+          amount: t.amount,
+          fee: t.fee,
+          type: t.transaction_type,
+          provider: t.provider,
+          reference: t.reference,
+          status: t.status,
+          date: t.created_at,
+          branchId: t.branch_id,
+          userId: t.user_id,
+          floatAccountId: t.float_account_id,
+          serviceType: "agency_banking",
+        }));
+
+        totalCount = countResult[0]?.count || 0;
+      } else if (serviceType === "e_zwich") {
+        // Fetch E-Zwich transactions (combine card issuances and withdrawals)
+        const cardIssuances = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            'card_issuance' as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id
+          FROM e_zwich_card_issuances
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+        `;
+
+        const withdrawals = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            'withdrawal' as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id
+          FROM e_zwich_withdrawals
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+        `;
+
+        const allTransactions = [...cardIssuances, ...withdrawals]
+          .sort(
+            (a, b) =>
+              new Date(b.created_at).getTime() -
+              new Date(a.created_at).getTime()
+          )
+          .slice(offset, offset + limit);
+
+        const countResult = await sql`
+          SELECT 
+            (SELECT COUNT(*) FROM e_zwich_card_issuances WHERE branch_id = ${branchId} ${
+          provider ? sql`AND provider = ${provider}` : sql``
+        }) +
+            (SELECT COUNT(*) FROM e_zwich_withdrawals WHERE branch_id = ${branchId} ${
+          provider ? sql`AND provider = ${provider}` : sql``
+        }) as count
+        `;
+
+        transactions = allTransactions.map((t) => ({
+          id: t.id,
+          customerName: t.customer_name,
+          phoneNumber: t.phone_number,
+          amount: t.amount,
+          fee: t.fee,
+          type: t.transaction_type,
+          provider: t.provider,
+          reference: t.reference,
+          status: t.status,
+          date: t.created_at,
+          branchId: t.branch_id,
+          userId: t.user_id,
+          floatAccountId: t.float_account_id,
+          serviceType: "e_zwich",
+        }));
+
+        totalCount = countResult[0]?.count || 0;
+      } else if (serviceType === "power") {
+        // Fetch Power transactions
+        const powerTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            customer_phone as phone_number,
+            amount,
+            commission as fee,
+            type as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            meter_number,
+            'power' as service_type
+          FROM power_transactions
+          WHERE branch_id = ${branchId}
+        `;
+
+        const countResult = await sql`
+          SELECT COUNT(*)::int as count 
+          FROM power_transactions 
+          WHERE branch_id = ${branchId}
+        `;
+
+        transactions = powerTransactions.map((t) => ({
+          id: t.id,
+          customerName: t.customer_name,
+          phoneNumber: t.phone_number,
+          amount: t.amount,
+          fee: t.fee,
+          type: t.transaction_type,
+          provider: t.provider,
+          reference: t.reference,
+          status: t.status,
+          date: t.created_at,
+          branchId: t.branch_id,
+          userId: t.user_id,
+          meterNumber: t.meter_number,
+          serviceType: "power",
+        }));
+
+        totalCount = countResult[0]?.count || 0;
+      } else if (serviceType === "jumia") {
+        // Fetch Jumia transactions
+        const jumiaTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id
+          FROM jumia_transactions
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+          ORDER BY created_at DESC
+          LIMIT ${limit}
+          OFFSET ${offset}
+        `;
+
+        const countResult = await sql`
+          SELECT COUNT(*)::int as count 
+          FROM jumia_transactions 
+          WHERE branch_id = ${branchId}
+          ${provider ? sql`AND provider = ${provider}` : sql``}
+        `;
+
+        transactions = jumiaTransactions.map((t) => ({
+          id: t.id,
+          customerName: t.customer_name,
+          phoneNumber: t.phone_number,
+          amount: t.amount,
+          fee: t.fee,
+          type: t.transaction_type,
+          provider: t.provider,
+          reference: t.reference,
+          status: t.status,
+          date: t.created_at,
+          branchId: t.branch_id,
+          userId: t.user_id,
+          floatAccountId: t.float_account_id,
+          serviceType: "jumia",
+        }));
+
+        totalCount = countResult[0]?.count || 0;
+      } else {
+        // Fetch all transactions (combine all service types)
+        const allTransactions = [];
+
+        // MoMo transactions
+        const momoTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            type as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id,
+            'momo' as service_type
+          FROM momo_transactions
+          WHERE branch_id = ${branchId}
+        `;
+
+        // Agency Banking transactions
+        const agencyTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id,
+            'agency_banking' as service_type
+          FROM agency_banking_transactions
+          WHERE branch_id = ${branchId}
+        `;
+
+        // E-Zwich transactions
+        const ezwichCardIssuances = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            'card_issuance' as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id,
+            'e_zwich' as service_type
+          FROM e_zwich_card_issuances
+          WHERE branch_id = ${branchId}
+        `;
+
+        const ezwichWithdrawals = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            'withdrawal' as transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id,
+            'e_zwich' as service_type
+          FROM e_zwich_withdrawals
+          WHERE branch_id = ${branchId}
+        `;
+
+        // Power transactions
+        const powerTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id,
+            'power' as service_type
+          FROM power_transactions
+          WHERE branch_id = ${branchId}
+        `;
+
+        // Jumia transactions
+        const jumiaTransactions = await sql`
+          SELECT 
+            id,
+            customer_name,
+            phone_number,
+            amount,
+            fee,
+            transaction_type,
+            provider,
+            reference,
+            status,
+            created_at,
+            branch_id,
+            user_id,
+            float_account_id,
+            'jumia' as service_type
+          FROM jumia_transactions
+          WHERE branch_id = ${branchId}
+        `;
+
+        // Combine all transactions and sort by date
+        const combinedTransactions = [
+          ...momoTransactions,
+          ...agencyTransactions,
+          ...ezwichCardIssuances,
+          ...ezwichWithdrawals,
+          ...powerTransactions,
+          ...jumiaTransactions,
+        ].sort(
+          (a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+
+        // Apply pagination
+        transactions = combinedTransactions
+          .slice(offset, offset + limit)
+          .map((t) => ({
+            id: t.id,
+            customerName: t.customer_name,
+            phoneNumber: t.phone_number,
+            amount: t.amount,
+            fee: t.fee,
+            type: t.transaction_type,
+            provider: t.provider,
+            reference: t.reference,
+            status: t.status,
+            date: t.created_at,
+            branchId: t.branch_id,
+            userId: t.user_id,
+            floatAccountId: t.float_account_id,
+            serviceType: t.service_type,
+          }));
+
+        totalCount = combinedTransactions.length;
+      }
+
+      return {
+        success: true,
+        transactions,
+        pagination: {
+          total: totalCount,
+          limit,
+          offset,
+          hasMore: offset + limit < totalCount,
+        },
+      };
+    } catch (error) {
+      console.error("Error fetching transactions:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch transactions",
+      };
+    }
+  }
+
+  /**
+   * Get statistics for transactions
+   */
+  static async getStatistics({
+    branchId,
+    serviceType,
+  }: {
+    branchId: string;
+    serviceType?: string;
+  }): Promise<{
+    success: boolean;
+    statistics?: any;
+    error?: string;
+  }> {
+    try {
+      console.log(
+        `📊 Fetching statistics for branch: ${branchId}, service: ${serviceType}`
+      );
+
+      // Get transactions using the unified getTransactions method
+      const transactionsResult = await this.getTransactions({
+        branchId,
+        serviceType,
+        limit: 1000, // Get more transactions for statistics
+        offset: 0,
+      });
+
+      if (!transactionsResult.success || !transactionsResult.transactions) {
+        return {
+          success: false,
+          error:
+            transactionsResult.error ||
+            "Failed to fetch transactions for statistics",
+        };
+      }
+
+      const transactions = transactionsResult.transactions;
+
+      // Calculate statistics
+      const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+
+      const statistics = {
+        summary: {
+          totalCount: transactions.length,
+          totalAmount: transactions.reduce(
+            (sum, t) => sum + Number(t.amount || 0),
+            0
+          ),
+          totalCommission: transactions.reduce(
+            (sum, t) => sum + Number(t.fee || 0),
+            0
+          ),
+          completedCount: transactions.filter((t) => t.status === "completed")
+            .length,
+          completedAmount: transactions
+            .filter((t) => t.status === "completed")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+          pendingCount: transactions.filter((t) => t.status === "pending")
+            .length,
+          pendingAmount: transactions
+            .filter((t) => t.status === "pending")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+          failedCount: transactions.filter((t) => t.status === "failed").length,
+          failedAmount: transactions
+            .filter((t) => t.status === "failed")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+          reversedCount: transactions.filter((t) => t.status === "reversed")
+            .length,
+          reversedAmount: transactions
+            .filter((t) => t.status === "reversed")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+          deletedCount: transactions.filter((t) => t.status === "deleted")
+            .length,
+          deletedAmount: transactions
+            .filter((t) => t.status === "deleted")
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+          todayCount: transactions.filter((t) => {
+            if (!t.date) return false;
+            const txDate = new Date(t.date);
+            const todayDate = new Date(today);
+            return txDate.toDateString() === todayDate.toDateString();
+          }).length,
+          todayAmount: transactions
+            .filter((t) => {
+              if (!t.date) return false;
+              const txDate = new Date(t.date);
+              const todayDate = new Date(today);
+              return txDate.toDateString() === todayDate.toDateString();
+            })
+            .reduce((sum, t) => sum + Number(t.amount || 0), 0),
+          todayCommission: transactions
+            .filter((t) => {
+              if (!t.date) return false;
+              const txDate = new Date(t.date);
+              const todayDate = new Date(today);
+              return txDate.toDateString() === todayDate.toDateString();
+            })
+            .reduce((sum, t) => sum + Number(t.fee || 0), 0),
+        },
+        byProvider: this.groupByProvider(transactions),
+        byType: this.groupByType(transactions),
+        daily: this.groupByDate(transactions),
+      };
+
+      return {
+        success: true,
+        statistics,
+      };
+    } catch (error) {
+      console.error("Error fetching statistics:", error);
+      return {
+        success: false,
+        error:
+          error instanceof Error ? error.message : "Failed to fetch statistics",
+      };
+    }
+  }
+
+  /**
+   * Group transactions by provider
+   */
+  private static groupByProvider(transactions: any[]): any[] {
+    const grouped = transactions.reduce((acc, t) => {
+      const provider = t.provider || "Unknown";
+      if (!acc[provider]) {
+        acc[provider] = { provider, count: 0, amount: 0, commission: 0 };
+      }
+      acc[provider].count++;
+      acc[provider].amount += Number(t.amount || 0);
+      acc[provider].commission += Number(t.fee || 0);
+      return acc;
+    }, {});
+
+    return Object.values(grouped).sort((a: any, b: any) => b.amount - a.amount);
+  }
+
+  /**
+   * Group transactions by type
+   */
+  private static groupByType(transactions: any[]): any[] {
+    const grouped = transactions.reduce((acc, t) => {
+      const type = t.type || t.transaction_type || "Unknown";
+      if (!acc[type]) {
+        acc[type] = { type, count: 0, amount: 0, commission: 0 };
+      }
+      acc[type].count++;
+      acc[type].amount += Number(t.amount || 0);
+      acc[type].commission += Number(t.fee || 0);
+      return acc;
+    }, {});
+
+    return Object.values(grouped).sort((a: any, b: any) => b.amount - a.amount);
+  }
+
+  /**
+   * Group transactions by date (last 30 days)
+   */
+  private static groupByDate(transactions: any[]): any[] {
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const recentTransactions = transactions.filter((t) => {
+      const txDate = new Date(t.date || t.created_at);
+      return txDate >= thirtyDaysAgo;
+    });
+
+    const grouped = recentTransactions.reduce((acc, t) => {
+      const date = new Date(t.date || t.created_at).toISOString().slice(0, 10);
+      if (!acc[date]) {
+        acc[date] = { date, count: 0, amount: 0, commission: 0 };
+      }
+      acc[date].count++;
+      acc[date].amount += Number(t.amount || 0);
+      acc[date].commission += Number(t.fee || 0);
+      return acc;
+    }, {});
+
+    return Object.values(grouped).sort(
+      (a: any, b: any) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
   }
 }

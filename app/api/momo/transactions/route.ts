@@ -118,15 +118,22 @@ export async function POST(request: NextRequest) {
     let floatChange = 0;
 
     if (normalizedData.type === "cash-in") {
-      // Cash in: Increase cash in till, decrease MoMo float
+      // Cash in: Customer gives us cash + fee, we lose only the amount from MoMo float
+      // We receive: amount + fee (goes to cash till)
+      // We lose: amount (from MoMo float)
       cashTillChange = normalizedData.amount + normalizedData.fee;
-      floatChange = -normalizedData.amount;
+      floatChange = -normalizedData.amount; // Only the amount, not the fee
       newFloatBalance = Number(account.current_balance) - normalizedData.amount;
     } else {
-      // Cash out: Decrease cash in till, increase MoMo float
-      cashTillChange = -(normalizedData.amount - normalizedData.fee);
-      floatChange = normalizedData.amount;
-      newFloatBalance = Number(account.current_balance) + normalizedData.amount;
+      // Cash out: Customer withdraws cash, we receive amount + fee to MoMo float
+      // We lose: amount (from cash till)
+      // We receive: amount + fee (to MoMo float)
+      cashTillChange = -normalizedData.amount; // Only the amount, not the fee
+      floatChange = normalizedData.amount + normalizedData.fee; // Amount + fee
+      newFloatBalance =
+        Number(account.current_balance) +
+        normalizedData.amount +
+        normalizedData.fee;
     }
 
     // Create the transaction
@@ -183,9 +190,23 @@ export async function POST(request: NextRequest) {
       AND is_active = true
     `;
 
-    // Create GL entries
+    // Create GL entries (optional - don't fail transaction if GL fails)
+    let glSuccess = false;
+    let glError = null;
+
     try {
-      await UnifiedGLPostingService.createGLEntries({
+      console.log("🔍 [DEBUG] Creating GL entries for MoMo transaction:", {
+        transactionId: transaction[0].id,
+        sourceModule: "momo",
+        transactionType: normalizedData.type,
+        amount: normalizedData.amount,
+        fee: normalizedData.fee,
+        cashTillChange,
+        floatChange,
+        newFloatBalance,
+      });
+
+      const glResult = await UnifiedGLPostingService.createGLEntries({
         transactionId: transaction[0].id,
         sourceModule: "momo",
         transactionType: normalizedData.type,
@@ -199,8 +220,20 @@ export async function POST(request: NextRequest) {
         branchName: "Branch",
         metadata: {},
       });
+
+      glSuccess = glResult.success;
+      if (!glSuccess) {
+        glError = glResult.error;
+        console.warn(
+          "[GL] GL posting failed but transaction completed:",
+          glError
+        );
+      }
     } catch (glError) {
-      console.error("[GL] Error creating MoMo GL entries:", glError);
+      console.warn(
+        "[GL] GL posting failed but transaction completed:",
+        glError
+      );
     }
 
     return NextResponse.json({
@@ -218,7 +251,13 @@ export async function POST(request: NextRequest) {
         date: transaction[0].created_at,
         branchName: "Branch",
       },
-      message: "MoMo transaction processed successfully",
+      message: glSuccess
+        ? "MoMo transaction processed successfully with GL entries"
+        : "MoMo transaction processed successfully (GL entries failed - check mappings)",
+      glStatus: {
+        success: glSuccess,
+        error: glError,
+      },
     });
   } catch (error) {
     console.error("Error processing MoMo transaction:", error);
@@ -259,16 +298,40 @@ export async function GET(request: NextRequest) {
     const countResult = await sql`
       SELECT COUNT(*)::int as count FROM momo_transactions WHERE branch_id = ${branchId}
     `;
-    const total = countResult[0]?.count || 0;
-    return NextResponse.json({ success: true, transactions, total });
+
+    const totalCount = countResult[0]?.count || 0;
+
+    return NextResponse.json({
+      success: true,
+      transactions: transactions.map((transaction) => ({
+        id: transaction.id,
+        customerName: transaction.customer_name,
+        phoneNumber: transaction.phone_number,
+        amount: transaction.amount,
+        fee: transaction.fee,
+        type: transaction.type,
+        provider: transaction.provider,
+        reference: transaction.reference,
+        status: transaction.status,
+        date: transaction.created_at,
+        branchName: "Branch",
+      })),
+      pagination: {
+        total: totalCount,
+        limit,
+        offset,
+        hasMore: offset + limit < totalCount,
+      },
+    });
   } catch (error) {
     console.error("Error fetching MoMo transactions:", error);
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to fetch transactions",
-        transactions: [],
-        total: 0,
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to fetch transactions",
       },
       { status: 500 }
     );

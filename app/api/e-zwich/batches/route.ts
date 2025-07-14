@@ -45,36 +45,34 @@ export async function GET(request: NextRequest) {
       )
     `;
 
+    // Debug: log incoming branchId, user.branchId, and all batch branch_ids
+    console.log("API branchId param:", branchId);
+    console.log("User branchId from session:", user.branchId);
+    const allBatchesRaw =
+      await sql`SELECT id, batch_code, branch_id FROM ezwich_card_batches`;
+    console.log(
+      "All batch branch_ids:",
+      allBatchesRaw.map((b) => b.branch_id)
+    );
+
     let batches;
 
     // Admin can see all batches, others only see their branch
     if (user.role === "Admin") {
-      if (branchId) {
-        // Admin filtering by specific branch
-        batches = await sql`
-          SELECT 
-            cb.*,
-            b.name as branch_name
-          FROM ezwich_card_batches cb
-          LEFT JOIN branches b ON cb.branch_id = b.id
-          WHERE cb.branch_id = ${branchId}
-          ORDER BY cb.created_at DESC
-        `;
-      } else {
-        // Admin seeing all batches
-        batches = await sql`
-          SELECT 
-            cb.*,
-            b.name as branch_name
-          FROM ezwich_card_batches cb
-          LEFT JOIN branches b ON cb.branch_id = b.id
-          ORDER BY cb.created_at DESC
-        `;
-      }
+      // Admin always sees all batches, regardless of branchId parameter
+      batches = await sql`
+        SELECT 
+          cb.*,
+          b.name as branch_name
+        FROM ezwich_card_batches cb
+        LEFT JOIN branches b ON cb.branch_id = b.id
+        ORDER BY cb.created_at DESC
+      `;
+      console.log(`🔍 [DEBUG] Admin: Found ${batches.length} total batches`);
     } else {
       // Non-admin users only see their branch's batches
       batches = await sql`
-      SELECT 
+        SELECT 
           cb.*,
           b.name as branch_name
         FROM ezwich_card_batches cb
@@ -82,6 +80,9 @@ export async function GET(request: NextRequest) {
         WHERE cb.branch_id = ${user.branchId}
         ORDER BY cb.created_at DESC
       `;
+      console.log(
+        `🔍 [DEBUG] Non-admin: Found ${batches.length} batches for branch ${user.branchId}`
+      );
     }
 
     return NextResponse.json({

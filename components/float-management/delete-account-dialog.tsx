@@ -12,7 +12,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, AlertTriangle, Trash2, EyeOff } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Loader2, AlertTriangle, Trash2, EyeOff, Lock } from "lucide-react";
 
 interface FloatAccount {
   id: string;
@@ -37,6 +39,9 @@ export function DeleteAccountDialog({
 }: DeleteAccountDialogProps) {
   const { user } = useCurrentUser();
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   const isAdmin = user?.role === "Admin";
   const canForceDelete = isAdmin;
@@ -77,27 +82,74 @@ export function DeleteAccountDialog({
   const handleForceDelete = async () => {
     if (!account) return;
 
+    // Validate password
+    if (!password) {
+      setPasswordError("Password is required");
+      return;
+    }
+
+    setPasswordError("");
+
     setIsDeleting(true);
     try {
       const response = await fetch(`/api/float-accounts/${account.id}`, {
         method: "DELETE",
         headers: {
+          "Content-Type": "application/json",
           "x-user-role": user?.role || "",
         },
+        body: JSON.stringify({
+          password,
+        }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+
+        // Handle specific password-related errors
+        if (response.status === 401) {
+          setPasswordError(
+            "Incorrect password. Please enter your correct password."
+          );
+          return;
+        }
+
+        if (response.status === 400 && errorData.error?.includes("password")) {
+          setPasswordError(errorData.error);
+          return;
+        }
+
         throw new Error(errorData.error || "Failed to delete account");
       }
 
       onSuccess(true);
+      // Reset form
+      setPassword("");
+      setShowPasswordForm(false);
     } catch (error) {
       console.error("Error deleting account:", error);
-      throw error;
+      // Don't show password errors for general errors
+      if (!passwordError) {
+        throw error;
+      }
     } finally {
       setIsDeleting(false);
     }
+  };
+
+  const handleDeleteClick = () => {
+    if (isAdmin) {
+      setShowPasswordForm(true);
+    } else {
+      handleForceDelete();
+    }
+  };
+
+  const handleCancel = () => {
+    setPassword("");
+    setPasswordError("");
+    setShowPasswordForm(false);
+    onOpenChange(false);
   };
 
   if (!account) return null;
@@ -161,6 +213,41 @@ export function DeleteAccountDialog({
                 </div>
               )}
 
+              {/* Password Confirmation Form */}
+              {showPasswordForm && isAdmin && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
+                  <div className="flex items-center gap-2 text-red-800">
+                    <Lock className="h-4 w-4" />
+                    <span className="font-medium text-sm">
+                      Password Required
+                    </span>
+                  </div>
+                  <p className="text-sm text-red-700">
+                    To permanently delete this account, please enter your
+                    password.
+                  </p>
+
+                  <div className="space-y-3">
+                    <div>
+                      <Label htmlFor="password" className="text-sm font-medium">
+                        Password
+                      </Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Enter your password"
+                        className="mt-1"
+                      />
+                    </div>
+                    {passwordError && (
+                      <p className="text-sm text-red-600">{passwordError}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Action Explanation */}
               <div className="text-sm text-muted-foreground bg-blue-50 p-3 rounded-lg">
                 {isAdmin ? (
@@ -170,8 +257,8 @@ export function DeleteAccountDialog({
                       data preserved.
                     </p>
                     <p>
-                      <strong>Delete:</strong> Account and related data will be
-                      permanently removed.
+                      <strong>Delete:</strong> Account, GL mappings, and GL
+                      accounts will be permanently removed.
                     </p>
                   </div>
                 ) : (
@@ -187,12 +274,16 @@ export function DeleteAccountDialog({
         </AlertDialogHeader>
 
         <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-          <AlertDialogCancel disabled={isDeleting} className="w-full sm:w-auto">
+          <AlertDialogCancel
+            disabled={isDeleting}
+            onClick={handleCancel}
+            className="w-full sm:w-auto"
+          >
             Cancel
           </AlertDialogCancel>
 
           {/* Soft Delete Button (Deactivate) */}
-          {canSoftDelete && (
+          {canSoftDelete && !showPasswordForm && (
             <Button
               variant="outline"
               onClick={handleSoftDelete}
@@ -209,10 +300,22 @@ export function DeleteAccountDialog({
           )}
 
           {/* Force Delete Button (Admin Only) */}
-          {canForceDelete && (
+          {canForceDelete && !showPasswordForm && (
+            <Button
+              onClick={handleDeleteClick}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 flex items-center gap-2 w-full sm:w-auto"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete Permanently
+            </Button>
+          )}
+
+          {/* Confirm Delete Button (when password form is shown) */}
+          {showPasswordForm && isAdmin && (
             <Button
               onClick={handleForceDelete}
-              disabled={isDeleting}
+              disabled={isDeleting || !password}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90 flex items-center gap-2 w-full sm:w-auto"
             >
               {isDeleting ? (
@@ -220,7 +323,7 @@ export function DeleteAccountDialog({
               ) : (
                 <Trash2 className="h-4 w-4" />
               )}
-              Delete Permanently
+              Confirm Deletion
             </Button>
           )}
         </AlertDialogFooter>

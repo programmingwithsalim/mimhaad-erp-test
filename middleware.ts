@@ -83,6 +83,8 @@ export async function middleware(request: NextRequest) {
     "/api/seed",
     "/api/transactions/all",
     "/api/debug/test-sql",
+    "/api/debug/check-ezwich-gl-mappings",
+    "/api/debug/fix-ezwich-mappings",
   ];
 
   // Skip middleware for static files and Next.js internals

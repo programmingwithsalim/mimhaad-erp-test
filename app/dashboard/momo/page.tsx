@@ -872,16 +872,30 @@ export default function MoMoPage() {
                     {transactions.map((transaction) => (
                       <TableRow key={transaction.id}>
                         <TableCell>
-                          {format(
-                            new Date(transaction.created_at),
-                            "MMM dd, yyyy HH:mm"
-                          )}
+                          {(() => {
+                            const rawDate =
+                              transaction.created_at || transaction.date;
+                            const parsedDate = rawDate
+                              ? new Date(rawDate)
+                              : null;
+                            return parsedDate &&
+                              !isNaN(parsedDate.getTime()) ? (
+                              format(parsedDate, "MMM dd, yyyy HH:mm")
+                            ) : (
+                              <span className="text-muted-foreground">N/A</span>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell className="capitalize">
                           {transaction.type}
                         </TableCell>
-                        <TableCell>{transaction.customer_name}</TableCell>
-                        <TableCell>{transaction.phone_number}</TableCell>
+                        <TableCell>
+                          {transaction.customerName ||
+                            transaction.customer_name}
+                        </TableCell>
+                        <TableCell>
+                          {transaction.phoneNumber || transaction.phone_number}
+                        </TableCell>
                         <TableCell>{transaction.provider}</TableCell>
                         <TableCell>
                           {formatCurrency(transaction.amount)}

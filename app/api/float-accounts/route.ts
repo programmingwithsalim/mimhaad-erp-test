@@ -254,7 +254,7 @@ export async function POST(request: NextRequest) {
       branch_id,
       account_type,
       provider,
-      account_name: account_number || provider || account_type,
+      account_number: account_number || provider || account_type,
       initial_balance: current_balance || 0,
     });
 

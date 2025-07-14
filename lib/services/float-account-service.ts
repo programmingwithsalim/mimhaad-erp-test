@@ -142,7 +142,9 @@ export class FloatAccountService {
     floatAccount: any
   ): Promise<any> {
     const glAccountCode = this.generateGLAccountCode(floatAccount);
-    const glAccountName = `${floatAccount.name} GL Account`;
+    const accountType = this.prettyType(floatAccount.account_type);
+    const provider = floatAccount.provider ? ` - ${floatAccount.provider}` : "";
+    const glAccountName = `${accountType} Float Account${provider}`;
 
     const glAccount = await sql`
       INSERT INTO gl_accounts (
@@ -279,6 +281,12 @@ export class FloatAccountService {
           float_account_id: floatAccountId,
           mapping_type: "float",
         });
+        mappings.push({
+          transaction_type: "momo_float",
+          gl_account_id: glAccountId,
+          float_account_id: floatAccountId,
+          mapping_type: "asset",
+        });
         break;
 
       case "agency_banking":
@@ -294,6 +302,12 @@ export class FloatAccountService {
           gl_account_id: glAccountId,
           float_account_id: floatAccountId,
           mapping_type: "float",
+        });
+        mappings.push({
+          transaction_type: "agency_banking_float",
+          gl_account_id: glAccountId,
+          float_account_id: floatAccountId,
+          mapping_type: "asset",
         });
         break;
 
@@ -311,6 +325,12 @@ export class FloatAccountService {
           float_account_id: floatAccountId,
           mapping_type: "float",
         });
+        mappings.push({
+          transaction_type: "e_zwich_float",
+          gl_account_id: glAccountId,
+          float_account_id: floatAccountId,
+          mapping_type: "asset",
+        });
         break;
 
       case "power":
@@ -327,6 +347,12 @@ export class FloatAccountService {
           float_account_id: floatAccountId,
           mapping_type: "float",
         });
+        mappings.push({
+          transaction_type: "power_float",
+          gl_account_id: glAccountId,
+          float_account_id: floatAccountId,
+          mapping_type: "asset",
+        });
         break;
 
       case "jumia":
@@ -342,6 +368,12 @@ export class FloatAccountService {
           gl_account_id: glAccountId,
           float_account_id: floatAccountId,
           mapping_type: "float",
+        });
+        mappings.push({
+          transaction_type: "jumia_float",
+          gl_account_id: glAccountId,
+          float_account_id: floatAccountId,
+          mapping_type: "asset",
         });
         break;
     }
@@ -416,7 +448,7 @@ export class FloatAccountService {
       { type: "Asset", suffix: "", mapping: "main" },
       { type: "Revenue", suffix: "-REV", mapping: "revenue" },
       { type: "Expense", suffix: "-EXP", mapping: "expense" },
-      { type: "Expense", suffix: "-COM", mapping: "commission" },
+      { type: "Revenue", suffix: "-COM", mapping: "commission" }, // Fixed: Commission should be Revenue
       { type: "Revenue", suffix: "-FEE", mapping: "fee" },
     ];
     const branchCode = floatAccount.branch_id.substring(0, 6);
@@ -438,13 +470,17 @@ export class FloatAccountService {
         case "jumia":
           return `JUMIA-${branchCode}`;
         default:
-          return `FLOAT-${branchCode}-${floatAccount.account_type.toUpperCase()}`;
+          return `FLOAT-${branchCode}-${
+            floatAccount.account_type?.toUpperCase() || "UNKNOWN"
+          }`;
       }
     })();
+
     // For each GL type, create if not exists
     const glAccounts: Record<string, any> = {};
     for (const { type, suffix, mapping } of glTypes) {
       const code = baseCode + suffix;
+
       // Check if GL account exists
       const existing =
         await sql`SELECT * FROM gl_accounts WHERE code = ${code} AND branch_id = ${floatAccount.branch_id}`;
@@ -453,6 +489,7 @@ export class FloatAccountService {
         glAccount = existing.rows[0];
       } else {
         const name = this.generateGLAccountName(floatAccount, type, mapping);
+
         const result = await sql`
           INSERT INTO gl_accounts (id, code, name, type, branch_id, is_active, created_at, updated_at)
           VALUES (gen_random_uuid(), ${code}, ${name}, ${type}, ${floatAccount.branch_id}, true, NOW(), NOW())
@@ -462,7 +499,8 @@ export class FloatAccountService {
       }
       glAccounts[mapping] = glAccount;
     }
-    // Now create mappings for each
+
+    // Create mappings for normal transaction types
     for (const mapping of Object.keys(glAccounts)) {
       // Check if mapping exists
       const exists = await sql`
@@ -486,6 +524,87 @@ export class FloatAccountService {
         `;
       }
     }
+
+    // Create reversal mappings for transaction reversals
+    await this.createReversalGLMappings(floatAccount, glAccounts);
+  }
+
+  /**
+   * Create reversal GL mappings for a float account
+   */
+  private static async createReversalGLMappings(
+    floatAccount: any,
+    glAccounts: Record<string, any>
+  ): Promise<void> {
+    // Define reversal transaction types based on account type
+    const reversalTransactionTypes = this.getReversalTransactionTypes(
+      floatAccount.account_type
+    );
+
+    console.log(
+      `🔄 [FLOAT] Creating reversal GL mappings for ${floatAccount.account_type} account`
+    );
+
+    for (const reversalType of reversalTransactionTypes) {
+      for (const mapping of Object.keys(glAccounts)) {
+        // Check if reversal mapping already exists
+        const exists = await sql`
+          SELECT * FROM gl_mappings 
+          WHERE float_account_id = ${floatAccount.id} 
+          AND transaction_type = ${reversalType} 
+          AND mapping_type = ${mapping} 
+          AND is_active = true
+        `;
+
+        if (exists.rows.length === 0) {
+          await sql`
+            INSERT INTO gl_mappings (
+              id, branch_id, transaction_type, gl_account_id, float_account_id, mapping_type, is_active, created_at, updated_at
+            ) VALUES (
+              gen_random_uuid(),
+              ${floatAccount.branch_id},
+              ${reversalType},
+              ${glAccounts[mapping].id},
+              ${floatAccount.id},
+              ${mapping},
+              true,
+              NOW(),
+              NOW()
+            )
+          `;
+          console.log(
+            `✅ [FLOAT] Created reversal mapping: ${reversalType} -> ${mapping}`
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Get reversal transaction types for a given account type
+   */
+  private static getReversalTransactionTypes(accountType: string): string[] {
+    switch (accountType) {
+      case "momo":
+        return [
+          "reversal_cash-in",
+          "reversal_cash-out",
+          "reversal_deposit",
+          "reversal_withdrawal",
+        ];
+      case "agency_banking":
+        return ["reversal_deposit", "reversal_withdrawal"];
+      case "e_zwich":
+        return ["reversal_card_issuance", "reversal_withdrawal"];
+      case "power":
+        return ["reversal_purchase", "reversal_payment"];
+      case "jumia":
+        return ["reversal_purchase", "reversal_payment"];
+      case "cash_till":
+        return ["reversal_cash-in", "reversal_cash-out"];
+      default:
+        return ["reversal_deposit", "reversal_withdrawal"];
+    }
   }
 
   private static generateGLAccountName(
@@ -493,26 +612,29 @@ export class FloatAccountService {
     type: string,
     mapping: string
   ): string {
+    // Handle undefined account_type
+    if (!floatAccount.account_type) {
+      return `Unknown Float Account${
+        floatAccount.provider ? ` - ${floatAccount.provider}` : ""
+      }`;
+    }
+
     const provider = floatAccount.provider ? ` - ${floatAccount.provider}` : "";
+    const accountType = this.prettyType(floatAccount.account_type);
+
     switch (mapping) {
       case "main":
-        return `${this.prettyType(floatAccount.account_type)} Float${provider}`;
+        return `${accountType} Float Account${provider}`;
       case "revenue":
-        return `${this.prettyType(
-          floatAccount.account_type
-        )} Revenue${provider}`;
+        return `${accountType} Fee Revenue${provider}`; // For fee income from transactions
       case "expense":
-        return `${this.prettyType(
-          floatAccount.account_type
-        )} Expense${provider}`;
+        return `${accountType} Fee Expense${provider}`; // For fee expenses (net effect with revenue)
       case "commission":
-        return `${this.prettyType(
-          floatAccount.account_type
-        )} Commission${provider}`;
+        return `${accountType} Commission Revenue${provider}`; // For commission income
       case "fee":
-        return `${this.prettyType(floatAccount.account_type)} Fee${provider}`;
+        return `${accountType} Transaction Fees${provider}`; // For transaction fee tracking
       default:
-        return `${this.prettyType(floatAccount.account_type)} GL${provider}`;
+        return `${accountType} GL Account${provider}`;
     }
   }
 

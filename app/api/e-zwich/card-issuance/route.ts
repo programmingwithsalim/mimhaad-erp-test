@@ -174,24 +174,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find an available batch for the card type
-    const availableBatch = await sql`
-      SELECT id, batch_code FROM ezwich_card_batches 
-      WHERE branch_id = ${branch_id} 
-      AND card_type = ${card_type || "standard"}
-      AND quantity_available > 0
-      ORDER BY created_at ASC
-      LIMIT 1
-    `;
+    // Use the provided batch_id or find an available batch for the card type
+    let batch_id = formData.get("batch_id") as string;
 
-    if (availableBatch.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "No available batches for this card type" },
-        { status: 400 }
-      );
+    if (!batch_id) {
+      // Auto-select batch if not provided (fallback)
+      const availableBatch = await sql`
+        SELECT id, batch_code FROM ezwich_card_batches 
+        WHERE branch_id = ${branch_id} 
+        AND card_type = ${card_type || "standard"}
+        AND quantity_available > 0
+        ORDER BY created_at ASC
+        LIMIT 1
+      `;
+
+      if (availableBatch.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "No available batches for this card type" },
+          { status: 400 }
+        );
+      }
+
+      batch_id = availableBatch[0].id;
+    } else {
+      // Validate the provided batch_id
+      const batchValidation = await sql`
+        SELECT id, batch_code, quantity_available, card_type FROM ezwich_card_batches 
+        WHERE id = ${batch_id} 
+        AND branch_id = ${branch_id}
+        AND quantity_available > 0
+      `;
+
+      if (batchValidation.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Selected batch is not available or has no cards remaining",
+          },
+          { status: 400 }
+        );
+      }
+
+      // Check if card type matches (if specified)
+      if (card_type && batchValidation[0].card_type !== card_type) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Selected batch is for ${batchValidation[0].card_type} cards, but ${card_type} was requested`,
+          },
+          { status: 400 }
+        );
+      }
     }
 
-    const batch_id = availableBatch[0].id;
+    // Get batch details for response
+    const batchDetails = await sql`
+      SELECT id, batch_code, quantity_available, card_type, partner_bank_name 
+      FROM ezwich_card_batches 
+      WHERE id = ${batch_id}
+    `;
 
     // Convert files to base64 if provided
     let customer_photo_base64 = null;
@@ -286,17 +327,24 @@ export async function POST(request: NextRequest) {
 
     // Create GL entries for card issuance
     try {
-      await UnifiedGLPostingService.createCardIssuanceGLEntries(
-        {
-          id: newIssuance.id,
+      await UnifiedGLPostingService.createGLEntries({
+        transactionId: newIssuance.id,
+        sourceModule: "e-zwich",
+        transactionType: "card_issuance",
+        amount: Number(newIssuance.fee_charged),
+        fee: 0, // If you have a separate fee, set it here
+        customerName: newIssuance.customer_name,
+        reference: newIssuance.card_number,
+        processedBy: processed_by,
+        branchId: branch_id,
+        branchName: null, // If you have branch name, set it here
+        metadata: {
           card_number: newIssuance.card_number,
-          fee_charged: Number(newIssuance.fee_charged),
-          payment_method: payment_method || "cash",
+          batch_id: newIssuance.batch_id,
           partner_bank: partner_bank || null,
+          payment_method: payment_method || "cash",
         },
-        processed_by,
-        branch_id
-      );
+      });
     } catch (glError) {
       console.error("GL posting failed for card issuance:", glError);
       // Continue with issuance even if GL posting fails
@@ -345,7 +393,18 @@ export async function POST(request: NextRequest) {
       success: true,
       data: newIssuance,
       cardId: newIssuance.id,
-      message: "Card issued successfully",
+      batchInfo: batchDetails[0]
+        ? {
+            batchId: batchDetails[0].id,
+            batchCode: batchDetails[0].batch_code,
+            cardType: batchDetails[0].card_type,
+            partnerBank: batchDetails[0].partner_bank_name,
+            remainingCards: batchDetails[0].quantity_available - 1, // After deduction
+          }
+        : null,
+      message: `Card issued successfully from batch ${
+        batchDetails[0]?.batch_code || "Unknown"
+      }`,
     });
   } catch (error) {
     console.error("Error creating card issuance:", error);

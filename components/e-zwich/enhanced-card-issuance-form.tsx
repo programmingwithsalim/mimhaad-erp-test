@@ -23,6 +23,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useCardBatches } from "@/hooks/use-e-zwich";
 import { CreditCard, RefreshCw, Upload, User, Hash } from "lucide-react";
 import { useForm, FormProvider, Controller } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -34,7 +35,8 @@ import {
   FormControl,
   FormMessage,
 } from "@/components/ui/form";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 interface EzwichPartnerAccount {
   id: string;
@@ -76,6 +78,7 @@ const bioSchema = z.object({
   address_line2: z.string().optional(),
   city: z.string().min(2, "City is required"),
   region: z.string().min(2, "Region is required"),
+  postal_code: z.string().optional(), // <-- Added to fix linter error
 });
 const idSchema = z.object({
   id_type: z.string().min(2, "ID type is required"),
@@ -87,6 +90,7 @@ const cardSchema = z.object({
   card_number: z
     .string()
     .regex(/^\d{7,11}$/, "Card number must be 7 to 11 digits"),
+  batch_id: z.string().min(1, "Card batch is required"),
   payment_method: z.enum(["momo", "agency-banking", "cash"], {
     message: "Payment method is required",
   }),
@@ -151,10 +155,15 @@ export default function EnhancedCardIssuanceForm({
 }: EnhancedCardIssuanceFormProps) {
   const { toast } = useToast();
   const { user } = useCurrentUser();
+  const { batches } = useCardBatches();
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState(0);
   const [selectedPartnerAccount, setSelectedPartnerAccount] =
     useState<EzwichPartnerAccount | null>(null);
+
+  // Filter available batches (those with cards remaining)
+  const availableBatches =
+    batches?.filter((batch) => batch.quantity_available > 0) || [];
 
   const methods = useForm<CardIssuanceFormData>({
     resolver: zodResolver(fullSchema),
@@ -172,7 +181,8 @@ export default function EnhancedCardIssuanceForm({
       postal_code: "",
       id_type: "",
       id_number: "",
-      payment_method: undefined,
+      batch_id: "",
+      payment_method: "", // changed from undefined to ""
       partner_bank: "",
       fee: "15.00", // Default fee as string
       card_type: "standard",
@@ -182,8 +192,29 @@ export default function EnhancedCardIssuanceForm({
     },
   });
 
-  const { handleSubmit, watch, setValue, trigger, formState } = methods;
+  const { handleSubmit, watch, setValue, trigger, formState, getValues } =
+    methods;
   const values = watch();
+
+  // Helper to collect all error messages
+  const getAllErrorMessages = (errors: any, prefix = ""): string[] => {
+    let messages: string[] = [];
+    for (const key in errors) {
+      if (errors[key]?.message) {
+        messages.push(`${prefix}${errors[key].message}`);
+      } else if (typeof errors[key] === "object") {
+        messages = messages.concat(getAllErrorMessages(errors[key], `${key}.`));
+      }
+    }
+    return messages;
+  };
+
+  // Scroll to top on error
+  useEffect(() => {
+    if (Object.keys(formState.errors).length > 0) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [formState.errors]);
 
   useEffect(() => {
     fetch("/api/settings/fee-config/e-zwich?transactionType=card_issuance")
@@ -215,6 +246,7 @@ export default function EnhancedCardIssuanceForm({
       valid = await trigger([
         "card_type",
         "card_number",
+        "batch_id",
         "payment_method",
         "partner_bank",
         "fee",
@@ -230,6 +262,7 @@ export default function EnhancedCardIssuanceForm({
     if (valid) {
       setStep((s) => Math.min(s + 1, steps.length - 1));
     }
+    // Do NOT submit here; only advance step
   };
   const prevStep = () => setStep((s) => Math.max(s - 1, 0));
 
@@ -298,6 +331,9 @@ export default function EnhancedCardIssuanceForm({
             type: "card_issuance",
           });
         }
+        // Reset form and go back to first step
+        methods.reset();
+        setStep(0);
       } else {
         toast({
           title: "Card Issuance Failed",
@@ -418,8 +454,25 @@ export default function EnhancedCardIssuanceForm({
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {/* Error summary alert at the top */}
+        {Object.keys(formState.errors).length > 0 && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTitle>There are errors in your submission:</AlertTitle>
+            <AlertDescription>
+              <ul className="list-disc pl-5">
+                {getAllErrorMessages(formState.errors).map((msg, idx) => (
+                  <li key={idx}>{msg}</li>
+                ))}
+              </ul>
+            </AlertDescription>
+          </Alert>
+        )}
         <FormProvider {...methods}>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+          <form
+            onSubmit={handleSubmit(onSubmit)}
+            className="space-y-6"
+            autoComplete="off"
+          >
             <div className="flex justify-between mb-4">
               {steps.map((label, idx) => (
                 <div
@@ -735,6 +788,107 @@ export default function EnhancedCardIssuanceForm({
                         <FormMessage />
                       </FormItem>
                     )}
+                  />
+                  <Controller
+                    name="batch_id"
+                    control={methods.control}
+                    render={({ field }) => {
+                      const selectedBatchData = availableBatches.find(
+                        (batch) => batch.id === field.value
+                      );
+
+                      return (
+                        <FormItem>
+                          <FormLabel>Card Batch *</FormLabel>
+                          <FormControl>
+                            <Select
+                              value={field.value}
+                              onValueChange={field.onChange}
+                              required
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Choose an available batch" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availableBatches.map((batch) => (
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    <div className="flex flex-col w-full">
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">
+                                          {batch.batch_code}
+                                        </span>
+                                        <Badge variant="secondary">
+                                          {batch.quantity_available} available
+                                        </Badge>
+                                      </div>
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {batch.partner_bank_name &&
+                                          `Bank: ${batch.partner_bank_name} • `}
+                                        Type: {batch.card_type} • Received:{" "}
+                                        {batch.quantity_received} • Issued:{" "}
+                                        {batch.quantity_issued}
+                                      </div>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </FormControl>
+                          {selectedBatchData && (
+                            <div className="p-3 bg-muted rounded-lg mt-2">
+                              <div className="text-sm font-medium mb-2">
+                                Selected Batch Details:
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-sm text-muted-foreground">
+                                <div>
+                                  <span className="font-medium">
+                                    Batch Code:
+                                  </span>{" "}
+                                  {selectedBatchData.batch_code}
+                                </div>
+                                <div>
+                                  <span className="font-medium">
+                                    Available:
+                                  </span>{" "}
+                                  {selectedBatchData.quantity_available} cards
+                                </div>
+                                <div>
+                                  <span className="font-medium">
+                                    Card Type:
+                                  </span>{" "}
+                                  {selectedBatchData.card_type}
+                                </div>
+                                <div>
+                                  <span className="font-medium">
+                                    Partner Bank:
+                                  </span>{" "}
+                                  {selectedBatchData.partner_bank_name || "N/A"}
+                                </div>
+                                <div>
+                                  <span className="font-medium">
+                                    Total Received:
+                                  </span>{" "}
+                                  {selectedBatchData.quantity_received}
+                                </div>
+                                <div>
+                                  <span className="font-medium">
+                                    Already Issued:
+                                  </span>{" "}
+                                  {selectedBatchData.quantity_issued}
+                                </div>
+                              </div>
+                              <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-sm">
+                                <span className="font-medium text-blue-800">
+                                  ⚠️ This batch will be deducted by 1 card when
+                                  you issue.
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                          <FormMessage />
+                        </FormItem>
+                      );
+                    }}
                   />
                   <Controller
                     name="payment_method"
@@ -1053,6 +1207,17 @@ export default function EnhancedCardIssuanceForm({
                       <div>
                         <span className="font-medium">Card Number:</span>{" "}
                         {values.card_number}
+                      </div>
+                      <div>
+                        <span className="font-medium">Card Batch:</span>{" "}
+                        {(() => {
+                          const selectedBatch = availableBatches.find(
+                            (batch) => batch.id === values.batch_id
+                          );
+                          return selectedBatch
+                            ? `${selectedBatch.batch_code} (${selectedBatch.quantity_available} available)`
+                            : "Not selected";
+                        })()}
                       </div>
                       <div>
                         <span className="font-medium">Payment Method:</span>{" "}

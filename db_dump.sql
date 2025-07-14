@@ -254,7 +254,7 @@ CREATE TABLE neon_auth.users_sync (
 --
 
 CREATE TABLE public.agency_banking_transactions (
-    id character varying(50) DEFAULT gen_random_uuid() NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
     type public.agency_transaction_type NOT NULL,
     amount numeric(15,2) NOT NULL,
     fee numeric(10,2) DEFAULT 0 NOT NULL,
@@ -929,7 +929,7 @@ CREATE TABLE public.gl_transactions (
 --
 
 CREATE TABLE public.jumia_transactions (
-    id integer NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
     transaction_id character varying(50) NOT NULL,
     branch_id uuid NOT NULL,
     user_id uuid NOT NULL,
@@ -1371,13 +1371,6 @@ ALTER TABLE ONLY public.fee_config ALTER COLUMN id SET DEFAULT nextval('public.f
 --
 
 ALTER TABLE ONLY public.gl_account_balances ALTER COLUMN id SET DEFAULT nextval('public.gl_account_balances_id_seq'::regclass);
-
-
---
--- Name: jumia_transactions id; Type: DEFAULT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.jumia_transactions ALTER COLUMN id SET DEFAULT nextval('public.jumia_transactions_id_seq'::regclass);
 
 
 --

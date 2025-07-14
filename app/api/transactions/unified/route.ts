@@ -192,6 +192,7 @@ export async function GET(request: NextRequest) {
     const sourceModule = searchParams.get("sourceModule");
     const branchName = searchParams.get("branchName") || "Branch";
 
+    // Handle receipt generation
     if (action === "receipt" && transactionId && sourceModule) {
       const receiptResult = await UnifiedTransactionService.generateReceipt(
         transactionId,
@@ -201,12 +202,73 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(receiptResult);
     }
 
-    return NextResponse.json(
-      { success: false, error: "Invalid action or missing parameters" },
-      { status: 400 }
-    );
+    // Handle statistics
+    if (action === "statistics") {
+      const branchId = searchParams.get("branchId");
+      const serviceType = searchParams.get("serviceType");
+
+      if (!branchId) {
+        return NextResponse.json(
+          { success: false, error: "Branch ID is required" },
+          { status: 400 }
+        );
+      }
+
+      const statisticsResult = await UnifiedTransactionService.getStatistics({
+        branchId,
+        serviceType,
+      });
+
+      if (statisticsResult.success) {
+        return NextResponse.json({
+          success: true,
+          statistics: statisticsResult.statistics,
+        });
+      } else {
+        return NextResponse.json(
+          { success: false, error: statisticsResult.error },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Handle transaction fetching
+    const branchId = searchParams.get("branchId");
+    const serviceType = searchParams.get("serviceType");
+    const provider = searchParams.get("provider");
+    const limit = parseInt(searchParams.get("limit") || "50");
+    const offset = parseInt(searchParams.get("offset") || "0");
+
+    if (!branchId) {
+      return NextResponse.json(
+        { success: false, error: "Branch ID is required" },
+        { status: 400 }
+      );
+    }
+
+    // Fetch transactions using unified service
+    const result = await UnifiedTransactionService.getTransactions({
+      branchId,
+      serviceType,
+      provider,
+      limit,
+      offset,
+    });
+
+    if (result.success) {
+      return NextResponse.json({
+        success: true,
+        transactions: result.transactions,
+        pagination: result.pagination,
+      });
+    } else {
+      return NextResponse.json(
+        { success: false, error: result.error },
+        { status: 400 }
+      );
+    }
   } catch (error) {
-    console.error("❌ Receipt generation failed:", error);
+    console.error("❌ Transaction fetching failed:", error);
     return NextResponse.json(
       {
         success: false,

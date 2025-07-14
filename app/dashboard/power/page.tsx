@@ -279,22 +279,48 @@ export default function PowerPageEnhancedFixed() {
 
   useEffect(() => {
     if (user?.branchId) {
-      fetch(`/api/power/transactions?branchId=${user.branchId}`)
+      console.log(
+        "🔍 [POWER] Fetching transactions for branch:",
+        user.branchId
+      );
+
+      // Fetch transactions from unified API
+      fetch(
+        `/api/transactions/unified?branchId=${user.branchId}&serviceType=power`
+      )
         .then((res) => res.json())
         .then((data) => {
+          console.log("🔍 [POWER] Transactions response:", data);
           if (data.success && Array.isArray(data.transactions)) {
+            console.log(
+              "🔍 [POWER] Setting transactions:",
+              data.transactions.length
+            );
             setTransactions(data.transactions);
           } else {
+            console.log("🔍 [POWER] No transactions found or error:", data);
             setTransactions([]);
           }
+        })
+        .catch((error) => {
+          console.error("Error fetching power transactions:", error);
+          setTransactions([]);
         });
 
-      // Fetch statistics
-      fetch(`/api/power/statistics?branchId=${user.branchId}`)
+      console.log("🔍 [POWER] Fetching statistics for branch:", user.branchId);
+
+      // Fetch statistics from unified API
+      fetch(
+        `/api/transactions/unified?branchId=${user.branchId}&serviceType=power&action=statistics`
+      )
         .then((res) => res.json())
         .then((data) => {
+          console.log("🔍 [POWER] Statistics response:", data);
           if (data.success) {
-            setStatistics(data.data);
+            console.log("🔍 [POWER] Setting statistics:", data.statistics);
+            setStatistics(data.statistics);
+          } else {
+            console.log("🔍 [POWER] Statistics error:", data);
           }
         })
         .catch((error) => {
@@ -315,10 +341,19 @@ export default function PowerPageEnhancedFixed() {
     if (!currentTransaction) return;
     setIsDeleting(true);
     try {
-      const response = await fetch(
-        `/api/power/transactions/${currentTransaction.id}`,
-        { method: "DELETE" }
-      );
+      const response = await fetch(`/api/transactions/unified`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete",
+          transactionId: currentTransaction.id,
+          sourceModule: "power",
+          reason: "User requested deletion",
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy: user?.name || user?.username,
+        }),
+      });
       const result = await response.json();
       if (result.success) {
         toast({
@@ -327,9 +362,11 @@ export default function PowerPageEnhancedFixed() {
         });
         setShowDeleteDialog(false);
         setCurrentTransaction(null);
-        // Refresh transactions
+        // Refresh transactions from unified API
         if (user?.branchId) {
-          fetch(`/api/power/transactions?branchId=${user.branchId}`)
+          fetch(
+            `/api/transactions/unified?branchId=${user.branchId}&serviceType=power`
+          )
             .then((res) => res.json())
             .then((data) => {
               if (data.success && Array.isArray(data.transactions)) {
@@ -849,12 +886,16 @@ export default function PowerPageEnhancedFixed() {
                           }
                         >
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {tx.created_at
-                              ? new Date(tx.created_at).toLocaleString()
+                            {tx.date || tx.created_at
+                              ? new Date(
+                                  tx.date || tx.created_at
+                                ).toLocaleString()
                               : "-"}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {tx.meter_number}
+                            {tx.meter_number ||
+                              tx.metadata?.meter_number ||
+                              "-"}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             {tx.provider}
@@ -863,7 +904,7 @@ export default function PowerPageEnhancedFixed() {
                             GHS {Number(tx.amount).toFixed(2)}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {tx.customer_name || "-"}
+                            {tx.customerName || tx.customer_name || "-"}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             {getStatusBadge(tx.status)}
@@ -874,10 +915,10 @@ export default function PowerPageEnhancedFixed() {
                               userRole={user?.role || "Operation"}
                               sourceModule="power"
                               onSuccess={() => {
-                                // Refresh transactions
+                                // Refresh transactions from unified API
                                 if (user?.branchId) {
                                   fetch(
-                                    `/api/power/transactions?branchId=${user.branchId}`
+                                    `/api/transactions/unified?branchId=${user.branchId}&serviceType=power`
                                   )
                                     .then((res) => res.json())
                                     .then((data) => {
