@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
     } else {
       // Non-admin users only see their branch's batches
       batches = await sql`
-        SELECT 
+      SELECT 
           cb.*,
           b.name as branch_name
         FROM ezwich_card_batches cb
@@ -249,25 +249,38 @@ export async function POST(request: NextRequest) {
     // Create expense record for the purchase
     if (totalCost > 0) {
       try {
-        // First, ensure the expense head exists
-        const expenseHeadResult = await sql`
-          INSERT INTO expense_heads (name, category, description, gl_account_code, is_active)
-          VALUES ('Inventory Purchase', 'operational', 'E-Zwich card inventory purchases', '6000', true)
-          ON CONFLICT (name, branch_id) DO NOTHING
-          RETURNING id
+        // First, check if the expense head already exists
+        const existingHead = await sql`
+          SELECT id FROM expense_heads 
+          WHERE name = 'Inventory Purchase' AND branch_id = ${targetBranchId}
+          LIMIT 1
         `;
 
         let expenseHeadId;
-        if (expenseHeadResult.length > 0) {
-          expenseHeadId = expenseHeadResult[0].id;
+        if (existingHead.length > 0) {
+          expenseHeadId = existingHead[0].id;
         } else {
-          // Get existing expense head
-          const existingHead = await sql`
-            SELECT id FROM expense_heads 
-            WHERE name = 'Inventory Purchase' AND branch_id = ${targetBranchId}
-            LIMIT 1
-          `;
-          expenseHeadId = existingHead[0]?.id;
+          // Create the expense head if it doesn't exist
+          try {
+            const expenseHeadResult = await sql`
+              INSERT INTO expense_heads (name, category, description, gl_account_code, is_active, branch_id)
+              VALUES ('Inventory Purchase', 'operational', 'E-Zwich card inventory purchases', '6000', true, ${targetBranchId})
+              RETURNING id
+            `;
+            expenseHeadId = expenseHeadResult[0].id;
+          } catch (headError: any) {
+            // If branch_id column doesn't exist, try without it
+            if (headError.message?.includes("branch_id")) {
+              const expenseHeadResult = await sql`
+                INSERT INTO expense_heads (name, category, description, gl_account_code, is_active)
+                VALUES ('Inventory Purchase', 'operational', 'E-Zwich card inventory purchases', '6000', true)
+                RETURNING id
+              `;
+              expenseHeadId = expenseHeadResult[0].id;
+            } else {
+              throw headError;
+            }
+          }
         }
 
         if (expenseHeadId) {

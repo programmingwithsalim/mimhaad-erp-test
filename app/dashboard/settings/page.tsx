@@ -14,12 +14,14 @@ import { SystemConfigSettings } from "@/components/settings/system-config-settin
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { SettingsIcon, Shield, Users } from "lucide-react";
 import { RolePermissionSettings } from "@/components/settings/role-permission-settings";
+import { normalizeRole } from "@/lib/rbac/unified-rbac";
 
 const SettingsPage = () => {
   const { user } = useCurrentUser();
   const [activeTab, setActiveTab] = useState("users");
 
-  const isAdmin = user?.role === "Admin";
+  const normalizedRole = user?.role ? normalizeRole(user.role) : null;
+  const isAdmin = normalizedRole === "Admin";
 
   if (!isAdmin) {
     return (

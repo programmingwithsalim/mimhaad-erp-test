@@ -1,257 +1,108 @@
-import { SignJWT, jwtVerify } from "jose"
-import { cookies } from "next/headers"
-import type { NextRequest } from "next/server"
-import bcrypt from "bcryptjs"
-import { sql } from "@/lib/db"
+import { neon } from "@neondatabase/serverless";
+import { hashPassword, verifyPassword } from "./password-utils";
+import { getDatabaseSession } from "./database-session-service";
+import type { NextRequest } from "next/server";
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || "your-secret-key")
-const SESSION_DURATION = 24 * 60 * 60 * 1000 // 24 hours
+const sql = neon(process.env.DATABASE_URL!);
 
-export interface SessionUser {
-  id: string
-  email: string
-  firstName: string
-  lastName: string
-  role: string
-  branchId?: string
-  branchName?: string
+export interface AuthenticatedUser {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  branchId?: string;
+  branchName?: string;
 }
 
-export interface SessionData {
-  user: SessionUser
-  expires: string
-}
-
-// Get user by email
-export async function getUserByEmail(email: string) {
+/**
+ * Authenticate user with email and password
+ */
+export async function authenticate(
+  email: string,
+  password: string
+): Promise<AuthenticatedUser | null> {
   try {
+    console.log("🔐 [AUTH] Attempting authentication for:", email);
+
+    // Get user from database
     const users = await sql`
       SELECT 
         u.id,
-        u.first_name as "firstName", 
-        u.last_name as "lastName", 
-        u.email, 
-        u.role, 
-        u.primary_branch_id as "primaryBranchId", 
-        u.phone, 
-        u.status, 
-        u.password_hash as "passwordHash",
-        u.last_login as "lastLogin", 
-        u.created_at as "createdAt", 
-        u.updated_at as "updatedAt", 
-        u.avatar,
-        b.name as "primaryBranchName"
+        u.email,
+        u.first_name,
+        u.last_name,
+        u.password_hash,
+        u.role,
+        u.status,
+        u.primary_branch_id,
+        b.name as branch_name
       FROM users u
       LEFT JOIN branches b ON u.primary_branch_id = b.id
-      WHERE u.email = ${email} AND u.status = 'active'
+      WHERE u.email = ${email.toLowerCase()}
+        AND u.status = 'active'
       LIMIT 1
-    `
+    `;
 
-    return users[0] || null
-  } catch (error) {
-    console.error("Error getting user by email:", error)
-    return null
-  }
-}
-
-// Get user by ID
-export async function getUserById(id: string) {
-  try {
-    const users = await sql`
-      SELECT 
-        u.id,
-        u.first_name as "firstName", 
-        u.last_name as "lastName", 
-        u.email, 
-        u.role, 
-        u.primary_branch_id as "primaryBranchId", 
-        u.phone, 
-        u.status, 
-        u.password_hash as "passwordHash",
-        u.last_login as "lastLogin", 
-        u.created_at as "createdAt", 
-        u.updated_at as "updatedAt", 
-        u.avatar,
-        b.name as "primaryBranchName"
-      FROM users u
-      LEFT JOIN branches b ON u.primary_branch_id = b.id
-      WHERE u.id = ${id} AND u.status = 'active'
-      LIMIT 1
-    `
-
-    return users[0] || null
-  } catch (error) {
-    console.error("Error getting user by ID:", error)
-    return null
-  }
-}
-
-// Create JWT token
-export async function createToken(user: SessionUser): Promise<string> {
-  return await new SignJWT({ user })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime("24h")
-    .sign(JWT_SECRET)
-}
-
-// Verify JWT token
-export async function verifyToken(token: string): Promise<SessionData | null> {
-  try {
-    const { payload } = await jwtVerify(token, JWT_SECRET)
-    return payload as SessionData
-  } catch (error) {
-    console.error("Token verification failed:", error)
-    return null
-  }
-}
-
-// Hash password
-export async function hashPassword(password: string): Promise<string> {
-  try {
-    const saltRounds = 12
-    return await bcrypt.hash(password, saltRounds)
-  } catch (error) {
-    console.error("Error hashing password:", error)
-    throw new Error("Failed to hash password")
-  }
-}
-
-// Verify password
-export async function verifyPassword(password: string, hashedPassword: string): Promise<boolean> {
-  try {
-    return await bcrypt.compare(password, hashedPassword)
-  } catch (error) {
-    console.error("Error verifying password:", error)
-    return false
-  }
-}
-
-// Create session (JWT fallback)
-export async function createSession(user: SessionUser) {
-  const token = await createToken(user)
-  const expires = new Date(Date.now() + SESSION_DURATION)
-
-  console.log("Creating JWT session for user:", user.email)
-
-  cookies().set("session", token, {
-    expires,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-  })
-
-  return { token, expires }
-}
-
-// Get session from request (JWT fallback)
-export async function getSession(request?: NextRequest): Promise<SessionData | null> {
-  let token: string | undefined
-
-  try {
-    if (request) {
-      token = request.cookies.get("session")?.value
-    } else {
-      token = cookies().get("session")?.value
+    if (users.length === 0) {
+      console.log("❌ [AUTH] User not found:", email);
+      return null;
     }
 
-    if (!token) {
-      console.log("No session token found")
-      return null
-    }
+    const user = users[0];
 
-    const session = await verifyToken(token)
-    console.log("Session verification:", session ? "Valid" : "Invalid")
-    return session
-  } catch (error) {
-    console.error("Error getting session:", error)
-    return null
-  }
-}
-
-// Delete session
-export async function deleteSession() {
-  console.log("Deleting session")
-
-  cookies().set("session", "", {
-    expires: new Date(0),
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-  })
-}
-
-// Authenticate user
-export async function authenticate(email: string, password: string): Promise<SessionUser | null> {
-  try {
-    console.log("Authenticating user:", email)
-    const user = await getUserByEmail(email)
-    if (!user) {
-      console.log("User not found")
-      return null
-    }
-
-    const isValidPassword = await verifyPassword(password, user.passwordHash)
+    // Verify password
+    const isValidPassword = await verifyPassword(password, user.password_hash);
     if (!isValidPassword) {
-      console.log("Invalid password")
-      return null
+      console.log("❌ [AUTH] Invalid password for user:", email);
+      return null;
     }
 
-    // Try to update last login (non-blocking)
-    try {
-      await sql`
-        UPDATE users 
-        SET last_login = NOW() 
-        WHERE id = ${user.id}
-      `
-    } catch (error) {
-      console.error("Error updating last login:", error)
-    }
+    console.log("✅ [AUTH] Authentication successful for:", email);
 
-    console.log("Authentication successful")
     return {
       id: user.id,
       email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
+      firstName: user.first_name,
+      lastName: user.last_name,
       role: user.role,
-      branchId: user.primaryBranchId,
-      branchName: user.primaryBranchName,
-    }
+      branchId: user.primary_branch_id,
+      branchName: user.branch_name,
+    };
   } catch (error) {
-    console.error("Authentication error:", error)
-    return null
+    console.error("❌ [AUTH] Authentication error:", error);
+    return null;
   }
 }
 
-// Refresh session
-export async function refreshSession(): Promise<SessionData | null> {
-  const session = await getSession()
-  if (!session) return null
+/**
+ * Get session from request (alias for getDatabaseSession)
+ */
+export async function getSession(
+  request?: NextRequest
+): Promise<{ user: AuthenticatedUser } | null> {
+  try {
+    const session = await getDatabaseSession(request);
+    if (!session || !session.user) {
+      return null;
+    }
 
-  // Check if user still exists and is active
-  const user = await getUserById(session.user.id)
-  if (!user || user.status !== "active") {
-    await deleteSession()
-    return null
+    return {
+      user: {
+        id: session.user.id,
+        email: session.user.email,
+        firstName: session.user.firstName,
+        lastName: session.user.lastName,
+        role: session.user.role,
+        branchId: session.user.branchId,
+        branchName: session.user.branchName,
+      },
+    };
+  } catch (error) {
+    console.error("Error getting session:", error);
+    return null;
   }
-
-  // Create new session with updated user data
-  const updatedUser: SessionUser = {
-    id: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    role: user.role,
-    branchId: user.primaryBranchId,
-    branchName: user.primaryBranchName,
-  }
-
-  await createSession(updatedUser)
-  return { user: updatedUser, expires: new Date(Date.now() + SESSION_DURATION).toISOString() }
 }
 
-// Export types
-export type { SessionUser, SessionData }
+// Re-export password functions
+export { hashPassword, verifyPassword };

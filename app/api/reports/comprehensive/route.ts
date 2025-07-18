@@ -97,8 +97,8 @@ export async function GET(request: NextRequest) {
 
     // 7. Summary
     const summary = {
-      totalRevenue,
-      totalExpenses,
+        totalRevenue,
+        totalExpenses,
       netIncome: totalRevenue - totalExpenses,
       cashPosition,
       profitMargin:

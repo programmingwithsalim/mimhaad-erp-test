@@ -69,6 +69,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { TransactionActions } from "@/components/transactions/transaction-actions";
+import {
+  TransactionReceipt,
+  TransactionReceiptData,
+} from "@/components/shared/transaction-receipt";
 
 export default function JumiaPage() {
   const { toast } = useToast();
@@ -82,17 +86,18 @@ export default function JumiaPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [transactions, setTransactions] = useState([]);
+  const [packages, setPackages] = useState([]);
   const [floatAccounts, setFloatAccounts] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
+  const [loadingPackages, setLoadingPackages] = useState(false);
   const [loadingFloats, setLoadingFloats] = useState(false);
-  const [activeTab, setActiveTab] = useState("package_receipt");
+  const [activeTab, setActiveTab] = useState("packages");
 
   const [packageForm, setPackageForm] = useState({
     tracking_id: "",
     customer_name: "",
     customer_phone: "",
     notes: "",
-    float_account_id: "",
   });
 
   const [podForm, setPodForm] = useState({
@@ -104,13 +109,24 @@ export default function JumiaPage() {
     payment_method: "cash",
     float_account_id: "",
     notes: "",
+    is_pod: true, // New field to indicate if it's a POD package
   });
 
   const [settlementForm, setSettlementForm] = useState({
     amount: "",
     reference: "",
     float_account_id: "none",
+    tracking_id: "",
     notes: "",
+  });
+
+  const [settlementCalculator, setSettlementCalculator] = useState({
+    settlementAmount: 0,
+    collectionCount: 0,
+    unsettledPackageCount: 0,
+    lastSettlementDate: null,
+    fromDate: "",
+    toDate: "",
   });
 
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -122,6 +138,10 @@ export default function JumiaPage() {
   const [selectedSettlementFloat, setSelectedSettlementFloat] =
     useState<any>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState("");
+  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
+    null
+  );
+  const [showReceipt, setShowReceipt] = useState(false);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -157,6 +177,33 @@ export default function JumiaPage() {
     }
   };
 
+  const loadPackages = async () => {
+    if (!user?.branchId) return;
+
+    try {
+      setLoadingPackages(true);
+      const response = await fetch(
+        `/api/jumia/packages?branchId=${user.branchId}&limit=50`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && Array.isArray(data.data)) {
+          setPackages(data.data);
+        } else {
+          setPackages([]);
+        }
+      } else {
+        setPackages([]);
+      }
+    } catch (error) {
+      console.error("Error loading Jumia packages:", error);
+      setPackages([]);
+    } finally {
+      setLoadingPackages(false);
+    }
+  };
+
   const loadFloatAccounts = async () => {
     if (!user?.branchId) return;
 
@@ -189,35 +236,61 @@ export default function JumiaPage() {
   useEffect(() => {
     if (user?.branchId) {
       loadTransactions();
+      loadPackages();
       loadFloatAccounts();
+      calculateSettlementAmount(); // Auto-calculate settlement amount on load
     }
   }, [user?.branchId]);
 
+  // Auto-calculate settlement amount when settlement tab is opened
+  useEffect(() => {
+    if (user?.branchId && activeTab === "settlement") {
+      calculateSettlementAmount();
+    }
+  }, [user?.branchId, activeTab]);
+
   const handlePackageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.branchId || !user?.id) {
+    if (submitting) return;
+
+    // Validate required fields
+    if (!packageForm.tracking_id.trim() || !packageForm.customer_name.trim()) {
       toast({
-        title: "Error",
-        description: "Branch ID is required",
+        title: "Missing Required Fields",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
     }
 
-    try {
-      setSubmitting(true);
+    // Validate customer phone (if provided, must be exactly 10 digits)
+    if (packageForm.customer_phone) {
+      if (
+        packageForm.customer_phone.length !== 10 ||
+        !/^\d{10}$/.test(packageForm.customer_phone)
+      ) {
+        toast({
+          title: "Invalid Phone Number",
+          description:
+            "Phone number must be exactly 10 digits (e.g., 0241234567)",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
 
-      const response = await fetch("/api/jumia/transactions", {
+    setSubmitting(true);
+    try {
+      const response = await fetch("/api/jumia/packages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          transaction_type: "package_receipt",
-          ...packageForm,
-          amount: 0,
-          branch_id: user.branchId,
-          user_id: user.id,
+          tracking_id: packageForm.tracking_id.trim(),
+          customer_name: packageForm.customer_name.trim(),
+          customer_phone: packageForm.customer_phone.trim() || null,
+          notes: packageForm.notes.trim() || null,
         }),
       });
 
@@ -225,24 +298,25 @@ export default function JumiaPage() {
 
       if (result.success) {
         toast({
-          title: "Package Receipt Recorded",
-          description: `Package ${packageForm.tracking_id} has been successfully recorded.`,
+          title: "Package Recorded",
+          description: "Package has been successfully recorded",
         });
+
+        // Reset form
         setPackageForm({
           tracking_id: "",
           customer_name: "",
           customer_phone: "",
           notes: "",
-          float_account_id: "",
         });
         // Refresh data
-        loadTransactions();
+        loadPackages();
         refreshStatistics();
-        printReceipt(result.data);
+        calculateSettlementAmount(); // Recalculate settlement amount after package creation
       } else {
         toast({
           title: "Error",
-          description: result.error || "Failed to record package receipt",
+          description: result.error || "Failed to record package",
           variant: "destructive",
         });
       }
@@ -250,7 +324,7 @@ export default function JumiaPage() {
       console.error("Error recording package:", error);
       toast({
         title: "Error",
-        description: "Failed to record package receipt",
+        description: "Failed to record package. Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -269,13 +343,43 @@ export default function JumiaPage() {
       return;
     }
 
-    if (!podForm.tracking_id || !podForm.amount || !podForm.customer_name) {
+    // Validate required fields
+    if (!podForm.tracking_id || !podForm.customer_name) {
       toast({
-        title: "Missing Information",
+        title: "Missing Required Fields",
         description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
+    }
+
+    // Validate amount only if it's a POD package
+    if (podForm.is_pod) {
+      if (!podForm.amount || Number(podForm.amount) <= 0) {
+        toast({
+          title: "Invalid Amount",
+          description:
+            "Please enter a valid amount greater than 0 for POD packages",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
+    // Validate customer phone (if provided, must be exactly 10 digits)
+    if (podForm.customer_phone) {
+      if (
+        podForm.customer_phone.length !== 10 ||
+        !/^\d{10}$/.test(podForm.customer_phone)
+      ) {
+        toast({
+          title: "Invalid Phone Number",
+          description:
+            "Phone number must be exactly 10 digits (e.g., 0241234567)",
+          variant: "destructive",
+        });
+        return;
+      }
     }
 
     if (!podForm.float_account_id) {
@@ -297,16 +401,17 @@ export default function JumiaPage() {
         },
         body: JSON.stringify({
           transaction_type: "pod_collection",
-          tracking_id: podForm.tracking_id,
-          amount: Number(podForm.amount),
-          customer_name: podForm.customer_name,
-          customer_phone: podForm.customer_phone,
+          tracking_id: podForm.tracking_id.trim(),
+          amount: podForm.is_pod ? Number(podForm.amount) : 0,
+          customer_name: podForm.customer_name.trim(),
+          customer_phone: podForm.customer_phone.trim() || null,
           delivery_status: podForm.delivery_status,
           payment_method: podForm.payment_method,
-          float_account_id: podForm.float_account_id,
-          notes: podForm.notes,
+          float_account_id: podForm.float_account_id || null,
+          notes: podForm.notes.trim() || null,
           branch_id: user.branchId,
           user_id: user.id,
+          is_pod: podForm.is_pod, // Send POD flag
         }),
       });
 
@@ -314,10 +419,12 @@ export default function JumiaPage() {
 
       if (result.success) {
         toast({
-          title: "Payment Collection Recorded",
-          description: `Payment of ${formatCurrency(
-            Number(podForm.amount)
-          )} collected for tracking ID ${podForm.tracking_id}.`,
+          title: "Collection Recorded",
+          description: podForm.is_pod
+            ? `POD collection of ${formatCurrency(
+                Number(podForm.amount)
+              )} recorded for ${podForm.customer_name}`
+            : `Free delivery recorded for ${podForm.customer_name}`,
         });
 
         // Reset form
@@ -330,12 +437,14 @@ export default function JumiaPage() {
           payment_method: "cash",
           float_account_id: "",
           notes: "",
+          is_pod: true,
         });
 
         // Refresh data
         loadTransactions();
-        loadFloatAccounts();
+        loadPackages();
         refreshStatistics();
+        calculateSettlementAmount(); // Recalculate settlement amount after collection
       } else {
         throw new Error(result.error || "Failed to record payment collection");
       }
@@ -369,6 +478,29 @@ export default function JumiaPage() {
       });
       return;
     }
+
+    // Validate amount (must be positive and not exceed available amount)
+    const amount = Number(settlementForm.amount);
+    if (amount <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Amount must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Check if amount exceeds available settlement amount
+    if (amount > settlementCalculator.settlementAmount) {
+      toast({
+        title: "Amount Too High",
+        description: `Amount cannot exceed available settlement amount of ${formatCurrency(
+          settlementCalculator.settlementAmount
+        )}`,
+        variant: "destructive",
+      });
+      return;
+    }
     if (
       !settlementForm.float_account_id ||
       settlementForm.float_account_id === "none"
@@ -393,18 +525,25 @@ export default function JumiaPage() {
     }
     setSubmitting(true);
     try {
+      const settlementData = {
+        transaction_type: "settlement",
+        amount: Number.parseFloat(settlementForm.amount),
+        settlement_reference: settlementForm.reference, // Fix: map reference to settlement_reference
+        float_account_id: settlementForm.float_account_id,
+        tracking_id: settlementForm.tracking_id || null,
+        notes: settlementForm.notes || null,
+        branch_id: user.branchId,
+        user_id: user.id,
+        paymentAccountCode: selectedFloat.gl_account_code,
+        paymentAccountName: selectedFloat.provider,
+      };
+
+      console.log("Submitting settlement data:", settlementData);
+
       const response = await fetch("/api/jumia/transactions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transaction_type: "settlement",
-          ...settlementForm,
-          amount: Number.parseFloat(settlementForm.amount),
-          branch_id: user.branchId,
-          user_id: user.id,
-          paymentAccountCode: selectedFloat.gl_account_code,
-          paymentAccountName: selectedFloat.provider,
-        }),
+        body: JSON.stringify(settlementData),
       });
       const result = await response.json();
       if (result.success) {
@@ -418,11 +557,13 @@ export default function JumiaPage() {
           amount: "",
           reference: "",
           float_account_id: "none",
+          tracking_id: "",
           notes: "",
         });
         loadTransactions();
-        loadFloatAccounts();
+        loadPackages();
         refreshStatistics();
+        calculateSettlementAmount(); // Recalculate settlement amount after settlement
       } else {
         toast({
           title: "Error",
@@ -439,6 +580,134 @@ export default function JumiaPage() {
       });
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const calculateSettlementAmount = async () => {
+    if (!user?.branchId) return;
+
+    try {
+      console.log("Calculating settlement amount for branch:", user.branchId);
+      const response = await fetch(
+        `/api/jumia/settlement-calculator?branchId=${user.branchId}`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Settlement calculator response:", data);
+        if (data.success) {
+          console.log("Setting settlement calculator data:", data.data);
+          setSettlementCalculator(data.data);
+
+          // Show success message with the calculated amount
+          toast({
+            title: "Settlement Calculator Updated",
+            description: `Available for settlement: ${formatCurrency(
+              data.data.settlementAmount
+            )}`,
+          });
+
+          // Remove auto-population - let users enter any amount they want
+          // setSettlementForm((prev) => ({
+          //   ...prev,
+          //   amount: data.data.settlementAmount.toString(),
+          // }));
+        }
+      } else {
+        console.error(
+          "Settlement calculator API error:",
+          response.status,
+          response.statusText
+        );
+      }
+    } catch (error) {
+      console.error("Error calculating settlement amount:", error);
+    }
+  };
+
+  const searchPackageByTracking = async (trackingId: string) => {
+    if (!trackingId.trim() || !user?.branchId) return;
+
+    try {
+      const response = await fetch(
+        `/api/jumia/packages/search?trackingId=${trackingId}&branchId=${user.branchId}`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          const packageInfo = data.data;
+          setSettlementForm((prev) => ({
+            ...prev,
+            tracking_id: packageInfo.tracking_id,
+            notes: `Package: ${packageInfo.customer_name} - ${
+              packageInfo.customer_phone || "No phone"
+            }`,
+          }));
+
+          toast({
+            title: "Package Found",
+            description: `Package info loaded for ${packageInfo.customer_name}`,
+          });
+        } else {
+          toast({
+            title: "Package Not Found",
+            description: "No package found with this tracking ID",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error searching package:", error);
+      toast({
+        title: "Error",
+        description: "Failed to search package",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const searchPackageForCollection = async (trackingId: string) => {
+    if (!trackingId.trim() || !user?.branchId) return;
+
+    try {
+      const response = await fetch(
+        `/api/jumia/packages/search?trackingId=${trackingId}&branchId=${user.branchId}`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          const packageInfo = data.data;
+
+          // Auto-populate collection form
+          setPodForm((prev) => ({
+            ...prev,
+            tracking_id: packageInfo.tracking_id,
+            customer_name: packageInfo.customer_name,
+            customer_phone: packageInfo.customer_phone || "",
+          }));
+
+          toast({
+            title: "Package Found",
+            description: `Package info loaded for ${packageInfo.customer_name}`,
+          });
+        } else {
+          toast({
+            title: "Package Not Found",
+            description:
+              "No package found with this tracking ID. Please record the package first.",
+            variant: "destructive",
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error searching package:", error);
+      toast({
+        title: "Error",
+        description: "Failed to search package",
+        variant: "destructive",
+      });
     }
   };
 
@@ -655,31 +924,28 @@ export default function JumiaPage() {
   };
 
   const printReceipt = (tx: any) => {
-    const printWindow = window.open("", "_blank", "width=350,height=600");
-    if (!printWindow) return;
-    const receiptContent = `<!DOCTYPE html><html><head><title>Jumia Transaction Receipt</title><style>body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; } .header { text-align: center; margin-bottom: 20px; } .logo { width: 60px; height: 60px; margin: 0 auto 10px; } .line { border-bottom: 1px dashed #000; margin: 10px 0; } .row { display: flex; justify-content: space-between; margin: 5px 0; } .footer { text-align: center; margin-top: 20px; font-size: 10px; }</style></head><body><div class='header'><h3>MIMHAAD FINANCIAL SERVICES</h3><p>${
-      user?.branchName || ""
-    }</p><p>Tel: 0241378880</p><p>${
-      tx.created_at ? new Date(tx.created_at).toLocaleString() : ""
-    }</p></div><div class='line'></div><h4 style='text-align: center;'>JUMIA TRANSACTION RECEIPT</h4><div class='line'></div><div class='row'><span>Transaction ID:</span><span>${
-      tx.transaction_id
-    }</span></div><div class='row'><span>Type:</span><span>${
-      tx.transaction_type
-    }</span></div><div class='row'><span>Tracking ID:</span><span>${
-      tx.tracking_id
-    }</span></div><div class='row'><span>Customer:</span><span>${
-      tx.customer_name
-    }</span></div><div class='row'><span>Phone:</span><span>${
-      tx.customer_phone
-    }</span></div><div class='row'><span>Amount:</span><span>GHS ${Number(
-      tx.amount
-    ).toFixed(2)}</span></div><div class='row'><span>Status:</span><span>${
-      tx.status || tx.delivery_status || "-"
-    }</span></div><div class='line'></div><div class='footer'><p>Thank you for using our service!</p><p>For inquiries, please call 0241378880</p><p>Powered by MIMHAAD Financial Services</p></div></body></html>`;
-    printWindow.document.write(receiptContent);
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
+    // Format transaction data for the shared receipt component
+    const formattedReceiptData: TransactionReceiptData = {
+      transactionId: tx.id || tx.transaction_id,
+      sourceModule: "jumia",
+      transactionType: tx.transaction_type || "package_receipt",
+      amount: tx.amount || 0,
+      fee: tx.fee || 0,
+      customerName: tx.customer_name,
+      customerPhone: tx.customer_phone,
+      reference: tx.reference || tx.id || tx.transaction_id,
+      branchName: user?.branchName || "Main Branch",
+      date: tx.created_at || tx.date || new Date().toISOString(),
+      additionalData: {
+        "Tracking ID": tx.tracking_id,
+        "Delivery Status": tx.delivery_status,
+        "Payment Method": tx.payment_method,
+        Status: tx.status,
+      },
+    };
+
+    setReceiptData(formattedReceiptData);
+    setShowReceipt(true);
   };
 
   const getStatusText = (status: string) => {
@@ -721,8 +987,10 @@ export default function JumiaPage() {
           variant="outline"
           onClick={() => {
             loadTransactions();
+            loadPackages();
             loadFloatAccounts();
             refreshStatistics();
+            calculateSettlementAmount(); // Recalculate settlement amount on refresh
           }}
         >
           <RefreshCw className="h-4 w-4 mr-2" />
@@ -884,28 +1152,25 @@ export default function JumiaPage() {
                     className="w-full"
                   >
                     <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="package_receipt">
-                        Packages
-                      </TabsTrigger>
+                      <TabsTrigger value="packages">Packages</TabsTrigger>
                       <TabsTrigger value="pod_collection">
                         Collections
                       </TabsTrigger>
                       <TabsTrigger value="settlement">Settlements</TabsTrigger>
                     </TabsList>
 
-                    <TabsContent
-                      value="package_receipt"
-                      className="space-y-4 mt-4"
-                    >
+                    <TabsContent value="packages" className="space-y-4 mt-4">
                       <form
                         onSubmit={handlePackageSubmit}
                         className="space-y-4"
                       >
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
-                            <Label htmlFor="tracking_id">Tracking ID</Label>
+                            <Label htmlFor="package_tracking_id">
+                              Tracking ID
+                            </Label>
                             <Input
-                              id="tracking_id"
+                              id="package_tracking_id"
                               value={packageForm.tracking_id}
                               onChange={(e) =>
                                 setPackageForm({
@@ -919,9 +1184,11 @@ export default function JumiaPage() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="customer_name">Customer Name</Label>
+                            <Label htmlFor="package_customer_name">
+                              Customer Name
+                            </Label>
                             <Input
-                              id="customer_name"
+                              id="package_customer_name"
                               value={packageForm.customer_name}
                               onChange={(e) =>
                                 setPackageForm({
@@ -935,28 +1202,35 @@ export default function JumiaPage() {
                           </div>
 
                           <div className="space-y-2">
-                            <Label htmlFor="customer_phone">
+                            <Label htmlFor="package_customer_phone">
                               Customer Phone
                             </Label>
                             <Input
-                              id="customer_phone"
+                              id="package_customer_phone"
+                              maxLength={10}
                               value={packageForm.customer_phone}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                // Only allow digits
+                                const value = e.target.value.replace(/\D/g, "");
+                                // Limit to 10 digits
+                                const limitedValue = value.slice(0, 10);
                                 setPackageForm({
                                   ...packageForm,
-                                  customer_phone: e.target.value,
-                                })
-                              }
-                              placeholder="Enter phone number"
+                                  customer_phone: limitedValue,
+                                });
+                              }}
+                              placeholder="0241234567"
                               required
                             />
                           </div>
                         </div>
 
                         <div className="space-y-2">
-                          <Label htmlFor="notes">Notes (Optional)</Label>
+                          <Label htmlFor="package_notes">
+                            Notes (Optional)
+                          </Label>
                           <Textarea
-                            id="notes"
+                            id="package_notes"
                             value={packageForm.notes}
                             onChange={(e) =>
                               setPackageForm({
@@ -997,18 +1271,37 @@ export default function JumiaPage() {
                         <div className="grid gap-4 md:grid-cols-2">
                           <div className="space-y-2">
                             <Label htmlFor="pod_tracking_id">Tracking ID</Label>
-                            <Input
-                              id="pod_tracking_id"
-                              value={podForm.tracking_id}
-                              onChange={(e) =>
-                                setPodForm({
-                                  ...podForm,
-                                  tracking_id: e.target.value,
-                                })
-                              }
-                              placeholder="Enter tracking ID"
-                              required
-                            />
+                            <div className="flex gap-2">
+                              <Input
+                                id="pod_tracking_id"
+                                value={podForm.tracking_id}
+                                onChange={(e) =>
+                                  setPodForm({
+                                    ...podForm,
+                                    tracking_id: e.target.value,
+                                  })
+                                }
+                                onBlur={(e) => {
+                                  if (e.target.value.trim()) {
+                                    searchPackageForCollection(e.target.value);
+                                  }
+                                }}
+                                placeholder="Enter tracking ID"
+                                required
+                              />
+                              <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                  searchPackageForCollection(
+                                    podForm.tracking_id
+                                  )
+                                }
+                                disabled={!podForm.tracking_id.trim()}
+                              >
+                                Search
+                              </Button>
+                            </div>
                           </div>
 
                           <div className="space-y-2">
@@ -1028,8 +1321,41 @@ export default function JumiaPage() {
                                 })
                               }
                               placeholder="0.00"
-                              required
+                              disabled={!podForm.is_pod}
+                              required={podForm.is_pod}
                             />
+                            <div className="text-xs text-muted-foreground">
+                              {podForm.is_pod
+                                ? "Required for POD packages"
+                                : "Not required for free packages"}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="is_pod">Package Type</Label>
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                id="is_pod"
+                                checked={podForm.is_pod}
+                                onChange={(e) =>
+                                  setPodForm({
+                                    ...podForm,
+                                    is_pod: e.target.checked,
+                                    amount: e.target.checked
+                                      ? podForm.amount
+                                      : "0",
+                                  })
+                                }
+                                className="rounded"
+                              />
+                              <Label htmlFor="is_pod" className="text-sm">
+                                Pay on Delivery (POD)
+                              </Label>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              Check if customer needs to pay for this package
+                            </div>
                           </div>
 
                           <div className="space-y-2">
@@ -1056,14 +1382,19 @@ export default function JumiaPage() {
                             </Label>
                             <Input
                               id="pod_customer_phone"
+                              maxLength={10}
                               value={podForm.customer_phone}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                // Only allow digits
+                                const value = e.target.value.replace(/\D/g, "");
+                                // Limit to 10 digits
+                                const limitedValue = value.slice(0, 10);
                                 setPodForm({
                                   ...podForm,
-                                  customer_phone: e.target.value,
-                                })
-                              }
-                              placeholder="Enter phone number"
+                                  customer_phone: limitedValue,
+                                });
+                              }}
+                              placeholder="0241234567"
                               required
                             />
                           </div>
@@ -1220,162 +1551,260 @@ export default function JumiaPage() {
                     </TabsContent>
 
                     <TabsContent value="settlement" className="space-y-4 mt-4">
-                      <form
-                        onSubmit={handleSettlementSubmit}
-                        className="space-y-4"
-                      >
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="settlement_amount">
-                              Settlement Amount (GHS)
-                            </Label>
-                            <Input
-                              id="settlement_amount"
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={settlementForm.amount}
-                              onChange={(e) =>
-                                setSettlementForm({
-                                  ...settlementForm,
-                                  amount: e.target.value,
-                                })
-                              }
-                              placeholder="0.00"
-                              required
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="settlement_reference">
-                              Reference
-                            </Label>
-                            <Input
-                              id="settlement_reference"
-                              value={settlementForm.reference}
-                              onChange={(e) =>
-                                setSettlementForm({
-                                  ...settlementForm,
-                                  reference: e.target.value,
-                                })
-                              }
-                              placeholder="Enter settlement reference"
-                              required
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="settlement_float_account">
-                              Float Account
-                            </Label>
-                            <Select
-                              value={
-                                floatAccounts.length === 0
-                                  ? "none"
-                                  : settlementForm.float_account_id ||
-                                    floatAccounts[0]?.id ||
-                                    "none"
-                              }
-                              onValueChange={(value) => {
-                                setSettlementForm({
-                                  ...settlementForm,
-                                  float_account_id: value,
-                                });
-                                const selected =
-                                  floatAccounts.find((a) => a.id === value) ||
-                                  null;
-                                setSelectedSettlementFloat(selected);
-                              }}
-                              disabled={
-                                loadingFloats || floatAccounts.length === 0
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue
-                                  placeholder={
-                                    loadingFloats
-                                      ? "Loading..."
-                                      : "Select float account"
-                                  }
-                                />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {floatAccounts
-                                  .filter(
-                                    (account) =>
-                                      account.account_type !== "power-float" &&
-                                      account.account_type !==
-                                        "ezwich-settlement" &&
-                                      account.account_type !== "jumia"
-                                  )
-                                  .map((account) => (
-                                    <SelectItem
-                                      key={account.id}
-                                      value={account.id}
-                                    >
-                                      {account.provider} -{" "}
-                                      {account.account_number} (GHS{" "}
-                                      {Number(
-                                        account.current_balance || 0
-                                      ).toFixed(2)}
+                      <Card>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <DollarSign className="h-5 w-5" />
+                            Settlement
+                          </CardTitle>
+                          <CardDescription>
+                            Record payments to Jumia for collected amounts
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          {/* Settlement Calculator */}
+                          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                            <h4 className="font-semibold text-blue-900 mb-2">
+                              Settlement Calculator
+                            </h4>
+                            <p className="text-sm text-blue-700 mb-3">
+                              Shows total POD collections available for
+                              settlement. Enter any amount you want to settle
+                              below.
+                            </p>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                              <div>
+                                <span className="text-gray-600">
+                                  Collections:
+                                </span>
+                                <div className="font-semibold">
+                                  {settlementCalculator.collectionCount}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">
+                                  Available for Settlement:
+                                </span>
+                                <div className="font-semibold text-blue-900">
+                                  {formatCurrency(
+                                    settlementCalculator.settlementAmount
+                                  )}
+                                </div>
+                                {settlementCalculator.settlementAmount > 0 && (
+                                  <div className="text-xs text-green-600 mt-1">
+                                    ✓ Ready to settle
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <span className="text-gray-600">
+                                  Unsettled Packages:
+                                </span>
+                                <div className="font-semibold">
+                                  {settlementCalculator.unsettledPackageCount}
+                                </div>
+                              </div>
+                              <div>
+                                <span className="text-gray-600">
+                                  Last Settlement:
+                                </span>
+                                <div className="font-semibold text-xs">
+                                  {settlementCalculator.lastSettlementDate
+                                    ? format(
+                                        new Date(
+                                          settlementCalculator.lastSettlementDate
+                                        ),
+                                        "MMM dd, yyyy"
                                       )
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                            {/* Dynamic balance display */}
-                            {selectedSettlementFloat && (
-                              <Alert className="mt-2 border-blue-200 bg-blue-50">
-                                <AlertDescription>
-                                  <span className="font-medium">Balance:</span>{" "}
-                                  GHS{" "}
-                                  {Number(
-                                    selectedSettlementFloat.current_balance || 0
-                                  ).toLocaleString(undefined, {
-                                    minimumFractionDigits: 2,
-                                  })}
-                                </AlertDescription>
-                              </Alert>
-                            )}
+                                    : "Never"}
+                                </div>
+                              </div>
+                            </div>
+                            <Button
+                              onClick={calculateSettlementAmount}
+                              variant="outline"
+                              size="sm"
+                              className="mt-3"
+                            >
+                              <RefreshCw className="h-4 w-4 mr-2" />
+                              Refresh Calculator
+                            </Button>
                           </div>
-                        </div>
 
-                        <div className="space-y-2">
-                          <Label htmlFor="settlement_notes">
-                            Notes (Optional)
-                          </Label>
-                          <Textarea
-                            id="settlement_notes"
-                            value={settlementForm.notes}
-                            onChange={(e) =>
-                              setSettlementForm({
-                                ...settlementForm,
-                                notes: e.target.value,
-                              })
-                            }
-                            placeholder="Additional notes..."
-                            rows={3}
-                          />
-                        </div>
+                          <form
+                            onSubmit={handleSettlementSubmit}
+                            className="space-y-4"
+                          >
+                            <div className="grid gap-4 md:grid-cols-2">
+                              <div className="space-y-2">
+                                <Label htmlFor="settlement_amount">
+                                  Settlement Amount
+                                </Label>
+                                <div className="flex gap-2">
+                                  <Input
+                                    id="settlement_amount"
+                                    type="number"
+                                    step="0.01"
+                                    value={settlementForm.amount}
+                                    onChange={(e) =>
+                                      setSettlementForm({
+                                        ...settlementForm,
+                                        amount: e.target.value,
+                                      })
+                                    }
+                                    placeholder={`Enter amount to settle (max: ${formatCurrency(
+                                      settlementCalculator.settlementAmount
+                                    )})`}
+                                    required
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() =>
+                                      setSettlementForm({
+                                        ...settlementForm,
+                                        amount:
+                                          settlementCalculator.settlementAmount.toString(),
+                                      })
+                                    }
+                                    disabled={
+                                      settlementCalculator.settlementAmount <= 0
+                                    }
+                                    className="whitespace-nowrap"
+                                  >
+                                    Settle All
+                                  </Button>
+                                </div>
+                                <p className="text-xs text-gray-500">
+                                  You can settle any amount up to the total
+                                  available. Partial settlements are allowed.
+                                </p>
+                              </div>
 
-                        <Button
-                          type="submit"
-                          disabled={submitting}
-                          className="w-full"
-                        >
-                          {submitting ? (
-                            <>
-                              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                              Processing...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="mr-2 h-4 w-4" />
-                              Process Settlement
-                            </>
-                          )}
-                        </Button>
-                      </form>
+                              <div className="space-y-2">
+                                <Label htmlFor="settlement_reference">
+                                  Reference
+                                </Label>
+                                <Input
+                                  id="settlement_reference"
+                                  value={settlementForm.reference}
+                                  onChange={(e) =>
+                                    setSettlementForm({
+                                      ...settlementForm,
+                                      reference: e.target.value,
+                                    })
+                                  }
+                                  placeholder="Settlement reference"
+                                  required
+                                />
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="settlement_tracking_id">
+                                  Tracking ID (Optional)
+                                </Label>
+                                <div className="flex gap-2">
+                                  <Input
+                                    id="settlement_tracking_id"
+                                    value={settlementForm.tracking_id}
+                                    onChange={(e) =>
+                                      setSettlementForm({
+                                        ...settlementForm,
+                                        tracking_id: e.target.value,
+                                      })
+                                    }
+                                    placeholder="Enter tracking ID"
+                                  />
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={() =>
+                                      searchPackageByTracking(
+                                        settlementForm.tracking_id
+                                      )
+                                    }
+                                    disabled={
+                                      !settlementForm.tracking_id.trim()
+                                    }
+                                  >
+                                    Search
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2">
+                                <Label htmlFor="settlement_float_account">
+                                  Float Account
+                                </Label>
+                                <Select
+                                  value={settlementForm.float_account_id}
+                                  onValueChange={(value) =>
+                                    setSettlementForm({
+                                      ...settlementForm,
+                                      float_account_id: value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select float account" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">
+                                      No float account
+                                    </SelectItem>
+                                    {floatAccounts.map((account) => (
+                                      <SelectItem
+                                        key={account.id}
+                                        value={account.id}
+                                      >
+                                        {account.account_type} -{" "}
+                                        {formatCurrency(
+                                          account.current_balance
+                                        )}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="settlement_notes">
+                                Notes (Optional)
+                              </Label>
+                              <Textarea
+                                id="settlement_notes"
+                                value={settlementForm.notes}
+                                onChange={(e) =>
+                                  setSettlementForm({
+                                    ...settlementForm,
+                                    notes: e.target.value,
+                                  })
+                                }
+                                placeholder="Additional notes"
+                              />
+                            </div>
+
+                            <Button
+                              type="submit"
+                              disabled={submitting}
+                              className="w-full"
+                            >
+                              {submitting ? (
+                                <>
+                                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                                  Processing...
+                                </>
+                              ) : (
+                                <>
+                                  <DollarSign className="h-4 w-4 mr-2" />
+                                  Record Settlement
+                                </>
+                              )}
+                            </Button>
+                          </form>
+                        </CardContent>
+                      </Card>
                     </TabsContent>
                   </Tabs>
                 </CardContent>
@@ -1396,113 +1825,150 @@ export default function JumiaPage() {
         </TabsContent>
 
         <TabsContent value="history" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <div>
-                  <CardTitle>Transaction History</CardTitle>
-                  <CardDescription>All Jumia transactions</CardDescription>
-                </div>
-                <Button
-                  onClick={exportToCSV}
-                  variant="outline"
-                  className="flex items-center gap-2 bg-transparent"
-                >
-                  <Download className="h-4 w-4" />
-                  Export CSV
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {loadingTransactions ? (
-                <div className="text-center py-8">
-                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
-                  <p>Loading transactions...</p>
-                </div>
-              ) : transactions.length === 0 ? (
-                <div className="text-center py-8">
-                  <Package className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-semibold mb-2">
-                    No Transactions Found
-                  </h3>
-                  <p className="text-muted-foreground">
-                    No Jumia transactions have been processed yet.
-                  </p>
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Tracking ID/Reference</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Payment Method</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((transaction: any) => (
-                      <TableRow key={transaction.id}>
-                        <TableCell>
-                          {format(
-                            new Date(transaction.created_at || new Date()),
-                            "MMM dd, yyyy HH:mm"
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Packages List */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-5 w-5" />
+                  Packages
+                </CardTitle>
+                <CardDescription>
+                  Recorded packages and their status
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingPackages ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : packages.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No packages recorded yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {packages.map((pkg: any) => (
+                      <div
+                        key={pkg.id}
+                        className="p-3 border rounded-lg bg-gray-50"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-medium text-sm">
+                            {pkg.tracking_id}
+                          </div>
+                          <Badge
+                            variant={
+                              pkg.status === "received"
+                                ? "default"
+                                : pkg.status === "delivered"
+                                ? "secondary"
+                                : "outline"
+                            }
+                            className="text-xs"
+                          >
+                            {pkg.status}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          <div>{pkg.customer_name}</div>
+                          {pkg.customer_phone && (
+                            <div>{pkg.customer_phone}</div>
                           )}
-                        </TableCell>
-                        <TableCell className="capitalize">
-                          {transaction.transaction_type?.replace("_", " ") ||
-                            "-"}
-                        </TableCell>
-                        <TableCell>
-                          {transaction.transaction_type === "settlement"
-                            ? transaction.settlement_reference ||
-                              transaction.tracking_id ||
-                              "-"
-                            : transaction.tracking_id || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {transaction.customer_name || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {transaction.customer_phone || "-"}
-                        </TableCell>
-                        <TableCell>
-                          {formatCurrency(transaction.amount || 0)}
-                        </TableCell>
-                        <TableCell>
-                          {getStatusText(
-                            transaction.status || transaction.delivery_status
+                          <div className="text-xs text-gray-500 mt-1">
+                            Received:{" "}
+                            {format(new Date(pkg.received_at), "MMM dd, yyyy")}
+                          </div>
+                          {pkg.delivered_at && (
+                            <div className="text-xs text-gray-500">
+                              Delivered:{" "}
+                              {format(
+                                new Date(pkg.delivered_at),
+                                "MMM dd, yyyy"
+                              )}
+                            </div>
                           )}
-                        </TableCell>
-                        <TableCell className="capitalize">
-                          {shouldShowPaymentMethod(transaction)
-                            ? transaction.payment_method?.replace("_", " ") ||
-                              "-"
-                            : "-"}
-                        </TableCell>
-                        <TableCell>
-                          <TransactionActions
-                            transaction={transaction}
-                            userRole={user?.role || "Operation"}
-                            sourceModule="jumia"
-                            onSuccess={() => {
-                              loadTransactions();
-                              loadFloatAccounts();
-                              refreshStatistics();
-                            }}
-                          />
-                        </TableCell>
-                      </TableRow>
+                          {pkg.settled_at && (
+                            <div className="text-xs text-gray-500">
+                              Settled:{" "}
+                              {format(new Date(pkg.settled_at), "MMM dd, yyyy")}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     ))}
-                  </TableBody>
-                </Table>
-              )}
-            </CardContent>
-          </Card>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Transactions List */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Transactions
+                </CardTitle>
+                <CardDescription>Collections and settlements</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {loadingTransactions ? (
+                  <div className="flex items-center justify-center py-8">
+                    <RefreshCw className="h-6 w-6 animate-spin" />
+                  </div>
+                ) : transactions.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
+                    <p>No transactions recorded yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3 max-h-96 overflow-y-auto">
+                    {transactions.map((tx: any) => (
+                      <div
+                        key={tx.id}
+                        className="p-3 border rounded-lg bg-gray-50"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <div className="font-medium text-sm">
+                            {tx.transaction_type === "pod_collection"
+                              ? "Collection"
+                              : "Settlement"}
+                          </div>
+                          <Badge
+                            variant={getStatusBadge(tx.status)}
+                            className="text-xs"
+                          >
+                            {tx.status}
+                          </Badge>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          <div className="font-semibold">
+                            {formatCurrency(tx.amount)}
+                          </div>
+                          {tx.tracking_id && (
+                            <div>Tracking: {tx.tracking_id}</div>
+                          )}
+                          {tx.customer_name && (
+                            <div>Customer: {tx.customer_name}</div>
+                          )}
+                          {tx.settlement_reference && (
+                            <div>Ref: {tx.settlement_reference}</div>
+                          )}
+                          <div className="text-xs text-gray-500 mt-1">
+                            {format(
+                              new Date(tx.created_at),
+                              "MMM dd, yyyy HH:mm"
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -1664,6 +2130,13 @@ export default function JumiaPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Transaction Receipt Dialog */}
+      <TransactionReceipt
+        data={receiptData}
+        open={showReceipt}
+        onOpenChange={setShowReceipt}
+      />
     </div>
   );
 }

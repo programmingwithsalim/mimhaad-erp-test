@@ -7,7 +7,6 @@ import { SidebarNavigation } from "@/components/sidebar-navigation";
 import { TopNavbar } from "@/components/top-navbar";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
-import { useAuthOverride } from "@/lib/auth-context-override";
 import { RouteGuard } from "@/components/rbac/route-guard";
 
 export default function DashboardLayout({
@@ -17,7 +16,6 @@ export default function DashboardLayout({
 }) {
   const router = useRouter();
   const { user, isLoading } = useAuth();
-  useAuthOverride();
 
   useEffect(() => {
     console.log("Dashboard layout - Auth check:", { user: !!user, isLoading });

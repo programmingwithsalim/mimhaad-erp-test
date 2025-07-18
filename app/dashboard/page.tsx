@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -14,6 +15,8 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useRBAC } from "@/components/rbac/rbac-provider";
+import { useServiceStatistics } from "@/hooks/use-service-statistics";
+import { RoleAccessSummary } from "@/components/dashboard/role-access-summary";
 import {
   TrendingUp,
   DollarSign,
@@ -120,6 +123,7 @@ const defaultStats: DashboardStats = {
 export default function DashboardPage() {
   const { toast } = useToast();
   const { user } = useCurrentUser();
+  const router = useRouter();
   const {
     userRole,
     isAdmin,
@@ -132,6 +136,42 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Get statistics for different services
+  const {
+    statistics: momoStats,
+    floatAlerts: momoAlerts,
+    isLoading: momoLoading,
+    refreshStatistics: refreshMomo,
+  } = useServiceStatistics("momo");
+
+  const {
+    statistics: agencyStats,
+    floatAlerts: agencyAlerts,
+    isLoading: agencyLoading,
+    refreshStatistics: refreshAgency,
+  } = useServiceStatistics("agency-banking");
+
+  const {
+    statistics: ezwichStats,
+    floatAlerts: ezwichAlerts,
+    isLoading: ezwichLoading,
+    refreshStatistics: refreshEzwich,
+  } = useServiceStatistics("e-zwich");
+
+  const {
+    statistics: powerStats,
+    floatAlerts: powerAlerts,
+    isLoading: powerLoading,
+    refreshStatistics: refreshPower,
+  } = useServiceStatistics("power");
+
+  const {
+    statistics: jumiaStats,
+    floatAlerts: jumiaAlerts,
+    isLoading: jumiaLoading,
+    refreshStatistics: refreshJumia,
+  } = useServiceStatistics("jumia");
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -465,19 +505,35 @@ export default function DashboardPage() {
               <CardDescription>Common operational tasks</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/momo")}
+              >
                 <Smartphone className="mr-2 h-4 w-4" />
                 Process MoMo
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/agency-banking")}
+              >
                 <Building2 className="mr-2 h-4 w-4" />
                 Agency Banking
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/e-zwich")}
+              >
                 <CreditCard className="mr-2 h-4 w-4" />
                 E-Zwich Services
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/power")}
+              >
                 <Zap className="mr-2 h-4 w-4" />
                 Power Services
               </Button>
@@ -627,19 +683,35 @@ export default function DashboardPage() {
               <CardDescription>Common supervision tasks</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/transactions")}
+              >
                 <Activity className="mr-2 h-4 w-4" />
                 Review Transactions
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/audit-trail")}
+              >
                 <CheckCircle className="mr-2 h-4 w-4" />
                 Approve Requests
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/momo")}
+              >
                 <Smartphone className="mr-2 h-4 w-4" />
                 Process MoMo
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/agency-banking")}
+              >
                 <Building2 className="mr-2 h-4 w-4" />
                 Agency Banking
               </Button>
@@ -791,19 +863,35 @@ export default function DashboardPage() {
               <CardDescription>Common transaction tasks</CardDescription>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/momo")}
+              >
                 <Smartphone className="mr-2 h-4 w-4" />
                 Process MoMo
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/agency-banking")}
+              >
                 <Building2 className="mr-2 h-4 w-4" />
                 Agency Banking
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/e-zwich")}
+              >
                 <CreditCard className="mr-2 h-4 w-4" />
                 E-Zwich Services
               </Button>
-              <Button variant="outline" className="w-full justify-start">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/dashboard/power")}
+              >
                 <Zap className="mr-2 h-4 w-4" />
                 Power Services
               </Button>
@@ -830,6 +918,9 @@ export default function DashboardPage() {
           Refresh
         </Button>
       </div>
+
+      {/* Role Access Summary */}
+      <RoleAccessSummary />
 
       {/* Error Alert */}
       {error && (
@@ -1019,19 +1110,35 @@ export default function DashboardPage() {
         </CardHeader>
         <CardContent>
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Button variant="outline" className="h-20 flex-col">
+            <Button
+              variant="outline"
+              className="h-20 flex-col"
+              onClick={() => router.push("/dashboard/momo")}
+            >
               <Smartphone className="h-6 w-6 mb-2" />
               <span>MoMo Services</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col">
+            <Button
+              variant="outline"
+              className="h-20 flex-col"
+              onClick={() => router.push("/dashboard/agency-banking")}
+            >
               <Building2 className="h-6 w-6 mb-2" />
               <span>Agency Banking</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col">
+            <Button
+              variant="outline"
+              className="h-20 flex-col"
+              onClick={() => router.push("/dashboard/e-zwich")}
+            >
               <CreditCard className="h-6 w-6 mb-2" />
               <span>E-Zwich</span>
             </Button>
-            <Button variant="outline" className="h-20 flex-col">
+            <Button
+              variant="outline"
+              className="h-20 flex-col"
+              onClick={() => router.push("/dashboard/power")}
+            >
               <Zap className="h-6 w-6 mb-2" />
               <span>Power Services</span>
             </Button>

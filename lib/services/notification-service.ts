@@ -311,16 +311,33 @@ export class NotificationService {
         templateData = {
           userName: prefs.email_address,
           transactionDetails: {
-            ...data.metadata,
+            id: data.metadata?.reference || "N/A",
+            amount: data.metadata?.amount || 0,
+            type: data.metadata?.type || "transaction",
+            date: data.metadata?.timestamp || new Date().toISOString(),
+            service: data.metadata?.service || "Unknown",
             message: data.message,
           },
         };
       } else if (data.type === "login") {
-        template = "verification";
-        templateData = { userName: prefs.email_address, ...data.metadata };
+        template = "loginAlert";
+        templateData = {
+          userName: prefs.email_address,
+          loginData: {
+            ipAddress: data.metadata?.ip_address || "Unknown",
+            userAgent: data.metadata?.user_agent || "Unknown",
+            location: data.metadata?.location || "Unknown",
+            timestamp: data.metadata?.timestamp || new Date().toISOString(),
+          },
+        };
       } else if (data.type === "low_balance") {
         template = "lowBalanceAlert";
-        templateData = { userName: prefs.email_address, ...data.metadata };
+        templateData = {
+          userName: prefs.email_address,
+          accountType: data.metadata?.accountName || "Float",
+          currentBalance: data.metadata?.currentBalance || 0,
+          threshold: data.metadata?.threshold || 0,
+        };
       } else {
         template = "welcome";
         templateData = { userName: prefs.email_address, ...data.metadata };

@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
         "Available tables:",
         tableCheck.map((t: any) => t.table_name)
       );
-    } catch (error) {
+  } catch (error) {
       console.log("Error checking tables:", error);
     }
 

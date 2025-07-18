@@ -364,7 +364,11 @@ export function CommissionTable({
                     />
                   </TableCell>
                 )}
-                <TableCell>{getSourceBadge(commission.source)}</TableCell>
+                <TableCell>
+                  <span className="text-sm font-medium">
+                    {commission.sourceName}
+                  </span>
+                </TableCell>
                 <TableCell>{commission.reference}</TableCell>
                 {!compact && (
                   <TableCell>

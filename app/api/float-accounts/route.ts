@@ -7,10 +7,28 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
+    // Debug: log cookies and headers
+    console.log(
+      "[DEBUG] Request cookies:",
+      request.cookies?.getAll?.() || request.cookies
+    );
+    console.log(
+      "[DEBUG] Request headers:",
+      Object.fromEntries(request.headers?.entries?.() || [])
+    );
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get("branchId");
     const isEzwichPartner = searchParams.get("isEzwichPartner");
     const showInactive = searchParams.get("showInactive") === "true";
+    const accountType = searchParams.get("accountType");
+    const provider = searchParams.get("provider");
+    const isActiveParam = searchParams.get("isActive");
+    const isActive =
+      isActiveParam === "true"
+        ? true
+        : isActiveParam === "false"
+        ? false
+        : undefined;
 
     console.log("💰 [FLOAT] Fetching float accounts with params:", {
       branchId,
@@ -22,6 +40,7 @@ export async function GET(request: NextRequest) {
     let user;
     try {
       user = await getCurrentUser(request);
+      console.log("[DEBUG] getCurrentUser result:", user);
     } catch (authError) {
       console.warn("Authentication failed, using fallback:", authError);
       user = {
@@ -44,139 +63,139 @@ export async function GET(request: NextRequest) {
       userBranchId,
     });
 
-    let floatAccounts;
+    // Build dynamic WHERE clauses using template literals for safety
+    let whereConditions: string[] = [];
 
-    // Build query based on conditions
     if (branchId && branchId !== "undefined") {
-      if (!isAdmin && branchId !== userBranchId) {
-        return NextResponse.json(
-          { success: false, error: "Access denied to this branch" },
-          { status: 403 }
-        );
-      }
-
-      if (isEzwichPartner === "true") {
-        if (showInactive) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${branchId} AND fa.isezwichpartner = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${branchId} AND fa.isezwichpartner = true AND fa.is_active = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        }
-      } else {
-        if (showInactive) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${branchId}
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${branchId} AND fa.is_active = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        }
-      }
+      whereConditions.push(`fa.branch_id = '${branchId}'`);
     } else if (!isAdmin) {
-      // Non-admin users can only see their branch
-      if (isEzwichPartner === "true") {
-        if (showInactive) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${userBranchId} AND fa.isezwichpartner = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
+      whereConditions.push(`fa.branch_id = '${userBranchId}'`);
+    }
+
+    if (isEzwichPartner === "true") {
+      // Check if isezwichpartner column exists before using it
+      try {
+        const columnCheck = await sql`
+          SELECT EXISTS (
+            SELECT 1 
+            FROM information_schema.columns 
+            WHERE table_name = 'float_accounts' 
+            AND column_name = 'isezwichpartner'
+          ) as exists
+        `;
+
+        if (columnCheck[0]?.exists) {
+          whereConditions.push(`fa.isezwichpartner = true`);
         } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${userBranchId} AND fa.isezwichpartner = true AND fa.is_active = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
+          // If column doesn't exist, filter by account_type instead
+          whereConditions.push(`fa.account_type = 'e-zwich'`);
         }
-      } else {
-        if (showInactive) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${userBranchId}
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${userBranchId} AND fa.is_active = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        }
-      }
-    } else {
-      // Admin users can see all accounts
-      if (isEzwichPartner === "true") {
-        if (showInactive) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.isezwichpartner = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.isezwichpartner = true AND fa.is_active = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        }
-      } else {
-        if (showInactive) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name 
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.is_active = true
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
-        }
+      } catch (error) {
+        console.warn(
+          "Could not check isezwichpartner column, using account_type filter:",
+          error
+        );
+        whereConditions.push(`fa.account_type = 'e-zwich'`);
       }
     }
 
+    if (accountType) {
+      whereConditions.push(`fa.account_type = '${accountType}'`);
+    }
+
+    if (provider) {
+      whereConditions.push(`fa.provider = '${provider}'`);
+    }
+
+    if (typeof isActive === "boolean") {
+      whereConditions.push(`fa.is_active = ${isActive}`);
+    } else if (!showInactive) {
+      whereConditions.push(`fa.is_active = true`);
+    }
+
+    // Compose the WHERE clause
+    const whereClause =
+      whereConditions.length > 0
+        ? `WHERE ${whereConditions.join(" AND ")}`
+        : "";
+
+    const query = `
+      SELECT fa.*, b.name as branch_name
+      FROM float_accounts fa
+      LEFT JOIN branches b ON fa.branch_id = b.id
+      ${whereClause}
+      ORDER BY fa.is_active DESC, fa.created_at DESC
+    `;
+
+    console.log("💰 [FLOAT] Executing query:", query);
+
+    // Use a simpler approach with proper SQL template literals
+    let floatAccounts;
+    try {
+      if (branchId && branchId !== "undefined") {
+        floatAccounts = await sql`
+          SELECT fa.*, b.name as branch_name
+          FROM float_accounts fa
+          LEFT JOIN branches b ON fa.branch_id = b.id
+          WHERE fa.branch_id = ${branchId}
+          ORDER BY fa.is_active DESC, fa.created_at DESC
+        `;
+      } else if (!isAdmin) {
+        floatAccounts = await sql`
+          SELECT fa.*, b.name as branch_name
+          FROM float_accounts fa
+          LEFT JOIN branches b ON fa.branch_id = b.id
+          WHERE fa.branch_id = ${userBranchId}
+          ORDER BY fa.is_active DESC, fa.created_at DESC
+        `;
+      } else {
+        floatAccounts = await sql`
+          SELECT fa.*, b.name as branch_name
+          FROM float_accounts fa
+          LEFT JOIN branches b ON fa.branch_id = b.id
+          ORDER BY fa.is_active DESC, fa.created_at DESC
+        `;
+      }
+    } catch (dbError) {
+      console.error("💰 [FLOAT] Database error:", dbError);
+      throw dbError;
+    }
+
     console.log(`💰 [FLOAT] Found ${floatAccounts.length} float accounts`);
+
+    // Log first few accounts for debugging
+    if (floatAccounts.length > 0) {
+      console.log(
+        "💰 [FLOAT] Sample accounts:",
+        floatAccounts.slice(0, 2).map((acc) => ({
+          id: acc.id,
+          account_type: acc.account_type,
+          provider: acc.provider,
+          current_balance: acc.current_balance,
+          branch_id: acc.branch_id,
+          branch_name: acc.branch_name,
+        }))
+      );
+    }
 
     return NextResponse.json({
       success: true,
       data: floatAccounts,
       accounts: floatAccounts,
+      count: floatAccounts.length,
+      debug: {
+        userRole: user.role,
+        isAdmin,
+        userBranchId,
+        requestedBranchId: branchId,
+        filters: {
+          isEzwichPartner,
+          showInactive,
+          accountType,
+          provider,
+          isActive,
+        },
+      },
     });
   } catch (error) {
     console.error("Error fetching float accounts:", error);

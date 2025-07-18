@@ -81,26 +81,28 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
     const fetchPartnerBanks = async () => {
       try {
         setLoadingBanks(true);
+
+        // Use the dedicated E-Zwich partner banks endpoint
         const response = await fetch(
-          "/api/float-accounts?isezwichpartner=true"
+          `/api/float-accounts/ezwich-partners?branchId=${user?.branchId || ""}`
         );
         const data = await response.json();
 
         if (data.success) {
-          setPartnerBanks(data.data || []);
+          setPartnerBanks(data.accounts || []);
         } else {
-          console.error("Failed to fetch partner banks:", data.error);
+          console.error("Failed to fetch E-Zwich partner banks:", data.error);
           toast({
             title: "Error",
-            description: "Failed to load partner banks",
+            description: "Failed to load E-Zwich partner banks",
             variant: "destructive",
           });
         }
       } catch (error) {
-        console.error("Error fetching partner banks:", error);
+        console.error("Error fetching E-Zwich partner banks:", error);
         toast({
           title: "Error",
-          description: "Failed to load partner banks",
+          description: "Failed to load E-Zwich partner banks",
           variant: "destructive",
         });
       } finally {
@@ -108,8 +110,11 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
       }
     };
 
-    fetchPartnerBanks();
-  }, [toast]);
+    // Only fetch if user is available
+    if (user?.branchId) {
+      fetchPartnerBanks();
+    }
+  }, [user?.branchId, toast]);
 
   // Fetch branches for admin users
   useEffect(() => {
@@ -367,37 +372,23 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
             control={form.control}
             name="expiry_date"
             render={({ field }) => (
-              <FormItem className="flex flex-col">
+              <FormItem>
                 <FormLabel>Expiry Date</FormLabel>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <FormControl>
-                      <Button
-                        variant={"outline"}
-                        className={cn(
-                          "w-full pl-3 text-left font-normal",
-                          !field.value && "text-muted-foreground"
-                        )}
-                      >
-                        {field.value ? (
-                          format(field.value, "PPP")
-                        ) : (
-                          <span>Pick a date</span>
-                        )}
-                        <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                      </Button>
-                    </FormControl>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar
-                      mode="single"
-                      selected={field.value}
-                      onSelect={field.onChange}
-                      disabled={(date) => date < new Date()}
-                      initialFocus
-                    />
-                  </PopoverContent>
-                </Popover>
+                <FormControl>
+                  <Input
+                    type="date"
+                    placeholder="Select expiry date"
+                    {...field}
+                    value={field.value ? format(field.value, "yyyy-MM-dd") : ""}
+                    onChange={(e) => {
+                      const date = e.target.value
+                        ? new Date(e.target.value)
+                        : undefined;
+                      field.onChange(date);
+                    }}
+                    min={new Date().toISOString().split("T")[0]}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}

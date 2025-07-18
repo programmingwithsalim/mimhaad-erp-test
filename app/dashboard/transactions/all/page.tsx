@@ -12,14 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -38,11 +30,8 @@ import {
   Search,
   Filter,
   CalendarIcon,
-  ChevronLeft,
-  ChevronRight,
   Download,
   RefreshCw,
-  Eye,
   FileText,
   X,
 } from "lucide-react";
@@ -58,6 +47,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { TransactionsTable } from "@/components/transactions/transactions-table";
 
 export default function AllTransactionsPage() {
   const {
@@ -90,6 +80,7 @@ export default function AllTransactionsPage() {
       case "completed":
       case "successful":
       case "success":
+      case "disbursed":
         return "bg-green-100 text-green-800";
       case "pending":
       case "processing":
@@ -310,6 +301,7 @@ export default function AllTransactionsPage() {
                     <SelectItem value="settled">Settled</SelectItem>
                     <SelectItem value="received">Received</SelectItem>
                     <SelectItem value="successful">Successful</SelectItem>
+                    <SelectItem value="disbursed">Disbursed</SelectItem>
                     <SelectItem value="pending">Pending</SelectItem>
                     <SelectItem value="failed">Failed</SelectItem>
                     <SelectItem value="cancelled">Cancelled</SelectItem>
@@ -495,153 +487,16 @@ export default function AllTransactionsPage() {
               )}
             </div>
           ) : (
-            <>
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Service</TableHead>
-                      <TableHead>Customer</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Fee</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Provider</TableHead>
-                      {canViewAllBranches && <TableHead>Branch</TableHead>}
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {transactions.map((transaction) => (
-                      <TableRow
-                        key={`${transaction.service_type}-${transaction.id}`}
-                      >
-                        <TableCell className="font-mono text-sm">
-                          {format(
-                            new Date(transaction.created_at),
-                            "MMM dd, yyyy HH:mm"
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            className={getServiceColor(
-                              transaction.service_type
-                            )}
-                          >
-                            {transaction.service_type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {transaction.customer_name || "N/A"}
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          {transaction.phone_number || "N/A"}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">{transaction.type}</Badge>
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          ₵{transaction.amount.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="font-mono">
-                          ₵{transaction.fee.toLocaleString()}
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={getStatusColor(transaction.status)}>
-                            {transaction.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono text-sm">
-                          {transaction.reference || "N/A"}
-                        </TableCell>
-                        <TableCell>{transaction.provider || "N/A"}</TableCell>
-                        {canViewAllBranches && (
-                          <TableCell>
-                            {transaction.branch_id || "N/A"}
-                          </TableCell>
-                        )}
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleViewTransaction(transaction)}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Pagination */}
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6">
-                  <div className="text-sm text-muted-foreground">
-                    Showing{" "}
-                    {(pagination.currentPage - 1) * pagination.limit + 1} to{" "}
-                    {Math.min(
-                      pagination.currentPage * pagination.limit,
-                      pagination.totalCount
-                    )}{" "}
-                    of {pagination.totalCount} results
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={prevPage}
-                      disabled={!pagination.hasPrevPage || loading}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Previous
-                    </Button>
-
-                    {/* Page numbers */}
-                    <div className="flex items-center gap-1">
-                      {Array.from(
-                        { length: Math.min(5, pagination.totalPages) },
-                        (_, i) => {
-                          const pageNum =
-                            Math.max(1, pagination.currentPage - 2) + i;
-                          if (pageNum > pagination.totalPages) return null;
-
-                          return (
-                            <Button
-                              key={pageNum}
-                              variant={
-                                pageNum === pagination.currentPage
-                                  ? "default"
-                                  : "outline"
-                              }
-                              size="sm"
-                              onClick={() => goToPage(pageNum)}
-                              disabled={loading}
-                            >
-                              {pageNum}
-                            </Button>
-                          );
-                        }
-                      )}
-                    </div>
-
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={nextPage}
-                      disabled={!pagination.hasNextPage || loading}
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </>
+            <TransactionsTable
+              transactions={transactions}
+              loading={loading}
+              pagination={pagination}
+              onPageChange={goToPage}
+              onNextPage={nextPage}
+              onPrevPage={prevPage}
+              onViewTransaction={handleViewTransaction}
+              onTransactionUpdate={refetch}
+            />
           )}
         </CardContent>
       </Card>

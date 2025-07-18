@@ -1,188 +1,155 @@
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 import { sql } from "@/lib/db";
-import { getSession } from "@/lib/auth-service";
-import { NotificationService } from "@/lib/services/notification-service";
+import { neon } from "@neondatabase/serverless";
+import { getDatabaseSession } from "@/lib/database-session-service";
 
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const session = await getSession();
+    // Convert to NextRequest for cookie access
+    const nextRequest =
+      request instanceof NextRequest
+        ? request
+        : new NextRequest(request.url, request);
+    // 1. Session check
+    const session = await getDatabaseSession(nextRequest);
+    console.log("[RECHARGE] Session:", session);
     if (!session?.user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json(
+        { error: "Unauthorized: No session" },
+        { status: 401 }
+      );
     }
+    const user = session.user;
+    console.log("[RECHARGE] User:", user);
 
-    const {
-      amount,
-      sourceAccountId,
-      rechargeMethod = "manual",
-      reference,
-      notes,
-      description,
-    } = await request.json();
-
-    if (!amount || amount <= 0) {
+    // 2. Parse and validate body
+    const { amount, sourceAccountId } = await request.json();
+    if (!amount || typeof amount !== "number" || amount <= 0) {
       return NextResponse.json({ error: "Invalid amount" }, { status: 400 });
     }
+    if (!sourceAccountId) {
+      return NextResponse.json(
+        { error: "Source account required" },
+        { status: 400 }
+      );
+    }
 
-    const { user } = session;
+    // 3. Get target account
     const accountId = params.id;
-    const rechargeAmount = Number(amount);
-
-    // Get target account details
-    const targetAccount = await sql`
-      SELECT * FROM float_accounts WHERE id = ${accountId}
-    `;
-
-    if (targetAccount.length === 0) {
+    const [targetAccount] =
+      await sql`SELECT * FROM float_accounts WHERE id = ${accountId}`;
+    if (!targetAccount) {
       return NextResponse.json(
         { error: "Target account not found" },
         { status: 404 }
       );
     }
+    console.log("[RECHARGE] Target account:", targetAccount);
 
-    const currentTargetAccount = targetAccount[0];
-    const currentBalance = Number(currentTargetAccount.current_balance);
-
-    // If source account is specified, validate and deduct from it
-    if (sourceAccountId) {
-      const sourceAccount = await sql`
-        SELECT * FROM float_accounts WHERE id = ${sourceAccountId}
-      `;
-
-      if (sourceAccount.length === 0) {
-        return NextResponse.json(
-          { error: "Source account not found" },
-          { status: 404 }
-        );
-      }
-
-      const sourceAccountData = sourceAccount[0];
-      const sourceBalance = Number(sourceAccountData.current_balance);
-
-      if (sourceBalance < rechargeAmount) {
-        return NextResponse.json(
-          {
-            error: `Insufficient balance in source account. Available: GHS ${sourceBalance.toFixed(
-              2
-            )}, Required: GHS ${rechargeAmount.toFixed(2)}`,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Deduct from source account
-      const newSourceBalance = sourceBalance - rechargeAmount;
-      await sql`
-        UPDATE float_accounts 
-        SET current_balance = ${newSourceBalance}, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ${sourceAccountId}
-      `;
-
-      // Record source account transaction (debit)
-      await sql`
-        INSERT INTO float_transactions (
-          id, account_id, type, amount, balance_before, balance_after,
-          description, created_by, branch_id, created_at, reference, recharge_method
-        ) VALUES (
-          gen_random_uuid(),
-          ${sourceAccountId},
-          'transfer_out',
-          ${-rechargeAmount},
-          ${sourceBalance},
-          ${newSourceBalance},
-          ${
-            description ||
-            `Transfer to ${currentTargetAccount.provider} account`
-          },
-          ${user.id},
-          ${user.branchId},
-          CURRENT_TIMESTAMP,
-          ${reference || `TRANSFER-${Date.now()}`},
-          ${rechargeMethod}
-        )
-      `;
+    // 4. Permission check
+    const isAdmin = user.role?.toLowerCase() === "admin";
+    const isManager =
+      user.role?.toLowerCase() === "manager" &&
+      user.branchId === targetAccount.branch_id;
+    const isFinance =
+      user.role?.toLowerCase() === "finance" &&
+      user.branchId === targetAccount.branch_id;
+    if (!isAdmin && !isManager && !isFinance) {
+      return NextResponse.json(
+        { error: "Forbidden: Insufficient privileges" },
+        { status: 403 }
+      );
     }
 
-    // Add to target account
-    const newBalance = currentBalance + rechargeAmount;
-    await sql`
-      UPDATE float_accounts 
-      SET current_balance = ${newBalance}, updated_at = CURRENT_TIMESTAMP
-      WHERE id = ${accountId}
-    `;
+    // 5. Get and check source account
+    const [sourceAccount] =
+      await sql`SELECT * FROM float_accounts WHERE id = ${sourceAccountId}`;
+    if (!sourceAccount) {
+      return NextResponse.json(
+        { error: "Source account not found" },
+        { status: 404 }
+      );
+    }
+    if (!sourceAccount.is_active) {
+      return NextResponse.json(
+        { error: "Source account is not active" },
+        { status: 400 }
+      );
+    }
+    if (Number(sourceAccount.current_balance) < amount) {
+      return NextResponse.json(
+        { error: "Insufficient source account balance" },
+        { status: 400 }
+      );
+    }
 
-    // Record target account transaction (credit)
-    const transactionResult = await sql`
+    // 6. Update balances
+    const newSourceBalance = Number(sourceAccount.current_balance) - amount;
+    const newTargetBalance = Number(targetAccount.current_balance) + amount;
+    await sql`UPDATE float_accounts SET current_balance = ${newSourceBalance}, updated_at = NOW() WHERE id = ${sourceAccountId}`;
+    await sql`UPDATE float_accounts SET current_balance = ${newTargetBalance}, updated_at = NOW() WHERE id = ${accountId}`;
+
+    // 7. Record transactions (raw SQL with Neon client)
+    const client = neon(process.env.DATABASE_URL!);
+    const transferOutQuery = `
       INSERT INTO float_transactions (
-        id, account_id, type, amount, balance_before, balance_after,
-        description, created_by, branch_id, created_at, reference, recharge_method
+        id, account_id, type, amount, balance_before, balance_after, description, created_by, branch_id, created_at
       ) VALUES (
         gen_random_uuid(),
-        ${accountId},
-        'recharge',
-        ${rechargeAmount},
-        ${currentBalance},
-        ${newBalance},
-        ${description || `Float recharge of ${rechargeAmount}`},
-        ${user.id},
-        ${user.branchId},
-        CURRENT_TIMESTAMP,
-        ${reference || `RECHARGE-${Date.now()}`},
-        ${rechargeMethod}
+        $1,
+        'transfer_out',
+        ${-amount},
+        ${Number(sourceAccount.current_balance)},
+        ${newSourceBalance},
+        $2,
+        $3,
+        $4,
+        NOW()
       )
-      RETURNING *
     `;
+    await client.query(transferOutQuery, [
+      sourceAccountId,
+      `Transfer to ${targetAccount.provider}`,
+      user.id,
+      user.branchId,
+    ]);
 
-    // Check if balance was low and send notification if it's now above threshold
-    const threshold = currentTargetAccount.min_threshold || 5000;
-    if (currentBalance < threshold && newBalance >= threshold) {
-      try {
-        await NotificationService.sendNotification({
-          type: "system_alert",
-          title: "Float Account Recharged",
-          message: `Float account "${
-            currentTargetAccount.provider
-          }" has been recharged with GHS ${rechargeAmount}. New balance: GHS ${newBalance.toFixed(
-            2
-          )}`,
-          userId: user.id,
-          branchId: user.branchId,
-          priority: "medium",
-          metadata: {
-            accountId,
-            accountName: currentTargetAccount.provider,
-            rechargeAmount,
-            newBalance,
-            previousBalance: currentBalance,
-            sourceAccountId,
-          },
-        });
-      } catch (notificationError) {
-        console.error(
-          "Failed to send recharge notification:",
-          notificationError
-        );
-      }
-    }
+    const rechargeQuery = `
+      INSERT INTO float_transactions (
+        id, account_id, type, amount, balance_before, balance_after, description, created_by, branch_id, created_at
+      ) VALUES (
+        gen_random_uuid(),
+        $1,
+        'recharge',
+        ${amount},
+        ${Number(targetAccount.current_balance)},
+        ${newTargetBalance},
+        $2,
+        $3,
+        $4,
+        NOW()
+      )
+    `;
+    await client.query(rechargeQuery, [
+      accountId,
+      `Recharge from ${sourceAccount.provider}`,
+      user.id,
+      user.branchId,
+    ]);
 
+    // 8. Success response
     return NextResponse.json({
       success: true,
-      message: "Account recharged successfully",
-      transaction: {
-        id: transactionResult[0].id,
-        amount: rechargeAmount,
-        newBalance,
-        description: transactionResult[0].description,
-        date: transactionResult[0].created_at,
-        reference: transactionResult[0].reference,
-      },
+      message: "Recharge successful",
+      newTargetBalance,
     });
-  } catch (error) {
-    console.error("Error recharging account:", error);
+  } catch (error: any) {
+    console.error("[RECHARGE] Error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: error?.message || "Internal error" },
       { status: 500 }
     );
   }

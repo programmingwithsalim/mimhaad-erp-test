@@ -194,6 +194,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // If payment_source is not 'cash', validate float account type
+    if (payment_source && payment_source !== "cash") {
+      const floatAccount =
+        await sql`SELECT * FROM float_accounts WHERE id = ${payment_source}`;
+      if (!floatAccount[0]) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Invalid payment source (float account not found)",
+          },
+          { status: 400 }
+        );
+      }
+      const type = floatAccount[0].account_type?.toLowerCase?.();
+      if (["power", "e-zwich", "jumia"].includes(type)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Selected payment source is not allowed for expenses.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Determine which branch to use based on user role
     let effectiveBranchId = branch_id;
 

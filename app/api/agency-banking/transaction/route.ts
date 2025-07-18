@@ -7,6 +7,62 @@ import { GLPostingService } from "@/lib/services/gl-posting-service";
 import { v4 as uuidv4 } from "uuid";
 import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
 
+// Helper function to get user's full name
+async function getUserFullName(userId: string): Promise<string> {
+  try {
+    if (!userId || userId === "unknown" || userId === "System") {
+      return "System User";
+    }
+
+    // Check if userId is an email address (contains @)
+    if (userId.includes("@")) {
+      // Try to find user by email
+      const users = await sql`
+        SELECT first_name, last_name, email FROM users WHERE email = ${userId}
+      `;
+
+      if (users && users.length > 0) {
+        const { first_name, last_name, email } = users[0];
+        if (first_name && last_name) {
+          return `${first_name} ${last_name}`;
+        } else if (first_name) {
+          return first_name;
+        } else if (last_name) {
+          return last_name;
+        } else if (email) {
+          return email;
+        }
+      }
+
+      // If email not found, return the email as fallback
+      return userId;
+    }
+
+    // Try to find user by UUID
+    const users = await sql`
+      SELECT first_name, last_name, email FROM users WHERE id = ${userId}
+    `;
+
+    if (users && users.length > 0) {
+      const { first_name, last_name, email } = users[0];
+      if (first_name && last_name) {
+        return `${first_name} ${last_name}`;
+      } else if (first_name) {
+        return first_name;
+      } else if (last_name) {
+        return last_name;
+      } else if (email) {
+        return email;
+      }
+    }
+
+    return "Unknown User";
+  } catch (error) {
+    console.error(`Failed to get user name for ID ${userId}:`, error);
+    return "Unknown User";
+  }
+}
+
 interface AgencyBankingTransactionData {
   type: "deposit" | "withdrawal" | "interbank" | "commission";
   amount: number;
@@ -97,10 +153,47 @@ export async function POST(request: Request) {
       account_number,
       reference,
       notes,
+      fee, // Allow fee to be passed from frontend
     } = body;
 
     const { user } = session;
     await ensureSchemaExists();
+
+    // Validate input data
+    if (!amount || amount <= 0) {
+      return NextResponse.json(
+        { error: "Amount must be greater than 0" },
+        { status: 400 }
+      );
+    }
+
+    if (account_number && account_number.length > 15) {
+      return NextResponse.json(
+        { error: "Account number cannot be more than 15 characters" },
+        { status: 400 }
+      );
+    }
+
+    if (!customer_name || customer_name.trim() === "") {
+      return NextResponse.json(
+        { error: "Customer name is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!type || !["deposit", "withdrawal", "interbank", "interbank_transfer", "commission"].includes(type)) {
+      return NextResponse.json(
+        { error: "Valid transaction type is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!partner_bank_id) {
+      return NextResponse.json(
+        { error: "Partner bank is required" },
+        { status: 400 }
+      );
+    }
 
     // 1. Fetch available partner bank (float account) for this branch
     const floatAccounts = await sql`
@@ -119,54 +212,116 @@ export async function POST(request: Request) {
       );
     }
 
-    // 2. Fetch fee dynamically from fee_config (via calculate-fee endpoint)
-    let fee = 0;
-    try {
-      const feeRes = await fetch(
-        `${
-          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-        }/api/agency-banking/calculate-fee`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount,
-            transactionType: type,
-            partnerBankId: partner_bank_id,
-          }),
-        }
-      );
-      const feeData = await feeRes.json();
-      fee = Number(feeData.fee) || 0;
-    } catch (err) {
-      console.error("Failed to fetch fee from fee_config:", err);
-      fee = 0;
+    // 2. Handle fee - use provided fee or calculate default
+    let transactionFee = 0;
+    if (fee !== undefined && fee !== null) {
+      // Use the fee provided by the user (allows flexibility)
+      transactionFee = Number(fee) || 0;
+    } else {
+      // Fallback to auto-calculation if no fee provided
+      try {
+        const feeRes = await fetch(
+          `${
+            process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+          }/api/agency-banking/calculate-fee`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount,
+              transactionType: type,
+              partnerBankId: partner_bank_id,
+            }),
+          }
+        );
+        const feeData = await feeRes.json();
+        transactionFee = Number(feeData.fee) || 0;
+      } catch (err) {
+        console.error("Failed to fetch fee from fee_config:", err);
+        transactionFee = 0;
+      }
     }
 
-    // 3. Calculate cash till and float effects
+    // 3. Calculate cash till and float effects according to correct business logic
     let cashTillAffected = 0;
     let floatAffected = 0;
+
     switch (type) {
       case "deposit":
-        cashTillAffected = amount + fee;
-        floatAffected = -amount;
+        // Deposit: Customer gives us cash + fee, we send amount to customer's bank account
+        // Cash in till increases by amount + fee (we receive cash + fee)
+        // Bank float decreases by amount only (we send only the amount to customer's account)
+        cashTillAffected = amount + transactionFee;
+        floatAffected = -amount; // Only the amount, not the fee
         break;
+
       case "withdrawal":
-        cashTillAffected = -(amount - fee);
-        floatAffected = amount;
+        // Withdrawal: Customer gives us amount from bank account, we give cash to customer
+        // Cash in till decreases by amount only (we pay only the amount in cash)
+        // Bank float increases by amount only (we receive only the amount from customer's account)
+        // Fee is added to cash in till (we keep the fee as revenue)
+        cashTillAffected = -amount + transactionFee; // We pay amount in cash, but keep fee
+        floatAffected = amount; // Only the amount, not the fee
         break;
+
       case "interbank":
-        cashTillAffected = fee;
-        floatAffected = 0;
+      case "interbank_transfer":
+        // Interbank Transfer: Customer gives us cash + fee, we send amount to customer's other bank
+        // Cash in till increases by amount + fee (we receive cash + fee)
+        // Bank float decreases by amount only (we send only the amount to customer's other bank)
+        cashTillAffected = amount + transactionFee;
+        floatAffected = -amount; // Only the amount, not the fee
         break;
+
       case "commission":
+        // Commission: Direct commission payment
         cashTillAffected = amount;
         floatAffected = 0;
         break;
+
+      default:
+        return NextResponse.json(
+          { error: "Invalid transaction type" },
+          { status: 400 }
+        );
     }
 
-    // 4. Create the transaction record
-    const transactionId = `${uuidv4().substring(0, 8)}`;
+    // 4. Validate balances before processing
+    if (floatAffected < 0) {
+      // Check if we have enough float balance for the amount (not including fee)
+      const requiredFloat = Math.abs(floatAffected);
+      if (partnerBank.current_balance < requiredFloat) {
+        return NextResponse.json(
+          {
+            error: `Insufficient bank float balance. Required: ${requiredFloat}, Available: ${partnerBank.current_balance}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (cashTillAffected < 0) {
+      // Check if we have enough cash in till for the amount (not including fee)
+      const cashTillAccounts = await sql`
+        SELECT * FROM float_accounts 
+        WHERE account_type = 'cash-in-till' AND branch_id = ${user.branchId} AND is_active = true
+      `;
+      if (cashTillAccounts.length > 0) {
+        const cashTill = cashTillAccounts[0];
+        const requiredCash = Math.abs(cashTillAffected);
+        if (cashTill.current_balance < requiredCash) {
+          return NextResponse.json(
+            {
+              error: `Insufficient cash in till balance. Required: ${requiredCash}, Available: ${cashTill.current_balance}`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
+    // 5. Create the transaction record
+    const transactionId = uuidv4();
     const now = new Date().toISOString();
     await sql`
         INSERT INTO agency_banking_transactions (
@@ -175,26 +330,27 @@ export async function POST(request: Request) {
           reference, status, date, branch_id, user_id,
           cash_till_affected, float_affected, created_at, updated_at
         ) VALUES (
-        ${transactionId}, ${type}, ${amount}, ${fee},
+        ${transactionId}, ${type}, ${amount}, ${transactionFee},
           ${customer_name}, ${account_number || ""},
         ${partnerBank.account_name || partnerBank.provider || ""},
         ${partnerBank.account_number || ""},
         ${partnerBank.id},
           ${reference || `AGENCY-${Date.now()}`}, 'completed', ${now},
-        ${user.id},
+        ${user.branchId},
+          ${user.id},
           ${cashTillAffected}, ${floatAffected}, ${now}, ${now}
         )
       `;
 
-    // 5. Update float and cash till balances
-      if (floatAffected !== 0) {
+    // 6. Update float and cash till balances
+    if (floatAffected !== 0) {
       await sql`
             UPDATE float_accounts 
         SET current_balance = current_balance + ${floatAffected}, updated_at = NOW()
         WHERE id = ${partnerBank.id}
       `;
     }
-      if (cashTillAffected !== 0) {
+    if (cashTillAffected !== 0) {
       await sql`
             UPDATE float_accounts 
         SET current_balance = current_balance + ${cashTillAffected}, updated_at = NOW()
@@ -202,41 +358,78 @@ export async function POST(request: Request) {
       `;
     }
 
-    // 6. Unified GL Posting
-    const glResult = await UnifiedGLPostingService.createGLEntries({
+    // 7. Create GL entries
+    await UnifiedGLPostingService.createGLEntries({
       transactionId,
       sourceModule: "agency_banking",
       transactionType: type,
       amount,
-      fee,
-                customerName: customer_name,
+      fee: transactionFee,
+      customerName: customer_name,
       reference: reference || `AGENCY-${Date.now()}`,
       processedBy: user.id,
-          branchId: user.branchId,
+      branchId: user.branchId,
       branchName: user.branchName || "",
-          metadata: {
+      metadata: {
         partnerBank: partnerBank.account_name || partnerBank.provider || "",
         partnerBankCode: partnerBank.account_number || "",
-            customerName: customer_name,
-            accountNumber: account_number,
+        customerName: customer_name,
+        accountNumber: account_number,
         amount,
-        fee,
-            reference: reference || `AGENCY-${Date.now()}`,
-          },
-        });
+        fee: transactionFee,
+        reference: reference || `AGENCY-${Date.now()}`,
+      },
+    });
 
-    // 7. Return response
+    // 8. Log audit
+    const userName = await getUserFullName(user.id);
+    await AuditLoggerService.log({
+      userId: user.id,
+      username: userName,
+      actionType: `agency_banking_${type}`,
+      entityType: "transaction",
+      entityId: transactionId,
+      description: `Agency banking ${type} transaction processed`,
+      branchId: user.branchId,
+      branchName: user.branchName || "",
+      status: "success",
+      severity: "low",
+      details: {
+        amount,
+        fee: transactionFee,
+        partnerBank: partnerBank.account_name || partnerBank.provider || "",
+        customerName: customer_name,
+        accountNumber: account_number,
+        cashTillAffected,
+        floatAffected,
+      },
+    });
+
     return NextResponse.json({
       success: true,
-      transactionId,
-      glResult,
+      message: "Agency banking transaction processed successfully",
+      transaction: {
+        id: transactionId,
+        type,
+        amount,
+        fee: transactionFee,
+        customer_name,
+        account_number,
+        partner_bank: partnerBank.account_name || partnerBank.provider || "",
+        reference: reference || `AGENCY-${Date.now()}`,
+        status: "completed",
+        cash_till_affected: cashTillAffected,
+        float_affected: floatAffected,
+      },
     });
   } catch (error) {
     console.error("Error processing agency banking transaction:", error);
     return NextResponse.json(
       {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to process agency banking transaction",
       },
       { status: 500 }
     );
@@ -281,7 +474,7 @@ export async function GET(request: NextRequest) {
         )
       `;
     } catch (tableError) {
-        console.error(
+      console.error(
         "Error creating agency_banking_transactions table:",
         tableError
       );
@@ -420,59 +613,123 @@ export async function PATCH(request: NextRequest) {
       customer_name,
       reference,
       notes,
+      fee, // Allow fee to be updated
     } = updateData;
+
     // Fetch partner bank
     const floatAccounts =
       await sql`SELECT * FROM float_accounts WHERE id = ${partner_bank_id} AND is_active = true`;
     const partnerBank = floatAccounts[0];
-    // Fetch fee
-    let fee = 0;
-    try {
-      const feeRes = await fetch(
-        `${
-          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
-        }/api/agency-banking/calculate-fee`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            amount,
-            transactionType: type,
-            partnerBankId: partner_bank_id,
-          }),
-        }
-      );
-      const feeData = await feeRes.json();
-      fee = Number(feeData.fee) || 0;
-    } catch (err) {
-      fee = 0;
+
+    // Handle fee - use provided fee or calculate default
+    let transactionFee = 0;
+    if (fee !== undefined && fee !== null) {
+      // Use the fee provided by the user (allows flexibility)
+      transactionFee = Number(fee) || 0;
+    } else {
+      // Fallback to auto-calculation if no fee provided
+      try {
+        const feeRes = await fetch(
+          `${
+            process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+          }/api/agency-banking/calculate-fee`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount,
+              transactionType: type,
+              partnerBankId: partner_bank_id,
+            }),
+          }
+        );
+        const feeData = await feeRes.json();
+        transactionFee = Number(feeData.fee) || 0;
+      } catch (err) {
+        transactionFee = 0;
+      }
     }
+    // Calculate new cash till and float effects
     let cashTillAffected = 0;
     let floatAffected = 0;
+
     switch (type) {
       case "deposit":
-        cashTillAffected = amount + fee;
-        floatAffected = -amount;
+        // Deposit: Customer gives us cash + fee, we send amount to customer's bank account
+        // Cash in till increases by amount + fee (we receive cash + fee)
+        // Bank float decreases by amount only (we send only the amount to customer's account)
+        cashTillAffected = amount + transactionFee;
+        floatAffected = -amount; // Only the amount, not the fee
         break;
+
       case "withdrawal":
-        cashTillAffected = -(amount - fee);
-        floatAffected = amount;
+        // Withdrawal: Customer gives us amount from bank account, we give cash to customer
+        // Cash in till decreases by amount only (we pay only the amount in cash)
+        // Bank float increases by amount only (we receive only the amount from customer's account)
+        // Fee is added to cash in till (we keep the fee as revenue)
+        cashTillAffected = -amount + transactionFee; // We pay amount in cash, but keep fee
+        floatAffected = amount; // Only the amount, not the fee
         break;
+
       case "interbank":
-        cashTillAffected = fee;
-        floatAffected = 0;
+      case "interbank_transfer":
+        // Interbank Transfer: Customer gives us cash + fee, we send amount to customer's other bank
+        // Cash in till increases by amount + fee (we receive cash + fee)
+        // Bank float decreases by amount only (we send only the amount to customer's other bank)
+        cashTillAffected = amount + transactionFee;
+        floatAffected = -amount; // Only the amount, not the fee
         break;
+
       case "commission":
+        // Commission: Direct commission payment
         cashTillAffected = amount;
         floatAffected = 0;
         break;
+
+      default:
+        return NextResponse.json(
+          { error: "Invalid transaction type" },
+          { status: 400 }
+        );
     }
+    // Validate balances before updating
+    if (floatAffected < 0) {
+      const requiredFloat = Math.abs(floatAffected);
+      if (partnerBank.current_balance < requiredFloat) {
+        return NextResponse.json(
+          {
+            error: `Insufficient bank float balance. Required: ${requiredFloat}, Available: ${partnerBank.current_balance}`,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (cashTillAffected < 0) {
+      const cashTillAccounts = await sql`
+        SELECT * FROM float_accounts 
+        WHERE account_type = 'cash-in-till' AND branch_id = ${existing.branch_id} AND is_active = true
+      `;
+      if (cashTillAccounts.length > 0) {
+        const cashTill = cashTillAccounts[0];
+        const requiredCash = Math.abs(cashTillAffected);
+        if (cashTill.current_balance < requiredCash) {
+          return NextResponse.json(
+            {
+              error: `Insufficient cash in till balance. Required: ${requiredCash}, Available: ${cashTill.current_balance}`,
+            },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     // Update transaction
     await sql`
       UPDATE agency_banking_transactions SET
         type = ${type},
         amount = ${amount},
-        fee = ${fee},
+        fee = ${transactionFee},
         customer_name = ${customer_name},
         account_number = ${account_number},
         partner_bank = ${
@@ -487,6 +744,7 @@ export async function PATCH(request: NextRequest) {
         updated_at = NOW()
       WHERE id = ${id}
     `;
+
     // Update balances
     if (floatAffected !== 0) {
       await sql`UPDATE float_accounts SET current_balance = current_balance + ${floatAffected} WHERE id = ${partnerBank.id}`;
@@ -494,13 +752,14 @@ export async function PATCH(request: NextRequest) {
     if (cashTillAffected !== 0) {
       await sql`UPDATE float_accounts SET current_balance = current_balance + ${cashTillAffected} WHERE account_type = 'cash-in-till' AND branch_id = ${existing.branch_id}`;
     }
+
     // Re-post GL
     await UnifiedGLPostingService.createGLEntries({
       transactionId: id,
       sourceModule: "agency_banking",
       transactionType: type,
       amount,
-      fee,
+      fee: transactionFee,
       customerName: customer_name,
       reference: reference || existing.reference,
       processedBy: session.user.id,
@@ -512,7 +771,7 @@ export async function PATCH(request: NextRequest) {
         customerName: customer_name,
         accountNumber: account_number,
         amount,
-        fee,
+        fee: transactionFee,
         reference: reference || existing.reference,
       },
     });

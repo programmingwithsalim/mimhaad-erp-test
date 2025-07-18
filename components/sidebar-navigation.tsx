@@ -26,6 +26,8 @@ import {
   LogOut,
   CheckCircle,
   BarChart3,
+  ChevronDown,
+  ChevronLeft,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,14 +44,7 @@ const menuItems = [
         title: "Dashboard",
         href: "/dashboard",
         icon: LayoutDashboard,
-        roles: [
-          "Admin",
-          "Manager",
-          "Finance",
-          "Operations",
-          "Cashier",
-          "Supervisor",
-        ],
+        roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
       },
       {
         title: "Analytics",
@@ -66,44 +61,37 @@ const menuItems = [
         title: "All Transactions",
         href: "/dashboard/transactions/all",
         icon: Receipt,
-        roles: [
-          "Admin",
-          "Manager",
-          "Finance",
-          "Operations",
-          "Cashier",
-          "Supervisor",
-        ],
+        roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
       },
       {
         title: "Mobile Money",
         href: "/dashboard/momo",
         icon: Smartphone,
-        roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+        roles: ["Admin", "Manager", "Operations"],
       },
       {
         title: "Agency Banking",
         href: "/dashboard/agency-banking",
         icon: Banknote,
-        roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+        roles: ["Admin", "Manager", "Operations"],
       },
       {
         title: "E-Zwich",
         href: "/dashboard/e-zwich",
         icon: CreditCard,
-        roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+        roles: ["Admin", "Manager", "Operations"],
       },
       {
         title: "Power/Utilities",
         href: "/dashboard/power",
         icon: Zap,
-        roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+        roles: ["Admin", "Manager", "Operations"],
       },
       {
         title: "Jumia Pay",
         href: "/dashboard/jumia",
         icon: ShoppingCart,
-        roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+        roles: ["Admin", "Manager", "Operations"],
       },
     ],
   },
@@ -120,7 +108,7 @@ const menuItems = [
         title: "Expenses",
         href: "/dashboard/expenses",
         icon: Receipt,
-        roles: ["Admin", "Manager", "Finance"],
+        roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
       },
       {
         title: "Expense Approvals",
@@ -149,6 +137,12 @@ const menuItems = [
         title: "E-Zwich Inventory",
         href: "/dashboard/inventory/e-zwich",
         icon: Database,
+        roles: ["Admin", "Manager", "Finance"],
+      },
+      {
+        title: "Fixed Assets",
+        href: "/dashboard/inventory/fixed-assets",
+        icon: Building2,
         roles: ["Admin", "Manager", "Finance"],
       },
     ],
@@ -200,14 +194,7 @@ const menuItems = [
         title: "Settings",
         href: "/dashboard/settings",
         icon: Settings,
-        roles: [
-          "Admin",
-          "Manager",
-          "Finance",
-          "Operations",
-          "Cashier",
-          "Supervisor",
-        ],
+        roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
       },
     ],
   },
@@ -220,6 +207,9 @@ export function SidebarNavigation() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(
+    new Set()
+  );
 
   // Debug log for user and userRole
   useEffect(() => {
@@ -239,6 +229,24 @@ export function SidebarNavigation() {
     return () => window.removeEventListener("resize", checkIsMobile);
   }, []);
 
+  // Auto-expand sections that contain the current active page
+  useEffect(() => {
+    const newExpandedSections = new Set<string>();
+
+    menuItems.forEach((section) => {
+      const hasActiveItem = section.items.some((item) => {
+        const hasPermission = userRole ? item.roles.includes(userRole) : false;
+        return hasPermission && pathname === item.href;
+      });
+
+      if (hasActiveItem) {
+        newExpandedSections.add(section.title);
+      }
+    });
+
+    setExpandedSections(newExpandedSections);
+  }, [pathname, userRole]);
+
   const hasPermission = (roles: Role[]) => {
     return userRole ? roles.includes(userRole) : false;
   };
@@ -251,48 +259,67 @@ export function SidebarNavigation() {
     setMobileOpen(!mobileOpen);
   };
 
-  const handleLogout = async () => {
-    await logout();
+  const toggleSection = (sectionTitle: string) => {
+    setExpandedSections((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionTitle)) {
+        newSet.delete(sectionTitle);
+      } else {
+        newSet.add(sectionTitle);
+      }
+      return newSet;
+    });
   };
 
-  const SidebarContent = () => (
-    <div className="flex h-full flex-col">
+  const SidebarContent = (
+    <div
+      className={cn(
+        "flex h-full flex-col bg-background border-r transition-all duration-300 ease-in-out",
+        isCollapsed ? "w-16" : "w-64"
+      )}
+    >
       {/* Header */}
-      <div className="flex h-16 items-center justify-between border-b bg-background px-4 md:px-6 flex-shrink-0">
-        <div className="flex items-center gap-2">
-          <img
-            src="/logo.png"
-            alt="MIMHAAD Logo"
-            className="h-10 w-10 object-cover"
-          />
-          {!isCollapsed && (
-            <div className="flex flex-col">
-              <span className="font-semibold leading-tight">MIMHAAD</span>
-              <span className="text-xs text-muted-foreground leading-tight">
-                Financial Services
-              </span>
-            </div>
-          )}
-        </div>
-        {!isMobile && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={toggleSidebar}
-            className="h-8 w-8 p-0"
-          >
-            <ChevronRight
-              className={cn(
-                "h-4 w-4 transition-transform",
-                isCollapsed && "rotate-180"
-              )}
+      <div className="flex h-16 items-center justify-between px-4 border-b">
+        {!isCollapsed ? (
+          <div className="flex items-center gap-3">
+            <img
+              src="/logo.png"
+              alt="MIMHAAD Logo"
+              className="w-8 h-8 rounded-full"
             />
-          </Button>
+            <div>
+              <h2 className="text-lg font-bold">MIMHAAD</h2>
+              <p className="text-xs text-muted-foreground">
+                Financial Services
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-center w-full">
+            <img
+              src="/logo.png"
+              alt="MIMHAAD Logo"
+              className="w-8 h-8 rounded-full"
+            />
+          </div>
         )}
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={toggleSidebar}
+          className="h-8 w-8 p-0"
+        >
+          <ChevronLeft
+            className={cn(
+              "h-4 w-4 transition-transform duration-200",
+              isCollapsed && "rotate-180"
+            )}
+          />
+        </Button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 min-h-0 overflow-y-auto space-y-4 p-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 p-2">
         {menuItems.map((section) => {
           const visibleItems = section.items.filter((item) =>
             hasPermission(item.roles as Role[])
@@ -300,123 +327,175 @@ export function SidebarNavigation() {
 
           if (visibleItems.length === 0) return null;
 
+          const isExpanded = expandedSections.has(section.title);
+          const hasActiveItem = visibleItems.some(
+            (item) => pathname === item.href
+          );
+
+          // In collapsed mode, show all items as icons only
+          if (isCollapsed) {
+            return (
+              <div key={section.title} className="space-y-1">
+                {visibleItems.map((item) => {
+                  const isActive = pathname === item.href;
+                  const Icon = item.icon;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      title={item.title}
+                      className={cn(
+                        "flex items-center justify-center px-2 py-2 text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-[1.02] min-w-0",
+                        isActive
+                          ? "bg-primary text-primary-foreground shadow-md"
+                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm"
+                      )}
+                    >
+                      <Icon className="h-5 w-5 flex-shrink-0" />
+                    </Link>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          // Expanded mode - show sections with expand/collapse
           return (
             <div key={section.title} className="space-y-1">
-              {!isCollapsed && (
-                <h3 className="px-2 py-2 text-xs font-semibold uppercase tracking-wider bg-muted/60 rounded mb-2 text-muted-foreground">
+              {/* Section Header - Clickable to expand/collapse */}
+              <button
+                onClick={() => toggleSection(section.title)}
+                title={isCollapsed ? section.title : undefined}
+                className={cn(
+                  "w-full flex items-center justify-between px-3 py-2 text-sm font-semibold uppercase tracking-wider transition-all duration-200 ease-in-out hover:bg-accent/50 min-w-0",
+                  hasActiveItem
+                    ? "bg-primary text-primary-foreground shadow-md"
+                    : "bg-muted/40 text-muted-foreground hover:bg-muted/60",
+                  isCollapsed && "justify-center px-2"
+                )}
+              >
+                <span className="truncate whitespace-nowrap overflow-hidden">
                   {section.title}
-                </h3>
-              )}
-              {visibleItems.map((item) => {
-                const isActive = pathname === item.href;
-                const Icon = item.icon;
+                </span>
+                <ChevronDown
+                  className={cn(
+                    "h-4 w-4 transition-transform duration-300 ease-in-out flex-shrink-0",
+                    isExpanded && "rotate-180"
+                  )}
+                />
+              </button>
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                      isActive
-                        ? "bg-primary text-primary-foreground"
-                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-                    )}
-                  >
-                    <Icon className="h-4 w-4" />
-                    {!isCollapsed && <span>{item.title}</span>}
-                  </Link>
-                );
-              })}
+              {/* Section Items - Smooth expand/collapse animation */}
+              <div
+                className={cn(
+                  "overflow-hidden transition-all duration-300 ease-in-out",
+                  isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+                )}
+              >
+                <div className="space-y-1 ml-4 pl-4 border-l-2 border-muted/30">
+                  {visibleItems.map((item) => {
+                    const isActive = pathname === item.href;
+                    const Icon = item.icon;
+
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        title={isCollapsed ? item.title : undefined}
+                        className={cn(
+                          "flex items-center gap-3 px-4 py-2 text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-[1.02] min-w-0",
+                          isActive
+                            ? "bg-primary text-primary-foreground shadow-md"
+                            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm"
+                        )}
+                      >
+                        <Icon className="h-5 w-5 flex-shrink-0" />
+                        <span className="truncate whitespace-nowrap overflow-hidden">
+                          {item.title}
+                        </span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           );
         })}
       </nav>
 
       {/* User Info & Logout - fixed at bottom */}
-      {user && (
-        <div className="border-t p-4 bg-background sticky bottom-0 z-10">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-              <span className="text-xs font-medium">
-                {user.firstName?.[0]}
-                {user.lastName?.[0]}
-              </span>
-            </div>
-            {!isCollapsed && (
+      <div className="border-t p-4 space-y-3">
+        {!isCollapsed && user && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <span className="text-sm font-medium text-primary">
+                  {user.firstName?.[0] || user.email?.[0] || "U"}
+                </span>
+              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {user.firstName} {user.lastName}
+                  {user.firstName && user.lastName
+                    ? `${user.firstName} ${user.lastName}`
+                    : user.email}
                 </p>
                 <p className="text-xs text-muted-foreground truncate">
-                  {userRole || user.role}
+                  {userRole || "User"}
                 </p>
               </div>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleLogout}
-              className="h-8 w-8 p-0"
-              title="Logout"
-            >
-              <LogOut className="h-4 w-4" />
-            </Button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={logout}
+          className={cn(
+            "w-full transition-all duration-200 ease-in-out",
+            isCollapsed && "px-2"
+          )}
+        >
+          <LogOut className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">Logout</span>}
+        </Button>
+      </div>
     </div>
   );
 
-  // Mobile sidebar
+  // Mobile sidebar overlay
   if (isMobile) {
     return (
       <>
+        {/* Mobile menu button */}
         <Button
           variant="ghost"
           size="sm"
           onClick={toggleMobileSidebar}
-          className="fixed top-4 left-4 z-50 h-10 w-10 p-0"
+          className="fixed top-4 left-4 z-50 md:hidden"
         >
           <Menu className="h-5 w-5" />
         </Button>
 
+        {/* Mobile sidebar overlay */}
         {mobileOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/50"
-            onClick={toggleMobileSidebar}
-          >
+          <div className="fixed inset-0 z-40 md:hidden">
             <div
-              className="fixed left-0 top-0 h-full w-64 bg-background border-r"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex h-16 items-center justify-between border-b px-4">
-                <span className="font-semibold">MIMHAAD</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={toggleMobileSidebar}
-                  className="h-8 w-8 p-0"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-              <SidebarContent />
+              className="fixed inset-0 bg-black/50 transition-opacity duration-300"
+              onClick={toggleMobileSidebar}
+            />
+            <div className="fixed left-0 top-0 h-full w-64 transform transition-transform duration-300 ease-in-out">
+              {SidebarContent}
             </div>
           </div>
         )}
+
+        {/* Desktop sidebar */}
+        <div className="hidden md:block">{SidebarContent}</div>
       </>
     );
   }
 
   // Desktop sidebar
-  return (
-    <div
-      className={cn(
-        "h-full border-r bg-background transition-all duration-300",
-        isCollapsed ? "w-16" : "w-64"
-      )}
-    >
-      <SidebarContent />
-    </div>
-  );
+  return SidebarContent;
 }

@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import type React from "react"
+import type React from "react";
 
-import { useMemo } from "react"
+import { useMemo } from "react";
 import {
   LayoutDashboard,
   Smartphone,
@@ -18,16 +18,16 @@ import {
   Settings,
   ClipboardList,
   Wallet,
-} from "lucide-react"
+} from "lucide-react";
 
-import { useCurrentUser } from "@/hooks/use-current-user"
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 export interface NavigationItem {
-  name: string
-  path: string
-  icon: React.ReactNode
-  roles: string[]
-  description?: string
+  name: string;
+  path: string;
+  icon: React.ReactNode;
+  roles: string[];
+  description?: string;
 }
 
 const navigationItems: NavigationItem[] = [
@@ -98,7 +98,7 @@ const navigationItems: NavigationItem[] = [
     name: "Expenses",
     path: "/dashboard/expenses",
     icon: <DollarSign className="h-4 w-4" />,
-    roles: ["admin", "manager", "finance"],
+    roles: ["admin", "manager", "finance", "operations", "cashier"],
     description: "Expense tracking",
   },
   {
@@ -146,39 +146,39 @@ const navigationItems: NavigationItem[] = [
     name: "GL Accounting",
     path: "/dashboard/gl-accounting",
     icon: <Calculator className="h-4 w-4" />,
-    roles: ["admin", "manager"],
+    roles: ["admin", "finance"],
     description: "General ledger",
   },
   {
     name: "Audit Trail",
     path: "/dashboard/audit-trail",
     icon: <ClipboardList className="h-4 w-4" />,
-    roles: ["admin", "manager"],
+    roles: ["admin", "manager", "finance"],
     description: "System audit logs",
   },
   {
     name: "Settings",
     path: "/dashboard/settings",
     icon: <Settings className="h-4 w-4" />,
-    roles: ["admin"],
+    roles: ["admin", "manager", "finance", "operations", "cashier"],
     description: "System settings",
   },
-]
+];
 
 export function useRoleBasedNavigation() {
-  const { user } = useCurrentUser()
+  const { user } = useCurrentUser();
 
   const filteredNavigationItems = useMemo(() => {
     if (!user || !user.role) {
-      return []
+      return [];
     }
 
-    const userRole = user.role.toLowerCase()
-    return navigationItems.filter((item) => item.roles.includes(userRole))
-  }, [user])
+    const userRole = user.role.toLowerCase();
+    return navigationItems.filter((item) => item.roles.includes(userRole));
+  }, [user]);
 
   return {
     navigationItems: filteredNavigationItems,
     allNavigationItems: navigationItems,
-  }
+  };
 }

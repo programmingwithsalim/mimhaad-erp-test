@@ -1,6 +1,7 @@
 import { neon } from "@neondatabase/serverless";
 import { v4 as uuidv4 } from "uuid";
 import { AuditLoggerService } from "./audit-logger-service";
+import { AutoGLMappingService } from "./auto-gl-mapping-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -13,7 +14,8 @@ export interface UnifiedGLTransactionData {
     | "power"
     | "jumia"
     | "expenses"
-    | "commissions";
+    | "commissions"
+    | "float_transfers";
   transactionType: string;
   amount: number;
   fee: number;
@@ -78,7 +80,7 @@ export class UnifiedGLPostingService {
         data
       );
 
-      console.log("🔍 [DEBUG] Retrieved GL accounts for MoMo transaction:", {
+      console.log("🔍 [DEBUG] Retrieved GL accounts for transaction:", {
         sourceModule: data.sourceModule,
         transactionType: data.transactionType,
         accounts,
@@ -161,6 +163,31 @@ export class UnifiedGLPostingService {
             return "System User";
           }
 
+          // Check if userId is an email address (contains @)
+          if (userId.includes("@")) {
+            // Try to find user by email
+            const users = await sql`
+              SELECT first_name, last_name, email FROM users WHERE email = ${userId}
+            `;
+
+            if (users && users.length > 0) {
+              const { first_name, last_name, email } = users[0];
+              if (first_name && last_name) {
+                return `${first_name} ${last_name}`;
+              } else if (first_name) {
+                return first_name;
+              } else if (last_name) {
+                return last_name;
+              } else if (email) {
+                return email;
+              }
+            }
+
+            // If email not found, return the email as fallback
+            return userId;
+          }
+
+          // Try to find user by UUID
           const users = await sql`
             SELECT first_name, last_name, email FROM users WHERE id = ${userId}
           `;
@@ -196,7 +223,8 @@ export class UnifiedGLPostingService {
           "GL entries created for " +
           data.sourceModule +
           " " +
-          data.transactionType,
+          data.transactionType +
+          " transaction",
         details: {
           sourceTransactionId: data.transactionId,
           sourceModule: data.sourceModule,
@@ -213,12 +241,7 @@ export class UnifiedGLPostingService {
 
       return { success: true, glTransactionId };
     } catch (error) {
-      console.error(
-        "🔷 [GL] Error creating GL entries for " +
-          data.sourceModule +
-          " transaction:",
-        error
-      );
+      console.error("🔷 [GL] Error creating GL entries:", error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
@@ -232,135 +255,199 @@ export class UnifiedGLPostingService {
     branchId: string,
     data: UnifiedGLTransactionData
   ): Promise<Record<string, any>> {
-    // For MoMo, Jumia, and Agency Banking, always use their respective float types for mapping lookup
-    let lookupType = transactionType;
-    if (sourceModule === "momo") {
-      lookupType = "momo_float";
-    } else if (sourceModule === "jumia") {
-      lookupType = "jumia_float";
-    } else if (sourceModule === "agency_banking") {
-      lookupType = "agency_banking_float";
-    } else if (sourceModule === "e_zwich") {
-      lookupType = "e_zwich_float";
-    } else if (sourceModule === "power") {
-      lookupType = "power_float";
-    }
+    try {
+      console.log(
+        "🔍 [DEBUG] Getting GL accounts for transaction:",
+        sourceModule,
+        transactionType,
+        branchId
+      );
 
-    // For expenses, we need to get both expense category and payment method mappings
-    if (sourceModule === "expenses") {
-      // Extract expense category from metadata or use default
-      const expenseCategory = data.metadata?.expenseCategory || "expense_other"; // Get from metadata
-      const paymentMethod = transactionType; // This is the payment method
+      // Determine the correct transaction type based on source module and float account
+      let actualTransactionType = transactionType;
 
+      // For float-based transactions, we need to use the specific float account type
+      if (
+        sourceModule === "momo" &&
+        ["cash-in", "cash-out"].includes(transactionType)
+      ) {
+        actualTransactionType = "momo_float";
+      } else if (
+        sourceModule === "agency_banking" &&
+        ["deposit", "withdrawal", "interbank", "interbank_transfer"].includes(
+          transactionType
+        )
+      ) {
+        actualTransactionType = "agency_banking_float";
+      } else if (
+        sourceModule === "e_zwich" &&
+        ["withdrawal", "card_issuance"].includes(transactionType)
+      ) {
+        actualTransactionType = "e_zwich_float";
+      } else if (
+        sourceModule === "power" &&
+        ["sale", "purchase"].includes(transactionType)
+      ) {
+        actualTransactionType = "power_float";
+      } else if (
+        sourceModule === "jumia" &&
+        ["pod_collection", "settlement"].includes(transactionType)
+      ) {
+        actualTransactionType = "jumia_float";
+      }
+
+      console.log(
+        "🔍 [DEBUG] Using transaction type for GL mapping:",
+        actualTransactionType
+      );
+
+      // Get GL mappings for this transaction type with account codes
       const mappings = await sql`
-        SELECT mapping_type, gl_account_id
-        FROM gl_mappings
-        WHERE transaction_type IN (${expenseCategory}, ${paymentMethod})
-          AND branch_id = ${branchId}
-          AND is_active = true
+        SELECT 
+          gm.mapping_type, 
+          gm.gl_account_id, 
+          ga.code as gl_account_code
+        FROM gl_mappings gm
+        JOIN gl_accounts ga ON gm.gl_account_id = ga.id
+        WHERE gm.transaction_type = ${actualTransactionType}
+          AND gm.branch_id = ${branchId}
+          AND gm.is_active = true
       `;
 
-      // Build a mapping object: { expense, payment }
-      const result: Record<string, string> = {};
-      for (const row of mappings) {
-        if (row.mapping_type === "expense") {
-          result.expense = row.gl_account_id;
-        } else if (row.mapping_type === "payment") {
-          result.payment = row.gl_account_id;
-        }
-      }
+      console.log("🔍 [DEBUG] Found GL mappings:", mappings);
 
-      return result;
-    }
-
-    // For commissions, we need to get main and commission mappings
-    if (sourceModule === "commissions") {
-      // For commissions, use the transaction type directly (e.g., "momo_float", "agency_banking_float")
-      const commissionType = transactionType;
-
-      // Get the float account ID from metadata if available
-      const floatAccountId = data.metadata?.source;
-
-      let mappings;
-      if (floatAccountId) {
-        // Filter by both transaction type and float account ID
-        mappings = await sql`
-          SELECT mapping_type, gl_account_id
-          FROM gl_mappings
-          WHERE transaction_type = ${commissionType}
-            AND branch_id = ${branchId}
-            AND float_account_id = ${floatAccountId}
-            AND is_active = true
+      if (mappings.length === 0) {
+        // Try to get default mappings from the main branch
+        const defaultMappings = await sql`
+          SELECT 
+            gm.mapping_type, 
+            gm.gl_account_id, 
+            ga.code as gl_account_code
+          FROM gl_mappings gm
+          JOIN gl_accounts ga ON gm.gl_account_id = ga.id
+          WHERE gm.transaction_type = ${actualTransactionType}
+            AND gm.branch_id = '635844ab-029a-43f8-8523-d7882915266a'
+            AND gm.is_active = true
         `;
-      } else {
-        // Fallback to just transaction type
-        mappings = await sql`
-          SELECT mapping_type, gl_account_id
-          FROM gl_mappings
-          WHERE transaction_type = ${commissionType}
-            AND branch_id = ${branchId}
-            AND is_active = true
-        `;
-      }
 
-      console.log(
-        `🔷 [GL] Found ${mappings.length} mappings for commission type: ${commissionType}`
-      );
-      console.log(
-        `🔷 [GL] Float account ID: ${floatAccountId || "not specified"}`
-      );
-      console.log(`🔷 [GL] Mappings:`, mappings);
+        if (defaultMappings.length === 0) {
+          // If no mappings found, try to create them automatically
+          console.log(
+            "🔍 [DEBUG] No GL mappings found, attempting to create them automatically"
+          );
 
-      // Build a mapping object: { main, commission }
-      const result: Record<string, string> = {};
-      for (const row of mappings) {
-        if (row.mapping_type === "revenue") {
-          result.main = row.gl_account_id;
-        } else if (row.mapping_type === "commission") {
-          result.commission = row.gl_account_id;
+          try {
+            const requiredMappings =
+              this.getRequiredMappingsForModule(sourceModule);
+            await AutoGLMappingService.ensureGLMappings(
+              sourceModule,
+              actualTransactionType,
+              branchId,
+              requiredMappings
+            );
+
+            // Try to get the mappings again after creation
+            const newMappings = await sql`
+              SELECT 
+                gm.mapping_type, 
+                gm.gl_account_id, 
+                ga.code as gl_account_code
+              FROM gl_mappings gm
+              JOIN gl_accounts ga ON gm.gl_account_id = ga.id
+              WHERE gm.transaction_type = ${actualTransactionType}
+                AND gm.branch_id = ${branchId}
+                AND gm.is_active = true
+            `;
+
+            if (newMappings.length > 0) {
+              console.log(
+                "🔍 [DEBUG] Successfully created and found GL mappings:",
+                newMappings
+              );
+              return this.formatGLAccounts(newMappings);
+            }
+          } catch (autoMappingError) {
+            console.error(
+              "🔍 [DEBUG] Failed to create GL mappings automatically:",
+              autoMappingError
+            );
+          }
+
+          throw new Error(
+            `No GL mappings found for transaction type: ${actualTransactionType}`
+          );
         }
+
+        console.log("🔍 [DEBUG] Using default GL mappings:", defaultMappings);
+        return this.formatGLAccounts(defaultMappings);
       }
 
-      console.log(`🔷 [GL] Processed mappings:`, result);
+      return this.formatGLAccounts(mappings);
+    } catch (error) {
+      console.error("🔷 [GL] Error getting GL accounts:", error);
+      throw error;
+    }
+  }
 
-      return result;
+  private static async getGLAccountIdByCode(
+    accountCode: string
+  ): Promise<string | null> {
+    try {
+      const result = await sql`
+        SELECT id FROM gl_accounts 
+        WHERE account_code = ${accountCode}
+        LIMIT 1
+      `;
+      return result.length > 0 ? result[0].id : null;
+    } catch (error) {
+      console.error("Error getting GL account ID by code:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Get required mapping types for a module
+   */
+  private static getRequiredMappingsForModule(sourceModule: string): string[] {
+    switch (sourceModule) {
+      case "momo":
+        return ["main", "liability", "fee", "revenue"];
+      case "agency_banking":
+        return ["main", "liability", "fee", "revenue"];
+      case "e_zwich":
+        return ["main", "liability", "fee", "revenue"];
+      case "power":
+        return ["main", "revenue", "fee"];
+      case "jumia":
+        return ["main", "liability", "revenue"];
+      case "commissions":
+        return ["main", "revenue"];
+      case "expenses":
+        return ["main", "expense"];
+      case "float_transfers":
+        return ["source", "destination", "fee", "revenue"];
+      case "e-zwich-inventory":
+        return ["main", "inventory"];
+      default:
+        return ["main", "revenue"];
+    }
+  }
+
+  private static formatGLAccounts(
+    mappings: Array<{
+      mapping_type: string;
+      gl_account_id: string;
+      gl_account_code: string;
+    }>
+  ): Record<string, any> {
+    const accounts: Record<string, any> = {};
+
+    for (const mapping of mappings) {
+      accounts[mapping.mapping_type] = mapping.gl_account_id;
+      accounts[`${mapping.mapping_type}Code`] = mapping.gl_account_code;
     }
 
-    // For other modules, use the original logic
-    console.log(
-      `🔍 [DEBUG] Looking for GL mappings for ${lookupType} in branch ${branchId}`
-    );
-
-    const mappings = await sql`
-      SELECT mapping_type, gl_account_id
-      FROM gl_mappings
-      WHERE transaction_type = ${lookupType}
-        AND branch_id = ${branchId}
-        AND is_active = true
-    `;
-
-    console.log(
-      `🔍 [DEBUG] Found ${mappings.length} GL mappings for ${lookupType}:`,
-      mappings
-    );
-
-    // Build a mapping object: { main_account, fee_account, ... }
-    const result: Record<string, string> = {};
-    for (const row of mappings) {
-      result[row.mapping_type] = row.gl_account_id;
-    }
-
-    console.log(`🔍 [DEBUG] Processed GL mappings for ${lookupType}:`, result);
-
-    // Auto-fill missing asset mapping with main account (they should be the same)
-    if (result.main && !result.asset) {
-      result.asset = result.main;
-      console.log(
-        `🔷 [GL] Auto-filled asset mapping with main account for ${lookupType}`
-      );
-    }
-
-    return result;
+    return accounts;
   }
 
   private static async createGLEntriesForTransaction(
@@ -385,475 +472,511 @@ export class UnifiedGLPostingService {
       metadata?: Record<string, any>;
     }> = [];
 
-    // Check for required mappings before proceeding
-    let requiredMappings: string[] = [];
-    switch (data.sourceModule) {
-      case "momo":
-        requiredMappings = ["main", "fee", "revenue", "expense"];
-        break;
-      case "agency_banking":
-        requiredMappings = ["main", "fee", "revenue", "expense"];
-        break;
-      case "e_zwich":
-        requiredMappings = ["main", "fee", "revenue", "expense"];
-        break;
-      case "power":
-        requiredMappings = ["main", "fee", "revenue", "expense"];
-        break;
-      case "jumia":
-        // Only require 'main' for package_receipt and pod_collection
-        if (
-          data.transactionType === "package_receipt" ||
-          data.transactionType === "pod_collection"
-        ) {
-          requiredMappings = ["main"];
-        } else {
-          requiredMappings = ["main", "fee", "revenue", "expense"];
-        }
-        break;
-      case "expenses":
-        requiredMappings = ["expense", "payment"];
-        break;
-      case "commissions":
-        requiredMappings = ["main", "commission"];
-        break;
-      // Add more as needed
-    }
-
-    // Check for required mappings and add fallbacks
-    for (const key of requiredMappings) {
-      if (!accounts[key]) {
-        throw new Error(
-          `Missing GL mapping for ${key} (module: ${data.sourceModule}, type: ${data.transactionType}, branch: ${data.branchId})`
-        );
-      }
-    }
-
-    // Add fallback mappings for asset (same as main)
-    if (!accounts.asset && accounts.main) {
-      accounts.asset = accounts.main;
-    }
-
-    switch (data.sourceModule) {
-      case "momo":
-        console.log(
-          "🔍 [DEBUG] Creating MoMo GL entries for:",
-          data.transactionType
-        );
-        if (
-          data.transactionType === "cash-in" ||
-          data.transactionType === "deposit"
-        ) {
-          console.log(
-            "🔍 [DEBUG] Creating cash-in/deposit entries - Amount:",
-            data.amount,
-            "Fee:",
-            data.fee
-          );
-          // Cash-in/Deposit: Customer gives us cash + fee, we lose only the amount from MoMo float
-          // Dr. Cash in Till (amount + fee), Cr. MoMo Float (amount only)
-          // Dr. Fee Revenue (fee), Cr. Fee Expense (fee)
-          entries.push({
-            accountId: accounts.fee, // Cash in Till account
-            accountCode: accounts.fee, // Use account ID as code if no separate code
-            debit: data.amount + data.fee, // Amount + fee goes to cash till
-            credit: 0,
-            description:
-              "MoMo Cash-in - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          console.log(
-            "🔍 [DEBUG] Added cash-in entry 1: Dr. Cash Till",
-            data.amount + data.fee
-          );
-          entries.push({
-            accountId: accounts.main, // MoMo Float account
-            accountCode: accounts.main, // Use account ID as code if no separate code
-            debit: 0,
-            credit: data.amount, // Only the amount, not the fee
-            description:
-              "MoMo Cash-in - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          console.log(
-            "🔍 [DEBUG] Added cash-in entry 2: Cr. MoMo Float",
-            data.amount
-          );
-          // Fee entries
-          if (data.fee > 0) {
-            entries.push({
-              accountId: accounts.revenue, // Fee Revenue account
-              accountCode: accounts.revenue, // Use account ID as code if no separate code
-              debit: 0,
-              credit: data.fee, // Fee revenue (we earn the fee)
-              description:
-                "MoMo Fee Revenue - " + (data.customerName || data.reference),
-              metadata: {
-                transactionId: data.transactionId,
-                customerName: data.customerName,
-                feeAmount: data.fee,
-              },
-            });
-            console.log(
-              "🔍 [DEBUG] Added cash-in fee entry 3: Cr. Fee Revenue",
-              data.fee
-            );
-            // Note: No Fee Expense entry for cash-in transactions
-            // We only earn the fee as revenue, no expense is incurred
-          }
-        } else if (
-          data.transactionType === "cash-out" ||
-          data.transactionType === "withdrawal"
-        ) {
-          console.log(
-            "🔍 [DEBUG] Creating cash-out/withdrawal entries - Amount:",
-            data.amount,
-            "Fee:",
-            data.fee
-          );
-          // Cash-out/Withdrawal: Customer withdraws cash, we receive amount + fee to MoMo float
-          // Dr. MoMo Float (amount + fee), Cr. Cash in Till (amount), Cr. Fee Revenue (fee)
-          entries.push({
-            accountId: accounts.main, // MoMo Float account
-            accountCode: accounts.main, // Use account ID as code if no separate code
-            debit: data.amount + data.fee, // Amount + fee goes to MoMo float
-            credit: 0,
-            description:
-              "MoMo Cash-out - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          console.log(
-            "🔍 [DEBUG] Added cash-out entry 1: Dr. MoMo Float",
-            data.amount + data.fee
-          );
-          entries.push({
-            accountId: accounts.fee, // Cash in Till account
-            accountCode: accounts.fee, // Use account ID as code if no separate code
-            debit: 0,
-            credit: data.amount, // Only the amount comes from cash till
-            description:
-              "MoMo Cash-out - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          console.log(
-            "🔍 [DEBUG] Added cash-out entry 2: Cr. Cash Till",
-            data.amount
-          );
-          if (data.fee > 0) {
-            entries.push({
-              accountId: accounts.revenue, // Fee Revenue account
-              accountCode: accounts.revenue, // Use account ID as code if no separate code
-              debit: 0,
-              credit: data.fee, // Fee revenue
-              description:
-                "MoMo Fee Revenue - " + (data.customerName || data.reference),
-              metadata: {
-                transactionId: data.transactionId,
-                customerName: data.customerName,
-                feeAmount: data.fee,
-              },
-            });
-            console.log(
-              "🔍 [DEBUG] Added cash-out fee entry 3: Cr. Fee Revenue",
-              data.fee
-            );
-          }
-        }
-        console.log("🔍 [DEBUG] Total MoMo entries created:", entries.length);
-        break;
-
-      case "agency_banking":
-        if (data.transactionType === "deposit") {
+    // Create entries based on transaction type
+    switch (data.transactionType) {
+      case "cash-in":
+        // MoMo Cash-In: Debit cash account, credit liability account
+        if (accounts.main && accounts.liability) {
           entries.push({
             accountId: accounts.main,
-            accountCode: accounts.main,
+            accountCode: accounts.mainCode,
             debit: data.amount,
             credit: 0,
-            description:
-              "Agency Banking Deposit - " +
-              (data.customerName || data.reference),
+            description: `MoMo Cash-In - ${data.reference}`,
             metadata: {
               transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
-            debit: 0,
-            credit: data.amount,
-            description:
-              "Agency Banking Deposit - " +
-              (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-        } else if (data.transactionType === "withdrawal") {
-          entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
-            debit: data.amount,
-            credit: 0,
-            description:
-              "Agency Banking Withdrawal - " +
-              (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          entries.push({
-            accountId: accounts.main,
-            accountCode: accounts.main,
-            debit: 0,
-            credit: data.amount,
-            description:
-              "Agency Banking Withdrawal - " +
-              (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-        }
-        break;
-
-      case "e_zwich":
-        if (data.transactionType === "withdrawal") {
-          // E-Zwich Withdrawal: Only withdrawal amount debited from cash in till
-          // Fee is added to the settlement account, not deducted from cash
-          entries.push({
-            accountId: accounts.fee, // Cash in Till account
-            accountCode: accounts.fee,
-            debit: data.amount, // Only the withdrawal amount (not including fee)
-            credit: 0,
-            description:
-              "E-Zwich Withdrawal - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              customerName: data.customerName,
-            },
-          });
-          entries.push({
-            accountId: accounts.main, // E-Zwich Settlement Account
-            accountCode: accounts.main,
-            debit: 0,
-            credit: data.amount, // Only the withdrawal amount
-            description:
-              "E-Zwich Withdrawal - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
               customerName: data.customerName,
             },
           });
 
-          // Add fee to settlement account if there's a fee
-          if (data.fee > 0) {
+          entries.push({
+            accountId: accounts.liability,
+            accountCode: accounts.liabilityCode,
+            debit: 0,
+            credit: data.amount,
+            description: `MoMo Cash-In Liability - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          // Add fee entry if fee exists - fees always go to cash-in till
+          if (data.fee > 0 && accounts.fee) {
             entries.push({
-              accountId: accounts.revenue, // Fee Revenue account
-              accountCode: accounts.revenue,
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
               debit: 0,
-              credit: data.fee, // Fee revenue
-              description:
-                "E-Zwich Withdrawal Fee - " +
-                (data.customerName || data.reference),
+              credit: data.fee,
+              description: `Fee Revenue - ${data.reference}`,
               metadata: {
                 transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
                 customerName: data.customerName,
-                feeAmount: data.fee,
               },
             });
+
+            // Fee debit always goes to cash-in till (main account)
             entries.push({
-              accountId: accounts.main, // E-Zwich Settlement Account
-              accountCode: accounts.main,
-              debit: data.fee, // Fee debited to settlement account
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.fee,
               credit: 0,
-              description:
-                "E-Zwich Withdrawal Fee - " +
-                (data.customerName || data.reference),
+              description: `Fee to Cash-in Till - ${data.reference}`,
               metadata: {
                 transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
                 customerName: data.customerName,
-                feeAmount: data.fee,
               },
             });
           }
-        } else if (data.transactionType === "card_issuance") {
+        }
+        break;
+
+      case "cash-out":
+        // MoMo Cash-Out: Debit liability account, credit cash account
+        if (accounts.main && accounts.asset) {
           entries.push({
             accountId: accounts.main,
-            accountCode: accounts.main,
+            accountCode: accounts.mainCode,
             debit: data.amount,
             credit: 0,
-            description:
-              "E-Zwich Card Issuance - " +
-              (data.customerName || data.reference),
+            description: `MoMo Cash-Out Liability - ${data.reference}`,
             metadata: {
               transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
               customerName: data.customerName,
-              batchId: data.metadata?.batchId,
-              batchCode: data.metadata?.batchCode,
-              cardNumber: data.metadata?.cardNumber,
             },
           });
+
           entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
+            accountId: accounts.asset,
+            accountCode: accounts.assetCode,
             debit: 0,
             credit: data.amount,
-            description:
-              "E-Zwich Card Issuance - " +
-              (data.customerName || data.reference),
+            description: `MoMo Cash-Out - ${data.reference}`,
             metadata: {
               transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
               customerName: data.customerName,
-              batchId: data.metadata?.batchId,
-              batchCode: data.metadata?.batchCode,
-              cardNumber: data.metadata?.cardNumber,
             },
           });
+
+          // Add fee entry if fee exists - fees always go to cash-in till
+          if (data.fee > 0 && accounts.fee) {
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Fee Revenue - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+
+            // Fee debit always goes to cash-in till (main account)
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Fee to Cash-in Till - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+          }
         }
         break;
 
-      case "power":
-        entries.push({
-          accountId: accounts.main,
-          accountCode: accounts.main,
-          debit: data.amount + data.fee,
-          credit: 0,
-          description:
-            "Power Payment - " + (data.customerName || data.reference),
-          metadata: {
-            transactionId: data.transactionId,
-            customerName: data.customerName,
-          },
-        });
-        entries.push({
-          accountId: accounts.fee,
-          accountCode: accounts.fee,
-          debit: 0,
-          credit: data.amount,
-          description:
-            "Power Payment - " + (data.customerName || data.reference),
-          metadata: {
-            transactionId: data.transactionId,
-            customerName: data.customerName,
-          },
-        });
-        if (data.fee > 0) {
-          entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
-            debit: 0,
-            credit: data.fee,
-            description:
-              "Power Service Fee - " + (data.customerName || data.reference),
-            metadata: {
-              transactionId: data.transactionId,
-              feeAmount: data.fee,
-            },
-          });
-        }
-        break;
-
-      case "jumia":
-        if (data.transactionType === "jumia_float") {
+      case "deposit":
+        // Debit main account, credit revenue
+        if (accounts.main && accounts.revenue) {
           entries.push({
             accountId: accounts.main,
-            accountCode: accounts.main,
+            accountCode: accounts.mainCode,
             debit: data.amount,
             credit: 0,
-            description:
-              "Jumia POD Collection - " + (data.customerName || data.reference),
+            description: `Deposit - ${data.reference}`,
             metadata: {
               transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
               customerName: data.customerName,
             },
           });
+
           entries.push({
-            accountId: accounts.fee,
-            accountCode: accounts.fee,
+            accountId: accounts.revenue,
+            accountCode: accounts.revenueCode,
             debit: 0,
             credit: data.amount,
-            description:
-              "Jumia POD Collection - " + (data.customerName || data.reference),
+            description: `Deposit Revenue - ${data.reference}`,
             metadata: {
               transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          // Add fee entry if fee exists - fees always go to cash-in till
+          if (data.fee > 0 && accounts.fee) {
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Fee Revenue - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+
+            // Fee debit always goes to cash-in till (main account)
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Fee to Cash-in Till - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+          }
+        }
+        break;
+
+      case "withdrawal":
+        // Debit revenue, credit main account (for MoMo withdrawals)
+        if (accounts.revenue && accounts.main) {
+          entries.push({
+            accountId: accounts.revenue,
+            accountCode: accounts.revenueCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Withdrawal Revenue - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Withdrawal - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          // Add fee entry if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Fee Revenue - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+
+            // Add corresponding debit entry for fee
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Fee Debit - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+          }
+        }
+        break;
+
+      case "transfer":
+        // Debit destination, credit source
+        if (accounts.main && accounts.asset) {
+          entries.push({
+            accountId: accounts.asset,
+            accountCode: accounts.assetCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Transfer to Asset - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Transfer from Main - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
               customerName: data.customerName,
             },
           });
         }
         break;
 
-      case "expenses":
-        // Expense GL entries: Debit expense account, Credit payment account
-        entries.push({
-          accountId: accounts.expense,
-          accountCode: accounts.expense,
-          debit: data.amount,
-          credit: 0,
-          description: `Expense - ${data.reference}`,
-          metadata: {
-            transactionId: data.transactionId,
-            expenseType: data.transactionType,
-            expenseHead: data.metadata?.expenseHead || "General",
-          },
-        });
-        entries.push({
-          accountId: accounts.payment,
-          accountCode: accounts.payment,
-          debit: 0,
-          credit: data.amount,
-          description: `Expense Payment - ${data.reference}`,
-          metadata: {
-            transactionId: data.transactionId,
-            paymentMethod: data.transactionType,
-            expenseHead: data.metadata?.expenseHead || "General",
-          },
-        });
+      case "sale":
+        // Power Sale: Debit main account (cash), credit revenue
+        if (accounts.main && accounts.revenue) {
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Power Sale - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          entries.push({
+            accountId: accounts.revenue,
+            accountCode: accounts.revenueCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Power Sale Revenue - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          // Add fee entry if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Fee Revenue - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+
+            // Add corresponding debit entry for fee
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Fee Debit - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+          }
+        }
         break;
 
-      case "commissions":
-        // Commission GL entries: Debit main account (float), Credit commission account
-        entries.push({
-          accountId: accounts.main,
-          accountCode: accounts.main,
-          debit: data.amount,
-          credit: 0,
-          description: `Commission Received - ${data.reference}`,
-          metadata: {
-            transactionId: data.transactionId,
-            source: data.metadata?.source || "Unknown",
-            sourceName: data.metadata?.sourceName || "Unknown Partner",
-            month: data.metadata?.month || "",
-          },
-        });
-        entries.push({
-          accountId: accounts.commission,
-          accountCode: accounts.commission,
-          debit: 0,
-          credit: data.amount,
-          description: `Commission Revenue - ${data.reference}`,
-          metadata: {
-            transactionId: data.transactionId,
-            source: data.metadata?.source || "Unknown",
-            sourceName: data.metadata?.sourceName || "Unknown Partner",
-            month: data.metadata?.month || "",
-          },
-        });
+      case "pod_collection":
+        // Jumia POD Collection: Debit main account (cash), credit liability
+        if (accounts.main && accounts.liability) {
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Jumia POD Collection - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          entries.push({
+            accountId: accounts.liability,
+            accountCode: accounts.liabilityCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Jumia POD Collection Liability - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          // Add fee entry if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Fee Revenue - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+
+            // Add corresponding debit entry for fee
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Fee Debit - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+          }
+        }
+        break;
+
+      case "settlement":
+        // Jumia Settlement: Debit liability, credit the specific float account used for payment
+        if (accounts.liability) {
+          // Debit the Jumia liability account
+          entries.push({
+            accountId: accounts.liability,
+            accountCode: accounts.liabilityCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Jumia Settlement Liability - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+
+          // Credit the specific float account used for payment
+          // Use the payment account from metadata if available, otherwise fall back to main account
+          const paymentAccountId = data.metadata?.paymentAccountCode
+            ? await this.getGLAccountIdByCode(data.metadata.paymentAccountCode)
+            : accounts.main;
+
+          const paymentAccountCode =
+            data.metadata?.paymentAccountCode || accounts.mainCode;
+
+          if (paymentAccountId) {
+            entries.push({
+              accountId: paymentAccountId,
+              accountCode: paymentAccountCode,
+              debit: 0,
+              credit: data.amount,
+              description: `Jumia Settlement - ${data.reference} (via ${
+                data.metadata?.paymentAccountName || "Float Account"
+              })`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+                paymentMethod: data.metadata?.paymentAccountName,
+              },
+            });
+          } else {
+            // Fallback to main account if payment account not found
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.amount,
+              description: `Jumia Settlement - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                customerName: data.customerName,
+              },
+            });
+          }
+        }
+        break;
+
+      default:
+        // Generic entry for unknown transaction types
+        if (accounts.main) {
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: data.amount,
+            credit: 0,
+            description: `${data.transactionType} - ${data.reference}`,
+            metadata: {
+              transactionId: data.transactionId,
+              sourceModule: data.sourceModule,
+              transactionType: data.transactionType,
+              customerName: data.customerName,
+            },
+          });
+        }
         break;
     }
 
@@ -864,100 +987,45 @@ export class UnifiedGLPostingService {
     entries: Array<{ accountId: string; debit: number; credit: number }>
   ): Promise<void> {
     for (const entry of entries) {
-      const balanceChange = entry.debit - entry.credit;
       await sql`
-        INSERT INTO gl_account_balances (account_id, current_balance, last_updated)
-        VALUES (${entry.accountId}, ${balanceChange}, CURRENT_TIMESTAMP)
-        ON CONFLICT (account_id) DO UPDATE SET
-          current_balance = gl_account_balances.current_balance + ${balanceChange},
-          last_updated = CURRENT_TIMESTAMP
+        UPDATE gl_accounts 
+        SET balance = balance + ${entry.debit - entry.credit}
+        WHERE id = ${entry.accountId}
       `;
     }
   }
 
   static generateReceipt(data: ReceiptData): string {
-    // Ensure amount and fee are numbers
-    const amount =
-      typeof data.amount === "string" ? parseFloat(data.amount) : data.amount;
-    const fee = typeof data.fee === "string" ? parseFloat(data.fee) : data.fee;
-    const totalAmount = amount + fee;
-    const date = new Date(data.date).toLocaleString();
-
-    // Handle undefined values
-    const transactionType = data.transactionType || "Transaction";
-    const reference = data.reference || data.transactionId || "N/A";
-    const transactionId = data.transactionId || "N/A";
-
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <title>Transaction Receipt</title>
-  <style>
-    body { font-family: 'Courier New', monospace; font-size: 12px; margin: 0; padding: 20px; max-width: 300px; }
-    .header { text-align: center; margin-bottom: 20px; border-bottom: 2px solid #000; padding-bottom: 10px; }
-    .logo { width: 60px; height: 60px; margin: 0 auto 10px; }
-    .line { border-bottom: 1px dashed #000; margin: 10px 0; }
-    .row { display: flex; justify-content: space-between; margin: 5px 0; }
-    .footer { text-align: center; margin-top: 20px; font-size: 10px; border-top: 1px solid #000; padding-top: 10px; }
-    .title { font-size: 14px; font-weight: bold; text-align: center; margin: 10px 0; }
-  </style>
-</head>
-<body>
-  <div class='header'>
-    <img src='/logo.png' alt='MIMHAAD Logo' class='logo' />
-    <h3>MIMHAAD FINANCIAL SERVICES</h3>
-    <p>${data.branchName}</p>
-    <p>Tel: 0241378880</p>
-    <p>${date}</p>
-  </div>
-  <div class='title'>${data.sourceModule.toUpperCase()} TRANSACTION RECEIPT</div>
-  <div class='line'></div>
-  <div class='row'>
-    <span>Transaction ID:</span>
-    <span>${transactionId}</span>
-  </div>
-  <div class='row'>
-    <span>Type:</span>
-    <span>${transactionType}</span>
-  </div>
-  ${
-    amount
-      ? `<div class='row'><span>Amount:</span><span>GHS ${amount.toFixed(
-          2
-        )}</span></div>`
-      : ""
-  }
-  <div class='row'>
-    <span>Reference:</span>
-    <span>${reference}</span>
-  </div>
-  <div class='line'></div>
-  <div class='row' style='font-weight: bold; font-size: 14px;'>
-    <span>TOTAL:</span>
-    <span>GHS ${totalAmount.toFixed(2)}</span>
-  </div>
-  <div class='footer'>
-    <p>Thank you for using our service!</p>
-    <p>For inquiries, please call 0241378880</p>
-    <p>Powered by MIMHAAD Financial Services</p>
-  </div>
-</body>
-</html>`;
+    const receipt = `
+╔══════════════════════════════════════════════════════════════╗
+║                    MIMHAAD ERP SYSTEM                        ║
+║                    TRANSACTION RECEIPT                       ║
+╠══════════════════════════════════════════════════════════════╣
+║ Date: ${data.date}                                           ║
+║ Transaction ID: ${data.transactionId}                        ║
+║ Reference: ${data.reference}                                 ║
+║ Branch: ${data.branchName}                                   ║
+╠══════════════════════════════════════════════════════════════╣
+║ Transaction Details:                                          ║
+║   Type: ${data.transactionType}                              ║
+║   Amount: ₵${data.amount.toFixed(2)}                         ║
+║   Fee: ₵${data.fee.toFixed(2)}                               ║
+║   Total: ₵${(data.amount + data.fee).toFixed(2)}             ║
+╠══════════════════════════════════════════════════════════════╣
+║ Customer: ${data.customerName || "N/A"}                      ║
+║ Module: ${data.sourceModule}                                 ║
+╠══════════════════════════════════════════════════════════════╣
+║                    THANK YOU FOR YOUR BUSINESS               ║
+║                    Powered by MIMHAAD ERP                    ║
+╚══════════════════════════════════════════════════════════════╝
+    `;
+    return receipt;
   }
 
   static printReceipt(data: ReceiptData): void {
-    const receiptContent = this.generateReceipt(data);
-    const printWindow = window.open("", "_blank", "width=350,height=600");
-
-    if (!printWindow) {
-      console.error("Failed to open print window");
-      return;
-    }
-
-    printWindow.document.write(receiptContent);
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
+    const receipt = this.generateReceipt(data);
+    console.log(receipt);
+    // In a real application, you would send this to a printer
   }
 
   static async deleteGLEntries({
@@ -968,199 +1036,56 @@ export class UnifiedGLPostingService {
     sourceModule: string;
   }): Promise<{ success: boolean; error?: string }> {
     try {
-      // Find the GL transaction
-      const glTxRows = await sql`
-        SELECT id FROM gl_transactions WHERE source_transaction_id = ${transactionId} AND source_module = ${sourceModule}
-      `;
-      if (!glTxRows.length) {
-        return { success: true };
-      }
-      const glTransactionId = glTxRows[0].id;
-      // Delete journal entries
-      await sql`DELETE FROM gl_journal_entries WHERE transaction_id = ${glTransactionId}`;
-      // Delete the GL transaction
-      await sql`DELETE FROM gl_transactions WHERE id = ${glTransactionId}`;
-      return { success: true };
-    } catch (error) {
-      console.error("[GL] Error deleting GL entries:", error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-
-  static async createCommissionReversalGLEntries({
-    transactionId,
-    sourceModule,
-    transactionType,
-    amount,
-    fee,
-    customerName,
-    reference,
-    processedBy,
-    branchId,
-    branchName,
-    metadata,
-  }: UnifiedGLTransactionData): Promise<{
-    success: boolean;
-    glTransactionId?: string;
-    error?: string;
-  }> {
-    try {
       console.log(
-        "🔷 [GL] Creating commission reversal GL entries for transaction:",
+        "🔷 [GL] Deleting GL entries for transaction:",
         transactionId
       );
 
-      // Check if reversal already exists
-      const existingReversal = await sql`
+      // Get the GL transaction ID
+      const glTransaction = await sql`
         SELECT id FROM gl_transactions 
         WHERE source_transaction_id = ${transactionId} 
         AND source_module = ${sourceModule}
-        AND source_transaction_type = 'commission_reversal'
       `;
 
-      if (existingReversal.length > 0) {
-        console.log(
-          "🔷 [GL] Commission reversal already exists for transaction:",
-          transactionId
-        );
-        return { success: true, glTransactionId: existingReversal[0].id };
+      if (glTransaction.length === 0) {
+        console.log("🔷 [GL] No GL transaction found to delete");
+        return { success: true };
       }
 
-      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
-      const glTransactionId = glTransactionIdResult[0].id;
+      const glTransactionId = glTransaction[0].id;
 
-      // Get the same accounts used for the original commission posting
-      const accounts = await this.getGLAccountsForTransaction(
-        sourceModule,
-        transactionType,
-        branchId,
-        {
-          transactionId,
-          sourceModule,
-          transactionType,
-          amount,
-          fee,
-          customerName,
-          reference,
-          processedBy,
-          branchId,
-          branchName,
-          metadata,
-        }
-      );
-
-      console.log(`🔷 [GL] Commission reversal accounts:`, accounts);
-
-      // Create reversal entries (opposite of original entries)
-      const entries = [
-        {
-          accountId: accounts.commission,
-          accountCode: accounts.commission,
-          debit: amount, // Debit commission account (reduce revenue)
-          credit: 0,
-          description: `Commission Revenue Reversal - ${reference}`,
-          metadata: {
-            transactionId,
-            source: metadata?.source || "Unknown",
-            sourceName: metadata?.sourceName || "Unknown Partner",
-            month: metadata?.month || "",
-            reversalReason: metadata?.reversalReason || "Commission deleted",
-            originalTransactionType: transactionType,
-          },
-        },
-        {
-          accountId: accounts.main,
-          accountCode: accounts.main,
-          debit: 0,
-          credit: amount, // Credit main account (reduce receivable)
-          description: `Commission Receivable Reversal - ${reference}`,
-          metadata: {
-            transactionId,
-            source: metadata?.source || "Unknown",
-            sourceName: metadata?.sourceName || "Unknown Partner",
-            month: metadata?.month || "",
-            reversalReason: metadata?.reversalReason || "Commission deleted",
-            originalTransactionType: transactionType,
-          },
-        },
-      ];
-
-      // Verify entries balance
-      const totalDebits = entries.reduce((sum, entry) => sum + entry.debit, 0);
-      const totalCredits = entries.reduce(
-        (sum, entry) => sum + entry.credit,
-        0
-      );
-
-      if (Math.abs(totalDebits - totalCredits) > 0.01) {
-        throw new Error(
-          "Commission reversal GL entries do not balance: Debits " +
-            totalDebits +
-            ", Credits " +
-            totalCredits
-        );
-      }
-
-      // Create GL transaction record
-      await sql`
-        INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, 'commission_reversal', ${`Commission Reversal - ${reference}`}, 'posted', ${processedBy}, ${JSON.stringify(
-        metadata || {}
-      )})
+      // Get journal entries to reverse account balances
+      const journalEntries = await sql`
+        SELECT account_id, debit, credit FROM gl_journal_entries 
+        WHERE transaction_id = ${glTransactionId}
       `;
 
-      // Create journal entries
-      for (const entry of entries) {
+      // Reverse account balances
+      for (const entry of journalEntries) {
         await sql`
-          INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
-          VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
-          entry.accountCode
-        }, ${entry.debit}, ${entry.credit}, ${
-          entry.description
-        }, ${JSON.stringify(entry.metadata || {})})
+          UPDATE gl_accounts 
+          SET balance = balance - ${entry.debit - entry.credit}
+          WHERE id = ${entry.account_id}
         `;
       }
 
-      // Update account balances
-      await this.updateAccountBalances(entries);
+      // Delete journal entries
+      await sql`
+        DELETE FROM gl_journal_entries 
+        WHERE transaction_id = ${glTransactionId}
+      `;
 
-      console.log(
-        "🔷 [GL] Commission reversal GL entries created successfully for transaction:",
-        transactionId
-      );
+      // Delete GL transaction
+      await sql`
+        DELETE FROM gl_transactions 
+        WHERE id = ${glTransactionId}
+      `;
 
-      // Log audit trail
-      await AuditLoggerService.log({
-        userId: processedBy,
-        username: processedBy,
-        actionType: "gl_transaction_create",
-        entityType: "gl_transaction",
-        entityId: glTransactionId,
-        description: `Commission reversal GL entries created for ${sourceModule} transaction`,
-        details: {
-          sourceTransactionId: transactionId,
-          sourceModule,
-          transactionType: "commission_reversal",
-          amount,
-          fee,
-          entriesCount: entries.length,
-          reversalReason: metadata?.reversalReason || "Commission deleted",
-        },
-        severity: "medium",
-        branchId,
-        branchName: branchName || "Unknown Branch",
-        status: "success",
-      });
-
-      return { success: true, glTransactionId };
+      console.log("🔷 [GL] GL entries deleted successfully");
+      return { success: true };
     } catch (error) {
-      console.error(
-        "🔷 [GL] Error creating commission reversal GL entries:",
-        error
-      );
+      console.error("🔷 [GL] Error deleting GL entries:", error);
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
@@ -1232,13 +1157,25 @@ export class UnifiedGLPostingService {
 
       console.log(`🔷 [GL] Commission accounts:`, accounts);
 
-      // Create commission entries
+      // Validate that we have the required accounts
+      if (!accounts.main) {
+        throw new Error(
+          `No main account found for commission GL posting. Available accounts: ${Object.keys(
+            accounts
+          ).join(", ")}`
+        );
+      }
+
+      // Create commission entries - use revenue and main accounts
+      const revenueAccountId = accounts.revenue || accounts.main;
+      const revenueAccountCode = accounts.revenueCode || accounts.mainCode;
+
       const entries = [
         {
-          accountId: accounts.commission,
-          accountCode: accounts.commission,
+          accountId: revenueAccountId,
+          accountCode: revenueAccountCode,
           debit: 0,
-          credit: amount, // Credit commission account (increase revenue)
+          credit: amount,
           description: `Commission Revenue - ${reference}`,
           metadata: {
             transactionId,
@@ -1251,8 +1188,8 @@ export class UnifiedGLPostingService {
         },
         {
           accountId: accounts.main,
-          accountCode: accounts.main,
-          debit: amount, // Debit main account (increase receivable)
+          accountCode: accounts.mainCode,
+          debit: amount,
           credit: 0,
           description: `Commission Receivable - ${reference}`,
           metadata: {
@@ -1342,7 +1279,7 @@ export class UnifiedGLPostingService {
     }
   }
 
-  static async createCommissionPaymentGLEntries({
+  static async createInventoryPurchaseGLEntries({
     transactionId,
     sourceModule,
     transactionType,
@@ -1354,73 +1291,99 @@ export class UnifiedGLPostingService {
     branchId,
     branchName,
     metadata,
-    paymentMethod,
-  }: UnifiedGLTransactionData & { paymentMethod?: string }): Promise<{
+  }: UnifiedGLTransactionData): Promise<{
     success: boolean;
     glTransactionId?: string;
     error?: string;
   }> {
     try {
       console.log(
-        "🔷 [GL] Creating commission payment GL entries for transaction:",
+        "🔷 [GL] Creating inventory purchase GL entries for transaction:",
         transactionId
       );
+
+      // Check if inventory purchase GL entries already exist
+      const existingInventory = await sql`
+        SELECT id FROM gl_transactions 
+        WHERE source_transaction_id = ${transactionId} 
+        AND source_module = ${sourceModule}
+        AND source_transaction_type = 'inventory_purchase'
+      `;
+
+      if (existingInventory.length > 0) {
+        console.log(
+          "🔷 [GL] Inventory purchase GL entries already exist for transaction:",
+          transactionId
+        );
+        return { success: true, glTransactionId: existingInventory[0].id };
+      }
 
       const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
       const glTransactionId = glTransactionIdResult[0].id;
 
-      // Get GL mappings for commission payment
-      const mappings = await sql`
-        SELECT mapping_type, gl_account_id, gl_account_code
-        FROM gl_mappings
-        WHERE transaction_type = 'commission_payment'
-          AND branch_id = ${branchId}
-          AND is_active = true
-      `;
+      // Get GL accounts for inventory purchase posting
+      const accounts = await this.getGLAccountsForTransaction(
+        sourceModule,
+        transactionType,
+        branchId,
+        {
+          transactionId,
+          sourceModule,
+          transactionType,
+          amount,
+          fee,
+          customerName,
+          reference,
+          processedBy,
+          branchId,
+          branchName,
+          metadata,
+        }
+      );
 
-      if (mappings.length === 0) {
-        throw new Error("No GL mappings found for commission payment");
+      console.log(`🔷 [GL] Inventory purchase accounts:`, accounts);
+
+      // Validate that we have the required accounts
+      if (!accounts.main) {
+        throw new Error(
+          `No main account found for inventory purchase GL posting. Available accounts: ${Object.keys(
+            accounts
+          ).join(", ")}`
+        );
       }
 
-      // Create commission payment entries
+      // Create inventory purchase entries - debit inventory, credit main account
       const entries = [
         {
-          accountId:
-            mappings.find((m) => m.mapping_type === "main")?.gl_account_id ||
-            mappings[0].gl_account_id,
+          accountId: accounts.inventory || accounts.expense || accounts.main,
           accountCode:
-            mappings.find((m) => m.mapping_type === "main")?.gl_account_code ||
-            mappings[0].gl_account_code,
-          debit: 0,
-          credit: amount, // Credit main account (decrease receivable)
-          description: `Commission Payment - ${reference}`,
+            accounts.inventoryCode || accounts.expenseCode || accounts.mainCode,
+          debit: amount,
+          credit: 0,
+          description: `Inventory Purchase - ${reference}`,
           metadata: {
             transactionId,
-            paymentMethod: paymentMethod || "cash",
-            source: metadata?.source || "Unknown",
-            sourceName: metadata?.sourceName || "Unknown Partner",
-            month: metadata?.month || "",
-            status: metadata?.status || "paid",
+            batch_code: metadata?.batch_code,
+            quantity: metadata?.quantity,
+            unit_cost: metadata?.unit_cost,
+            partner_bank_id: metadata?.partner_bank_id,
+            partner_bank_name: metadata?.partner_bank_name,
             originalTransactionType: transactionType,
           },
         },
         {
-          accountId:
-            mappings.find((m) => m.mapping_type === "commission")
-              ?.gl_account_id || mappings[0].gl_account_id,
-          accountCode:
-            mappings.find((m) => m.mapping_type === "commission")
-              ?.gl_account_code || mappings[0].gl_account_code,
-          debit: amount, // Debit commission account (decrease revenue)
-          credit: 0,
-          description: `Commission Payment - ${reference}`,
+          accountId: accounts.main,
+          accountCode: accounts.mainCode,
+          debit: 0,
+          credit: amount,
+          description: `Payment for Inventory - ${reference}`,
           metadata: {
             transactionId,
-            paymentMethod: paymentMethod || "cash",
-            source: metadata?.source || "Unknown",
-            sourceName: metadata?.sourceName || "Unknown Partner",
-            month: metadata?.month || "",
-            status: metadata?.status || "paid",
+            batch_code: metadata?.batch_code,
+            quantity: metadata?.quantity,
+            unit_cost: metadata?.unit_cost,
+            partner_bank_id: metadata?.partner_bank_id,
+            partner_bank_name: metadata?.partner_bank_name,
             originalTransactionType: transactionType,
           },
         },
@@ -1435,7 +1398,7 @@ export class UnifiedGLPostingService {
 
       if (Math.abs(totalDebits - totalCredits) > 0.01) {
         throw new Error(
-          "Commission payment GL entries do not balance: Debits " +
+          "Inventory purchase GL entries do not balance: Debits " +
             totalDebits +
             ", Credits " +
             totalCredits
@@ -1445,7 +1408,7 @@ export class UnifiedGLPostingService {
       // Create GL transaction record
       await sql`
         INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, 'commission_payment', ${`Commission Payment - ${reference}`}, 'posted', ${processedBy}, ${JSON.stringify(
+        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, 'inventory_purchase', ${`Inventory Purchase - ${reference}`}, 'posted', ${processedBy}, ${JSON.stringify(
         metadata || {}
       )})
       `;
@@ -1466,7 +1429,7 @@ export class UnifiedGLPostingService {
       await this.updateAccountBalances(entries);
 
       console.log(
-        "🔷 [GL] Commission payment GL entries created successfully for transaction:",
+        "🔷 [GL] Inventory purchase GL entries created successfully for transaction:",
         transactionId
       );
 
@@ -1477,14 +1440,13 @@ export class UnifiedGLPostingService {
         actionType: "gl_transaction_create",
         entityType: "gl_transaction",
         entityId: glTransactionId,
-        description: `Commission payment GL entries created for ${sourceModule} transaction`,
+        description: `Inventory purchase GL entries created for ${sourceModule} transaction`,
         details: {
           sourceTransactionId: transactionId,
           sourceModule,
-          transactionType: "commission_payment",
+          transactionType: "inventory_purchase",
           amount,
           fee,
-          paymentMethod,
           entriesCount: entries.length,
         },
         severity: "low",
@@ -1496,7 +1458,7 @@ export class UnifiedGLPostingService {
       return { success: true, glTransactionId };
     } catch (error) {
       console.error(
-        "🔷 [GL] Error creating commission payment GL entries:",
+        "🔷 [GL] Error creating inventory purchase GL entries:",
         error
       );
       return {
@@ -1504,5 +1466,601 @@ export class UnifiedGLPostingService {
         error: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  /**
+   * Create reversal GL entries for a transaction
+   */
+  static async createReversalGLEntries({
+    transactionId,
+    sourceModule,
+    transactionType,
+    amount,
+    fee,
+    customerName,
+    reference,
+    reason,
+    processedBy,
+    branchId,
+    branchName,
+    metadata,
+  }: {
+    transactionId: string;
+    sourceModule: string;
+    transactionType: string;
+    amount: number;
+    fee: number;
+    customerName?: string;
+    reference: string;
+    reason: string;
+    processedBy: string;
+    branchId: string;
+    branchName?: string;
+    metadata?: Record<string, any>;
+  }): Promise<{ success: boolean; glTransactionId?: string; error?: string }> {
+    try {
+      // Helper function to get user's full name
+      async function getUserFullName(userId: string): Promise<string> {
+        try {
+          if (!userId || userId === "unknown" || userId === "System") {
+            return "System User";
+          }
+
+          // Check if userId is an email address (contains @)
+          if (userId.includes("@")) {
+            // Try to find user by email
+            const users = await sql`
+              SELECT first_name, last_name, email FROM users WHERE email = ${userId}
+            `;
+
+            if (users && users.length > 0) {
+              const { first_name, last_name, email } = users[0];
+              if (first_name && last_name) {
+                return `${first_name} ${last_name}`;
+              } else if (first_name) {
+                return first_name;
+              } else if (last_name) {
+                return last_name;
+              } else if (email) {
+                return email;
+              }
+            }
+
+            // If email not found, return the email as fallback
+            return userId;
+          }
+
+          // Try to find user by UUID
+          const users = await sql`
+            SELECT first_name, last_name, email FROM users WHERE id = ${userId}
+          `;
+
+          if (users && users.length > 0) {
+            const { first_name, last_name, email } = users[0];
+            if (first_name && last_name) {
+              return `${first_name} ${last_name}`;
+            } else if (first_name) {
+              return first_name;
+            } else if (last_name) {
+              return last_name;
+            } else if (email) {
+              return email;
+            }
+          }
+
+          return "Unknown User";
+        } catch (error) {
+          console.error(`Failed to get user name for ID ${userId}:`, error);
+          return "Unknown User";
+        }
+      }
+
+      console.log(
+        "🔷 [GL] Creating reversal GL entries for " +
+          sourceModule +
+          " transaction:",
+        transactionId
+      );
+
+      // Check if reversal GL entries already exist for this transaction
+      const existingTransaction = await sql`
+        SELECT id FROM gl_transactions 
+        WHERE source_transaction_id = ${transactionId} 
+        AND source_module = ${sourceModule}
+        AND source_transaction_type LIKE 'reversal_%'
+      `;
+
+      if (existingTransaction.length > 0) {
+        console.log(
+          "🔷 [GL] Reversal GL entries already exist for " +
+            sourceModule +
+            " transaction " +
+            transactionId
+        );
+        return { success: true, glTransactionId: existingTransaction[0].id };
+      }
+
+      const glTransactionIdResult = await sql`SELECT gen_random_uuid() as id`;
+      const glTransactionId = glTransactionIdResult[0].id;
+
+      // Get GL accounts for the original transaction type
+      const accounts = await this.getGLAccountsForTransaction(
+        sourceModule,
+        transactionType,
+        branchId,
+        {
+          transactionId,
+          sourceModule,
+          transactionType,
+          amount,
+          fee,
+          customerName,
+          reference,
+          processedBy,
+          branchId,
+          branchName,
+          metadata,
+        }
+      );
+
+      console.log("🔍 [DEBUG] Retrieved GL accounts for reversal:", {
+        sourceModule,
+        transactionType,
+        accounts,
+      });
+
+      // Create reversal entries by swapping debits and credits
+      const entries = await this.createReversalGLEntriesForTransaction(
+        {
+          transactionId,
+          sourceModule,
+          transactionType,
+          amount,
+          fee,
+          customerName,
+          reference,
+          processedBy,
+          branchId,
+          branchName,
+          metadata: { ...metadata, reason, reversalOf: transactionId },
+        },
+        accounts
+      );
+
+      console.log("🔍 [DEBUG] Created reversal GL entries:", {
+        sourceModule,
+        transactionType,
+        amount,
+        fee,
+        entriesCount: entries.length,
+        entries: entries.map((entry) => ({
+          accountId: entry.accountId,
+          accountCode: entry.accountCode,
+          debit: entry.debit,
+          credit: entry.credit,
+          description: entry.description,
+        })),
+      });
+
+      const totalDebits = entries.reduce((sum, entry) => sum + entry.debit, 0);
+      const totalCredits = entries.reduce(
+        (sum, entry) => sum + entry.credit,
+        0
+      );
+
+      if (Math.abs(totalDebits - totalCredits) > 0.01) {
+        throw new Error(
+          "Reversal GL entries do not balance: Debits " +
+            totalDebits +
+            ", Credits " +
+            totalCredits
+        );
+      }
+
+      // Create GL transaction record
+      await sql`
+        INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
+        VALUES (${glTransactionId}, CURRENT_DATE, ${sourceModule}, ${transactionId}, ${`reversal_${transactionType}`}, ${`Reversal: ${reference} - ${reason}`}, 'posted', ${processedBy}, ${JSON.stringify(
+        { ...metadata, reason, reversalOf: transactionId }
+      )})
+      `;
+
+      // Create GL journal entries
+      for (const entry of entries) {
+        // Skip zero-value entries
+        if (entry.debit === 0 && entry.credit === 0) continue;
+
+        console.log("🔍 [DEBUG] Saving reversal GL entry:", {
+          accountId: entry.accountId,
+          accountCode: entry.accountCode,
+          debit: entry.debit,
+          credit: entry.credit,
+          description: entry.description,
+        });
+
+        await sql`
+          INSERT INTO gl_journal_entries (id, transaction_id, account_id, account_code, debit, credit, description, metadata)
+          VALUES (gen_random_uuid(), ${glTransactionId}, ${entry.accountId}, ${
+          entry.accountCode
+        }, ${entry.debit}, ${entry.credit}, ${
+          entry.description
+        }, ${JSON.stringify(entry.metadata || {})})
+        `;
+        console.log("🔍 [DEBUG] Reversal GL entry saved successfully");
+      }
+
+      // Update account balances
+      await this.updateAccountBalances(entries);
+
+      // Log audit entry
+      const userName = await getUserFullName(processedBy);
+      await AuditLoggerService.log({
+        userId: processedBy,
+        username: userName,
+        actionType: "gl_transaction_reversal",
+        entityType: "gl_transaction",
+        entityId: glTransactionId,
+        description: `GL reversal entries created for ${sourceModule} transaction ${transactionId} - ${reason}`,
+        details: {
+          originalTransactionId: transactionId,
+          reason,
+          amount,
+          fee,
+          entriesCount: entries.length,
+        },
+        severity: "low",
+        branchId,
+        branchName: branchName || "Unknown Branch",
+        status: "success",
+      });
+
+      console.log(
+        "🔷 [GL] Reversal GL entries created successfully for " +
+          sourceModule +
+          " transaction: " +
+          transactionId
+      );
+
+      return { success: true, glTransactionId };
+    } catch (error) {
+      console.error("🔷 [GL] Error creating reversal GL entries:", error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /**
+   * Create reversal GL entries for a transaction by swapping debits and credits
+   */
+  private static async createReversalGLEntriesForTransaction(
+    data: {
+      transactionId: string;
+      sourceModule: string;
+      transactionType: string;
+      amount: number;
+      fee: number;
+      customerName?: string;
+      reference: string;
+      processedBy: string;
+      branchId: string;
+      branchName?: string;
+      metadata?: Record<string, any>;
+    },
+    accounts: Record<string, any>
+  ): Promise<
+    Array<{
+      accountId: string;
+      accountCode: string;
+      debit: number;
+      credit: number;
+      description: string;
+      metadata?: Record<string, any>;
+    }>
+  > {
+    const entries: Array<{
+      accountId: string;
+      accountCode: string;
+      debit: number;
+      credit: number;
+      description: string;
+      metadata?: Record<string, any>;
+    }> = [];
+
+    // Create reversal entries based on transaction type
+    switch (data.transactionType) {
+      case "withdrawal":
+        // Original: Revenue debit, Main credit, Fee credit, Main debit
+        // Reversal: Revenue credit, Main debit, Fee debit, Main credit
+        if (accounts.revenue && accounts.main) {
+          // Reverse revenue entry
+          entries.push({
+            accountId: accounts.revenue,
+            accountCode: accounts.revenueCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Reversal: Revenue for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse main account entry
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Reversal: Main account for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse fee entries if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            // Reverse fee revenue entry
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Reversal: Fee revenue for ${data.reference}`,
+              metadata: data.metadata,
+            });
+
+            // Reverse fee debit entry
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Reversal: Fee debit for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+        }
+        break;
+
+      case "deposit":
+        // Original: Main debit, Revenue credit, Fee credit, Main debit
+        // Reversal: Main credit, Revenue debit, Fee debit, Main credit
+        if (accounts.main && accounts.revenue) {
+          // Reverse main account entry
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Reversal: Main account for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse revenue entry
+          entries.push({
+            accountId: accounts.revenue,
+            accountCode: accounts.revenueCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Reversal: Revenue for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse fee entries if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            // Reverse fee revenue entry
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Reversal: Fee revenue for ${data.reference}`,
+              metadata: data.metadata,
+            });
+
+            // Reverse fee debit entry
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Reversal: Fee debit for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+        }
+        break;
+
+      case "cash-in":
+        // Original: Main debit, Liability credit, Fee credit, Main debit
+        // Reversal: Main credit, Liability debit, Fee debit, Main credit
+        if (accounts.main && accounts.liability) {
+          // Reverse main account entry
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Reversal: Main account for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse liability entry
+          entries.push({
+            accountId: accounts.liability,
+            accountCode: accounts.liabilityCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Reversal: Liability for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse fee entries if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            // Reverse fee revenue entry
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Reversal: Fee revenue for ${data.reference}`,
+              metadata: data.metadata,
+            });
+
+            // Reverse fee debit entry
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Reversal: Fee debit for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+        }
+        break;
+
+      case "cash-out":
+        // Original: Main debit, Asset credit, Fee credit, Main debit
+        // Reversal: Main credit, Asset debit, Fee debit, Main credit
+        if (accounts.main && accounts.asset) {
+          // Reverse main account entry
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Reversal: Main account for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse asset entry
+          entries.push({
+            accountId: accounts.asset,
+            accountCode: accounts.assetCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Reversal: Asset for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse fee entries if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            // Reverse fee revenue entry
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Reversal: Fee revenue for ${data.reference}`,
+              metadata: data.metadata,
+            });
+
+            // Reverse fee debit entry
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Reversal: Fee debit for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+        }
+        break;
+
+      case "sale":
+        // Original: Main debit, Revenue credit, Fee credit, Main debit
+        // Reversal: Main credit, Revenue debit, Fee debit, Main credit
+        if (accounts.main && accounts.revenue) {
+          // Reverse main account entry
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Reversal: Main account for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse revenue entry
+          entries.push({
+            accountId: accounts.revenue,
+            accountCode: accounts.revenueCode,
+            debit: data.amount,
+            credit: 0,
+            description: `Reversal: Revenue for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          // Reverse fee entries if fee exists
+          if (data.fee > 0 && accounts.fee) {
+            // Reverse fee revenue entry
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Reversal: Fee revenue for ${data.reference}`,
+              metadata: data.metadata,
+            });
+
+            // Reverse fee debit entry
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Reversal: Fee debit for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+        }
+        break;
+
+      default:
+        // For other transaction types, create generic reversal entries
+        if (accounts.main) {
+          entries.push({
+            accountId: accounts.main,
+            accountCode: accounts.mainCode,
+            debit: 0,
+            credit: data.amount,
+            description: `Reversal: Main account for ${data.reference}`,
+            metadata: data.metadata,
+          });
+
+          if (accounts.revenue) {
+            entries.push({
+              accountId: accounts.revenue,
+              accountCode: accounts.revenueCode,
+              debit: data.amount,
+              credit: 0,
+              description: `Reversal: Revenue for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+
+          if (data.fee > 0 && accounts.fee) {
+            entries.push({
+              accountId: accounts.fee,
+              accountCode: accounts.feeCode,
+              debit: data.fee,
+              credit: 0,
+              description: `Reversal: Fee for ${data.reference}`,
+              metadata: data.metadata,
+            });
+
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: 0,
+              credit: data.fee,
+              description: `Reversal: Fee debit for ${data.reference}`,
+              metadata: data.metadata,
+            });
+          }
+        }
+        break;
+    }
+
+    return entries;
   }
 }

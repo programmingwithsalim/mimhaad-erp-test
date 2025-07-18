@@ -136,6 +136,7 @@ export async function POST(request: NextRequest) {
       settlement_account_id, // for withdrawal
     } = body;
     const now = new Date().toISOString();
+
     // Validate required fields
     if (
       !type ||
@@ -149,6 +150,48 @@ export async function POST(request: NextRequest) {
         { success: false, error: "Missing required fields" },
         { status: 400 }
       );
+    }
+
+    // Validate amount (must be positive)
+    const amountNum = Number(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Amount must be a valid number greater than 0",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate card number (max 10 digits)
+    if (card_number.length > 10) {
+      return NextResponse.json(
+        { success: false, error: "Card number cannot exceed 10 digits" },
+        { status: 400 }
+      );
+    }
+
+    // Validate card number contains only digits
+    if (!/^\d+$/.test(card_number)) {
+      return NextResponse.json(
+        { success: false, error: "Card number must contain only digits" },
+        { status: 400 }
+      );
+    }
+
+    // Validate fee (must be non-negative)
+    if (fee !== undefined && fee !== null) {
+      const feeNum = Number(fee);
+      if (isNaN(feeNum) || feeNum < 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Fee must be a valid number greater than or equal to 0",
+          },
+          { status: 400 }
+        );
+      }
     }
     // Generate UUID for transaction ID
     const transactionIdResult = await sql`SELECT gen_random_uuid() as id`;

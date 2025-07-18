@@ -1,9 +1,5 @@
 "use client";
 
-import { useAuth } from "@/lib/auth-context";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -11,77 +7,138 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Shield, ArrowLeft, Home, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useRBAC } from "@/components/rbac/rbac-provider";
+import { useRouter } from "next/navigation";
+import {
+  Shield,
+  AlertTriangle,
+  ArrowLeft,
+  Home,
+  Users,
+  Building2,
+  Settings,
+  CheckCircle,
+} from "lucide-react";
+
+const roleAccessMap = {
+  Admin: {
+    description: "Full system access",
+    canAccess: "Everything",
+    restrictions: "None",
+  },
+  Manager: {
+    description: "Operational management access",
+    canAccess:
+      "All services, transactions, financial management, reports, inventory",
+    restrictions: "Cannot manage users or branches",
+  },
+  Finance: {
+    description: "Financial management access",
+    canAccess:
+      "Dashboard, transactions, financial management, reports, inventory, audit trail",
+    restrictions: "Cannot access service operations or user/branch management",
+  },
+  Operations: {
+    description: "Service operations access",
+    canAccess:
+      "Dashboard, transactions, all services (MoMo, Agency Banking, E-Zwich, Power, Jumia), expenses",
+    restrictions:
+      "Cannot access financial management, reports, or user/branch management",
+  },
+  Cashier: {
+    description: "Basic transaction and expense access",
+    canAccess: "Dashboard, transactions, expenses",
+    restrictions:
+      "Cannot access services, financial management, reports, or user/branch management",
+  },
+};
 
 export default function UnauthorizedPage() {
-  const { user } = useAuth();
+  const { userRole } = useRBAC();
   const router = useRouter();
 
-  // If user is not authenticated, redirect to login
-  useEffect(() => {
-    if (!user) {
-      router.push("/");
-    }
-  }, [user, router]);
-
-  if (!user) {
-    return null;
-  }
+  const roleInfo = userRole
+    ? roleAccessMap[userRole as keyof typeof roleAccessMap]
+    : null;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-            <Shield className="h-6 w-6 text-red-600" />
-          </div>
-          <CardTitle className="text-xl font-semibold">Access Denied</CardTitle>
-          <CardDescription>
-            You don't have permission to access this resource.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Alert>
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              Your current role ({user.role}) does not have the required
-              permissions to access this page or perform this action.
-            </AlertDescription>
-          </Alert>
+    <div className="container mx-auto p-6 max-w-4xl">
+      <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-6">
+        <Card className="w-full max-w-2xl">
+          <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <div className="p-3 rounded-full bg-red-100">
+                <Shield className="h-8 w-8 text-red-600" />
+              </div>
+            </div>
+            <CardTitle className="text-2xl text-red-600">
+              Access Denied
+            </CardTitle>
+            <CardDescription className="text-lg">
+              You don't have permission to access this page
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {roleInfo && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 justify-center">
+                  <Badge variant="outline">{userRole}</Badge>
+                  <span className="text-sm text-muted-foreground">
+                    {roleInfo.description}
+                  </span>
+                </div>
 
-          <div className="text-sm text-muted-foreground">
-            <p className="mb-2">
-              If you believe this is an error, please contact your
-              administrator.
-            </p>
-            <p>You can:</p>
-            <ul className="list-disc list-inside mt-1 space-y-1">
-              <li>Go back to the previous page</li>
-              <li>Return to your dashboard</li>
-              <li>Contact support for assistance</li>
-            </ul>
-          </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="p-4 rounded-lg border bg-green-50">
+                    <h4 className="font-medium text-green-800 mb-2 flex items-center gap-2">
+                      <CheckCircle className="h-4 w-4" />
+                      You Can Access:
+                    </h4>
+                    <p className="text-sm text-green-700">
+                      {roleInfo.canAccess}
+                    </p>
+                  </div>
 
-          <div className="flex flex-col gap-2 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => router.back()}
-              className="w-full"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Go Back
-            </Button>
-            <Button
-              onClick={() => router.push("/dashboard")}
-              className="w-full"
-            >
-              <Home className="mr-2 h-4 w-4" />
-              Dashboard
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+                  <div className="p-4 rounded-lg border bg-red-50">
+                    <h4 className="font-medium text-red-800 mb-2 flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4" />
+                      Restrictions:
+                    </h4>
+                    <p className="text-sm text-red-700">
+                      {roleInfo.restrictions}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <Button
+                variant="outline"
+                onClick={() => router.back()}
+                className="flex items-center gap-2"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Go Back
+              </Button>
+              <Button
+                onClick={() => router.push("/dashboard")}
+                className="flex items-center gap-2"
+              >
+                <Home className="h-4 w-4" />
+                Go to Dashboard
+              </Button>
+            </div>
+
+            <div className="text-center text-sm text-muted-foreground">
+              <p>If you believe you should have access to this page,</p>
+              <p>please contact your system administrator.</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

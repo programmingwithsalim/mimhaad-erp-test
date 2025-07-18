@@ -81,10 +81,43 @@ export async function GET(request: NextRequest) {
 
     console.log(`Found ${transactions.length} power transactions`);
 
+    // Transform results for consistent format
+    const formattedTransactions = transactions.map((tx: any) => ({
+      id: tx.id,
+      customer_name: tx.customer_name || "N/A",
+      phone_number: tx.phone_number || "N/A",
+      meter_number: tx.meter_number || "N/A",
+      amount: Number(tx.amount) || 0,
+      fee: Number(tx.fee) || 0,
+      type: tx.type || "N/A",
+      status: tx.status || "N/A",
+      reference: tx.reference || "N/A",
+      provider: tx.provider || "N/A",
+      created_at: tx.date,
+      branch_id: tx.branch_id,
+      branch_name: tx.branch_name,
+      processed_by: tx.user_id,
+      service_type: tx.source_module,
+    }));
+
+    // Sort by created_at in descending order (latest first)
+    formattedTransactions.sort((a, b) => {
+      const dateA = new Date(a.created_at).getTime();
+      const dateB = new Date(b.created_at).getTime();
+      return dateB - dateA;
+    });
+
     return NextResponse.json({
       success: true,
-      transactions,
-      total: transactions.length,
+      data: formattedTransactions,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalCount,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+        limit,
+      },
     });
   } catch (error) {
     console.error("Error fetching power transactions:", error);
@@ -110,16 +143,72 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     console.log("Creating power transaction:", body);
 
+    // Validate required fields
+    if (
+      !body.meter_number ||
+      !body.amount ||
+      !body.customer_name ||
+      !body.provider ||
+      !body.branchId ||
+      !body.userId
+    ) {
+      return NextResponse.json(
+        { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // Validate amount (must be positive)
+    const amountNum = Number(body.amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Amount must be a valid number greater than 0",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate meter number (min 5 characters)
+    if (body.meter_number.length < 5) {
+      return NextResponse.json(
+        { success: false, error: "Meter number must be at least 5 characters" },
+        { status: 400 }
+      );
+    }
+
+    // Validate customer name (min 3 characters)
+    if (body.customer_name.length < 3) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Customer name must be at least 3 characters",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate customer phone (if provided, must be at least 10 characters)
+    if (body.customer_phone && body.customer_phone.length < 10) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Phone number must be at least 10 characters",
+        },
+        { status: 400 }
+      );
+    }
+
     // Create the transaction record and get the UUID
+    const reference = `POWER-${Date.now()}`;
     const insertResult = await sql`
       INSERT INTO power_transactions (
         meter_number, amount, customer_name, customer_phone,
         provider, reference, status, date, branch_id, user_id, notes
       ) VALUES (
         ${body.meter_number}, ${body.amount}, ${body.customer_name},
-        ${body.customer_phone || null}, ${body.provider}, ${
-      body.reference || null
-    },
+        ${body.customer_phone || null}, ${body.provider}, ${reference},
         'completed', NOW(), ${body.branchId}, ${body.userId}, ${
       body.notes || null
     }
@@ -135,9 +224,9 @@ export async function POST(request: NextRequest) {
       const glResult = await UnifiedGLPostingService.createGLEntries({
         transactionId: transactionUUID,
         sourceModule: "power",
-        transactionType: "power_float",
+        transactionType: "sale",
         amount: body.amount,
-        fee: 0,
+        fee: body.fee || 0,
         customerName: body.customer_name,
         reference: transactionReference,
         processedBy: body.userId,
@@ -188,7 +277,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "Power transaction created successfully",
-      transactionId: transactionUUID,
+      transaction: {
+        id: transactionUUID,
+        reference: transactionReference,
+      },
     });
   } catch (error) {
     console.error("Error creating power transaction:", error);

@@ -1,52 +1,72 @@
-"use client"
+"use client";
 
-import React from "react"
-import { useState } from "react"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import * as z from "zod"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Card, CardContent } from "@/components/ui/card"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { useToast } from "@/hooks/use-toast"
-import { useCurrentUser } from "@/hooks/use-current-user-fixed"
-import { Loader2, Smartphone, AlertTriangle } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
+import React from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
+import { Loader2, Smartphone, AlertTriangle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 const momoTransactionSchema = z.object({
   type: z.enum(["cash-in", "cash-out", "transfer", "payment"]),
   amount: z.number().min(1, "Amount must be greater than 0"),
-  phone_number: z.string().min(10, "Phone number must be at least 10 digits"),
+  phone_number: z
+    .string()
+    .min(10, "Phone number must be exactly 10 digits")
+    .max(10, "Phone number must be exactly 10 digits")
+    .regex(/^\d{10}$/, "Phone number must contain only digits"),
   customer_name: z.string().min(1, "Customer name is required"),
   float_account_id: z.string().min(1, "Float account is required"),
   reference: z.string().optional(),
-})
+});
 
-type MomoTransactionFormData = z.infer<typeof momoTransactionSchema>
+type MomoTransactionFormData = z.infer<typeof momoTransactionSchema>;
 
 interface FloatAccount {
-  id: string
-  provider: string
-  current_balance: number
-  min_threshold: number
-  max_threshold: number
-  account_type: string
-  is_active: boolean
+  id: string;
+  provider: string;
+  current_balance: number;
+  min_threshold: number;
+  max_threshold: number;
+  account_type: string;
+  is_active: boolean;
 }
 
 interface EnhancedMomoTransactionFormProps {
-  onSuccess?: () => void
-  momoFloats: FloatAccount[]
+  onSuccess?: () => void;
+  momoFloats: FloatAccount[];
 }
 
-export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: EnhancedMomoTransactionFormProps) {
-  const { toast } = useToast()
-  const { user } = useCurrentUser()
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [calculatedFee, setCalculatedFee] = useState<number>(0)
-  const [selectedFloat, setSelectedFloat] = useState<FloatAccount | null>(null)
+export function EnhancedMomoTransactionFormFixed({
+  onSuccess,
+  momoFloats,
+}: EnhancedMomoTransactionFormProps) {
+  const { toast } = useToast();
+  const { user } = useCurrentUser();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [calculatedFee, setCalculatedFee] = useState<number>(0);
+  const [selectedFloat, setSelectedFloat] = useState<FloatAccount | null>(null);
 
   const form = useForm<MomoTransactionFormData>({
     resolver: zodResolver(momoTransactionSchema),
@@ -58,63 +78,67 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
       float_account_id: "",
       reference: "",
     },
-  })
+  });
 
-  const watchedAmount = form.watch("amount")
-  const watchedFloatId = form.watch("float_account_id")
-  const watchedType = form.watch("type")
+  const watchedAmount = form.watch("amount");
+  const watchedFloatId = form.watch("float_account_id");
+  const watchedType = form.watch("type");
 
   // Calculate fee when amount or provider changes
   React.useEffect(() => {
     if (watchedAmount && selectedFloat) {
-      calculateFee(watchedAmount, selectedFloat.provider, watchedType)
+      calculateFee(watchedAmount, selectedFloat.provider, watchedType);
     }
-  }, [watchedAmount, selectedFloat, watchedType])
+  }, [watchedAmount, selectedFloat, watchedType]);
 
   // Update selected float when float ID changes
   React.useEffect(() => {
     if (watchedFloatId) {
-      const float = momoFloats.find((f) => f.id === watchedFloatId)
-      setSelectedFloat(float || null)
+      const float = momoFloats.find((f) => f.id === watchedFloatId);
+      setSelectedFloat(float || null);
     }
-  }, [watchedFloatId, momoFloats])
+  }, [watchedFloatId, momoFloats]);
 
-  const calculateFee = async (amount: number, provider: string, type: string) => {
+  const calculateFee = async (
+    amount: number,
+    provider: string,
+    type: string
+  ) => {
     try {
       const response = await fetch("/api/momo/calculate-fee", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ amount, provider, type }),
-      })
+      });
 
       if (response.ok) {
-        const data = await response.json()
-        setCalculatedFee(data.fee || 0)
+        const data = await response.json();
+        setCalculatedFee(data.fee || 0);
       }
     } catch (error) {
-      console.error("Error calculating fee:", error)
-      setCalculatedFee(0)
+      console.error("Error calculating fee:", error);
+      setCalculatedFee(0);
     }
-  }
+  };
 
   const getFloatStatus = (current: number, min: number) => {
-    if (current < min) return { label: "Critical", color: "destructive" }
-    if (current < min * 1.5) return { label: "Low", color: "warning" }
-    return { label: "Healthy", color: "success" }
-  }
+    if (current < min) return { label: "Critical", color: "destructive" };
+    if (current < min * 1.5) return { label: "Low", color: "warning" };
+    return { label: "Healthy", color: "success" };
+  };
 
   const canProcessTransaction = (amount: number, type: string) => {
-    if (!selectedFloat) return false
+    if (!selectedFloat) return false;
 
     if (type === "cash-in") {
       // For cash-in, we need enough cash in till
-      return true // Assuming cash is available
+      return true; // Assuming cash is available
     } else {
       // For cash-out, we need enough float balance
-      const totalRequired = amount + calculatedFee
-      return selectedFloat.current_balance >= totalRequired
+      const totalRequired = amount + calculatedFee;
+      return selectedFloat.current_balance >= totalRequired;
     }
-  }
+  };
 
   const onSubmit = async (data: MomoTransactionFormData) => {
     if (!user) {
@@ -122,8 +146,8 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
         title: "Error",
         description: "User information not available. Please log in again.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     if (!selectedFloat) {
@@ -131,8 +155,8 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
         title: "Error",
         description: "Please select a MoMo provider.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     if (!canProcessTransaction(data.amount, data.type)) {
@@ -140,11 +164,11 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
         title: "Insufficient Balance",
         description: `This transaction cannot be processed due to insufficient float balance.`,
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    setIsSubmitting(true)
+    setIsSubmitting(true);
 
     try {
       const transactionData = {
@@ -161,9 +185,9 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
         branch_id: user.branchId,
         username: user.username,
         branchName: user.branchName,
-      }
+      };
 
-      console.log("🔄 [MOMO] Submitting transaction:", transactionData)
+      console.log("🔄 [MOMO] Submitting transaction:", transactionData);
 
       const response = await fetch("/api/momo/transaction", {
         method: "POST",
@@ -176,35 +200,40 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
           "x-branch-name": user.branchName,
         },
         body: JSON.stringify(transactionData),
-      })
+      });
 
-      const result = await response.json()
+      const result = await response.json();
 
       if (response.ok && result.success) {
         toast({
           title: "Success",
           description: "MoMo transaction processed successfully",
-        })
-        form.reset()
-        setCalculatedFee(0)
-        setSelectedFloat(null)
-        onSuccess?.()
+        });
+        form.reset();
+        setCalculatedFee(0);
+        setSelectedFloat(null);
+        onSuccess?.();
       } else {
-        throw new Error(result.error || "Failed to process transaction")
+        throw new Error(result.error || "Failed to process transaction");
       }
     } catch (error) {
-      console.error("Error processing MoMo transaction:", error)
+      console.error("Error processing MoMo transaction:", error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to process transaction",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to process transaction",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsSubmitting(false)
+      setIsSubmitting(false);
     }
-  }
+  };
 
-  const activeMomoFloats = momoFloats.filter((f) => f.is_active && f.account_type === "momo")
+  const activeMomoFloats = momoFloats.filter(
+    (f) => f.is_active && f.account_type === "momo"
+  );
 
   return (
     <Form {...form}>
@@ -217,7 +246,10 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
             render={({ field }) => (
               <FormItem>
                 <FormLabel>Transaction Type</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select transaction type" />
@@ -242,7 +274,10 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
             render={({ field }) => (
               <FormItem>
                 <FormLabel>MoMo Provider</FormLabel>
-                <Select onValueChange={field.onChange} defaultValue={field.value}>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select MoMo provider" />
@@ -250,13 +285,19 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
                   </FormControl>
                   <SelectContent>
                     {activeMomoFloats.map((float) => {
-                      const status = getFloatStatus(float.current_balance, float.min_threshold)
+                      const status = getFloatStatus(
+                        float.current_balance,
+                        float.min_threshold
+                      );
                       return (
                         <SelectItem key={float.id} value={float.id}>
                           <div className="flex items-center justify-between w-full">
                             <span>{float.provider}</span>
                             <div className="flex items-center gap-2 ml-2">
-                              <Badge variant={status.color as any} className="text-xs">
+                              <Badge
+                                variant={status.color as any}
+                                className="text-xs"
+                              >
                                 {status.label}
                               </Badge>
                               <span className="text-xs text-muted-foreground">
@@ -265,7 +306,7 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
                             </div>
                           </div>
                         </SelectItem>
-                      )
+                      );
                     })}
                   </SelectContent>
                 </Select>
@@ -304,8 +345,26 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
               <FormItem>
                 <FormLabel>Phone Number</FormLabel>
                 <FormControl>
-                  <Input placeholder="0241234567" {...field} />
+                  <Input
+                    placeholder="0241234567"
+                    {...field}
+                    onChange={(e) => {
+                      // Only allow digits
+                      const value = e.target.value.replace(/\D/g, "");
+                      // Limit to 10 digits
+                      const limitedValue = value.slice(0, 10);
+                      field.onChange(limitedValue);
+                    }}
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    title="Phone number must be exactly 10 digits"
+                  />
                 </FormControl>
+                {field.value && field.value.length !== 10 && (
+                  <p className="text-sm text-destructive">
+                    Phone number must be exactly 10 digits
+                  </p>
+                )}
                 <FormMessage />
               </FormItem>
             )}
@@ -352,13 +411,19 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
               </div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm font-medium">Available Balance:</span>
-                <span className="font-bold">GHS {selectedFloat.current_balance.toFixed(2)}</span>
+                <span className="font-bold">
+                  GHS {selectedFloat.current_balance.toFixed(2)}
+                </span>
               </div>
               {calculatedFee > 0 && (
                 <>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">Transaction Fee:</span>
-                    <span className="font-bold">GHS {calculatedFee.toFixed(2)}</span>
+                    <span className="text-sm font-medium">
+                      Transaction Fee:
+                    </span>
+                    <span className="font-bold">
+                      GHS {calculatedFee.toFixed(2)}
+                    </span>
                   </div>
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium">Total Required:</span>
@@ -369,7 +434,9 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
                   {!canProcessTransaction(watchedAmount, watchedType) && (
                     <div className="flex items-center gap-2 mt-2 p-2 bg-destructive/10 rounded-md">
                       <AlertTriangle className="h-4 w-4 text-destructive" />
-                      <span className="text-sm text-destructive">Insufficient balance for this transaction</span>
+                      <span className="text-sm text-destructive">
+                        Insufficient balance for this transaction
+                      </span>
                     </div>
                   )}
                 </>
@@ -381,7 +448,9 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
         {/* Submit Button */}
         <Button
           type="submit"
-          disabled={isSubmitting || !canProcessTransaction(watchedAmount, watchedType)}
+          disabled={
+            isSubmitting || !canProcessTransaction(watchedAmount, watchedType)
+          }
           className="w-full"
         >
           {isSubmitting ? (
@@ -398,5 +467,5 @@ export function EnhancedMomoTransactionFormFixed({ onSuccess, momoFloats }: Enha
         </Button>
       </form>
     </Form>
-  )
+  );
 }

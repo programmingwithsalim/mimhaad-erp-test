@@ -88,26 +88,28 @@ export function EZwichEditBatchForm({
     const fetchPartnerBanks = async () => {
       try {
         setLoadingBanks(true);
+        
+        // Use the dedicated E-Zwich partner banks endpoint
         const response = await fetch(
-          "/api/float-accounts?isezwichpartner=true"
+          `/api/float-accounts/ezwich-partners?branchId=${user?.branchId || ""}`
         );
         const data = await response.json();
 
         if (data.success) {
-          setPartnerBanks(data.data || []);
+          setPartnerBanks(data.accounts || []);
         } else {
-          console.error("Failed to fetch partner banks:", data.error);
+          console.error("Failed to fetch E-Zwich partner banks:", data.error);
           toast({
             title: "Error",
-            description: "Failed to load partner banks",
+            description: "Failed to load E-Zwich partner banks",
             variant: "destructive",
           });
         }
       } catch (error) {
-        console.error("Error fetching partner banks:", error);
+        console.error("Error fetching E-Zwich partner banks:", error);
         toast({
           title: "Error",
-          description: "Failed to load partner banks",
+          description: "Failed to load E-Zwich partner banks",
           variant: "destructive",
         });
       } finally {
@@ -115,8 +117,11 @@ export function EZwichEditBatchForm({
       }
     };
 
-    fetchPartnerBanks();
-  }, [toast]);
+    // Only fetch if user is available
+    if (user?.branchId) {
+      fetchPartnerBanks();
+    }
+  }, [user?.branchId, toast]);
 
   // Fetch branches for admin users
   useEffect(() => {

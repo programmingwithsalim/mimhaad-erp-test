@@ -38,6 +38,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Validate phone number format - must be exactly 10 digits with no letters
+    const phoneRegex = /^\d{10}$/;
+    if (!phoneRegex.test(normalizedData.customer_phone)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Phone number must be exactly 10 digits (e.g., 0241234567)",
+        },
+        { status: 400 }
+      );
+    }
+
     if (!normalizedData.amount || normalizedData.amount <= 0) {
       return NextResponse.json(
         { success: false, error: "Valid amount is required" },
@@ -179,85 +191,57 @@ export async function POST(request: NextRequest) {
       WHERE id = ${account.id}
     `;
 
-    // Update cash in till
-    await sql`
-      UPDATE float_accounts 
-      SET 
-        current_balance = current_balance + ${cashTillChange},
-        updated_at = NOW()
+    // Update cash in till balance
+    const cashTillAccount = await sql`
+      SELECT * FROM float_accounts 
       WHERE branch_id = ${branchId}
       AND account_type = 'cash-in-till'
       AND is_active = true
+      LIMIT 1
     `;
 
-    // Create GL entries (optional - don't fail transaction if GL fails)
-    let glSuccess = false;
-    let glError = null;
+    if (cashTillAccount.length > 0) {
+      const cashTill = cashTillAccount[0];
+      const newCashTillBalance =
+        Number(cashTill.current_balance) + cashTillChange;
 
+      await sql`
+        UPDATE float_accounts 
+        SET 
+          current_balance = ${newCashTillBalance},
+          updated_at = NOW()
+        WHERE id = ${cashTill.id}
+      `;
+    }
+
+    // Create GL entries
     try {
-      console.log("🔍 [DEBUG] Creating GL entries for MoMo transaction:", {
+      await UnifiedGLPostingService.createGLEntries({
         transactionId: transaction[0].id,
         sourceModule: "momo",
         transactionType: normalizedData.type,
         amount: normalizedData.amount,
         fee: normalizedData.fee,
-        cashTillChange,
-        floatChange,
-        newFloatBalance,
-      });
-
-      const glResult = await UnifiedGLPostingService.createGLEntries({
-        transactionId: transaction[0].id,
-        sourceModule: "momo",
-        transactionType: normalizedData.type,
-        amount: normalizedData.amount,
-        fee: normalizedData.fee,
-        provider: normalizedData.provider,
         customerName: normalizedData.customer_name,
-        reference: transaction[0].reference,
+        reference: normalizedData.reference || `MOMO-${Date.now()}`,
         processedBy: userId || "system",
         branchId: branchId,
-        branchName: "Branch",
-        metadata: {},
+        metadata: {
+          provider: normalizedData.provider,
+          phoneNumber: normalizedData.customer_phone,
+          cashTillChange: cashTillChange,
+          floatChange: floatChange,
+        },
       });
-
-      glSuccess = glResult.success;
-      if (!glSuccess) {
-        glError = glResult.error;
-        console.warn(
-          "[GL] GL posting failed but transaction completed:",
-          glError
-        );
-      }
     } catch (glError) {
-      console.warn(
-        "[GL] GL posting failed but transaction completed:",
-        glError
-      );
+      console.error("GL posting failed for MoMo transaction:", glError);
+      // Continue with transaction even if GL posting fails
     }
 
     return NextResponse.json({
       success: true,
-      transaction: {
-        id: transaction[0].id,
-        customerName: transaction[0].customer_name,
-        phoneNumber: transaction[0].phone_number,
-        amount: transaction[0].amount,
-        fee: transaction[0].fee,
-        type: transaction[0].type,
-        provider: transaction[0].provider,
-        reference: transaction[0].reference,
-        status: transaction[0].status,
-        date: transaction[0].created_at,
-        branchName: "Branch",
-      },
-      message: glSuccess
-        ? "MoMo transaction processed successfully with GL entries"
-        : "MoMo transaction processed successfully (GL entries failed - check mappings)",
-      glStatus: {
-        success: glSuccess,
-        error: glError,
-      },
+      transaction: transaction[0],
+      message: `MoMo ${normalizedData.type} transaction processed successfully`,
     });
   } catch (error) {
     console.error("Error processing MoMo transaction:", error);

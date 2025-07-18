@@ -40,7 +40,20 @@ export function TransactionReceipt({
 
   if (!data) return null;
 
-  const totalAmount = data.amount + data.fee;
+  // Ensure amount and fee are numbers
+  const amount =
+    typeof data.amount === "number" ? data.amount : Number(data.amount) || 0;
+  const fee = typeof data.fee === "number" ? data.fee : Number(data.fee) || 0;
+  const totalAmount = amount + fee;
+
+  console.log("Receipt Debug:", {
+    originalAmount: data.amount,
+    originalFee: data.fee,
+    convertedAmount: amount,
+    convertedFee: fee,
+    totalAmount,
+  });
+
   const formattedDate = format(new Date(data.date), "PPP p");
 
   const getModuleDisplayName = (module: string) => {
@@ -78,6 +91,8 @@ export function TransactionReceipt({
         return "Package Receipt";
       case "settlement":
         return "Settlement";
+      case "sale":
+        return "Sale";
       default:
         return type.replace(/_/g, " ").toUpperCase();
     }
@@ -204,13 +219,13 @@ export function TransactionReceipt({
 
             <div className="flex justify-between py-1">
               <span className="font-medium">Amount:</span>
-              <span className="font-medium">{formatCurrency(data.amount)}</span>
+              <span className="font-medium">{formatCurrency(amount)}</span>
             </div>
 
-            {data.fee > 0 && (
+            {fee > 0 && (
               <div className="flex justify-between py-1">
                 <span className="font-medium">Fee:</span>
-                <span>{formatCurrency(data.fee)}</span>
+                <span>{formatCurrency(fee)}</span>
               </div>
             )}
 
@@ -261,7 +276,11 @@ export function TransactionReceipt({
 }
 
 function generateReceiptHTML(data: TransactionReceiptData): string {
-  const totalAmount = data.amount + data.fee;
+  // Ensure amount and fee are numbers
+  const amount =
+    typeof data.amount === "number" ? data.amount : Number(data.amount) || 0;
+  const fee = typeof data.fee === "number" ? data.fee : Number(data.fee) || 0;
+  const totalAmount = amount + fee;
   const formattedDate = format(new Date(data.date), "PPP p");
 
   const getModuleDisplayName = (module: string) => {
@@ -299,6 +318,8 @@ function generateReceiptHTML(data: TransactionReceiptData): string {
         return "Package Receipt";
       case "settlement":
         return "Settlement";
+      case "sale":
+        return "Sale";
       default:
         return type.replace(/_/g, " ").toUpperCase();
     }
@@ -437,15 +458,15 @@ function generateReceiptHTML(data: TransactionReceiptData): string {
   
   <div class="row">
     <span>Amount:</span>
-    <span>${formatCurrency(data.amount)}</span>
+    <span>${formatCurrency(amount)}</span>
   </div>
   
   ${
-    data.fee > 0
+    fee > 0
       ? `
   <div class="row">
     <span>Fee:</span>
-    <span>${formatCurrency(data.fee)}</span>
+    <span>${formatCurrency(fee)}</span>
   </div>
   `
       : ""

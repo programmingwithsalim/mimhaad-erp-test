@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/auth-service-db";
+import { getCurrentUser } from "@/lib/auth-utils";
 import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request) {
-  const session = await getSession(request);
-  if (!session?.user?.id) {
+  const user = await getCurrentUser(request);
+  if (!user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   try {
@@ -15,7 +15,7 @@ export async function GET(request) {
         CASE WHEN status = 'read' OR read_at IS NOT NULL THEN true ELSE false END as "read",
         created_at as "timestamp"
       FROM notifications
-      WHERE user_id = ${session.user.id}
+      WHERE user_id = ${user.id}
       ORDER BY created_at DESC
       LIMIT 50
     `;

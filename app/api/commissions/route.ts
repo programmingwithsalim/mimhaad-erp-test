@@ -156,6 +156,51 @@ export async function POST(request: Request) {
       commission.id
     );
 
+    // Ensure the commission object has all required fields
+    const formattedCommission = {
+      id: commission.id,
+      source: commission.source,
+      sourceName: commission.source_name,
+      amount: Number(commission.amount),
+      month: commission.month,
+      reference: commission.reference,
+      description: commission.description,
+      status: commission.status || "paid",
+      glAccount: commission.gl_account || "",
+      glAccountName: commission.gl_account_name || "",
+      branchId: commission.branch_id,
+      branchName: commission.branch_name,
+      createdAt: commission.created_at,
+      updatedAt: commission.updated_at,
+      createdBy: {
+        id: commission.created_by,
+        name: commission.created_by_name,
+      },
+      updatedBy: commission.updated_by_id
+        ? {
+            id: commission.updated_by_id,
+            name: commission.updated_by_name,
+          }
+        : undefined,
+      payment: commission.payment_status
+        ? {
+            status: commission.payment_status,
+            method: commission.payment_method,
+            receivedAt: commission.payment_received_at,
+            bankAccount: commission.payment_bank_account,
+            referenceNumber: commission.payment_reference_number,
+            notes: commission.payment_notes,
+          }
+        : undefined,
+      metadata: {
+        transactionVolume: Number(commission.transaction_volume || 0),
+        commissionRate: Number(commission.commission_rate || 0),
+        settlementPeriod: commission.settlement_period,
+      },
+      comments: [],
+      attachments: [],
+    };
+
     // Handle receipt file upload if provided
     if (receiptFile) {
       try {
@@ -219,58 +264,34 @@ export async function POST(request: Request) {
       try {
         console.log("📊 [COMMISSION] Posting to GL...");
 
-        // Get the float account to determine the correct GL transaction type
-        const floatAccount = await sql`
-          SELECT account_type, provider FROM float_accounts 
-          WHERE id = ${source}
-        `;
-
-        // Map float account type to GL transaction type
-        const getCommissionTransactionType = (accountType: string): string => {
-          switch (accountType.toLowerCase()) {
-            case "momo":
-              return "momo_float";
-            case "agency-banking":
-              return "agency_banking_float";
-            case "power":
-              return "power_float";
-            case "e-zwich":
-              return "e_zwich_float";
-            case "jumia":
-              return "jumia_float";
-            default:
-              return "agency_banking_float"; // Default fallback
-          }
-        };
-
-        const transactionType =
-          floatAccount.length > 0
-            ? getCommissionTransactionType(floatAccount[0].account_type)
-            : "agency_banking_float";
+        // Use a consistent transaction type for commissions
+        const transactionType = "commission";
 
         console.log(
           "📊 [COMMISSION] Using GL transaction type:",
           transactionType
         );
 
-        const glResult = await UnifiedGLPostingService.createGLEntries({
-          transactionId: commission.id,
-          sourceModule: "commissions",
-          transactionType: transactionType,
-          amount: Number(commission.amount),
-          fee: 0, // No fees for commissions
-          reference: commission.reference,
-          processedBy: userId,
-          branchId: commission.branch_id,
-          branchName: commission.branch_name,
-          metadata: {
-            source: commission.source,
-            sourceName: commission.source_name,
-            month: commission.month,
-            transactionVolume: Number(commission.transaction_volume || 0),
-            commissionRate: Number(commission.commission_rate || 0),
-          },
-        });
+        const glResult =
+          await UnifiedGLPostingService.createCommissionGLEntries({
+            transactionId: commission.id,
+            sourceModule: "commissions",
+            transactionType: transactionType,
+            amount: Number(commission.amount),
+            fee: 0, // No fees for commissions
+            reference: commission.reference,
+            processedBy: userId,
+            branchId: commission.branch_id,
+            branchName: commission.branch_name,
+            metadata: {
+              source: commission.source,
+              sourceName: commission.source_name,
+              month: commission.month,
+              transactionVolume: Number(commission.transaction_volume || 0),
+              commissionRate: Number(commission.commission_rate || 0),
+              status: commission.status,
+            },
+          });
 
         if (!glResult.success) {
           throw new Error(glResult.error || "GL posting failed");
@@ -327,25 +348,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       message: "Commission created successfully",
-      commission: {
-        id: commission.id,
-        source: commission.source,
-        sourceName: commission.source_name,
-        reference: commission.reference,
-        month: commission.month,
-        amount: Number(commission.amount),
-        transactionVolume: Number(commission.transaction_volume),
-        commissionRate: Number(commission.commission_rate),
-        description: commission.description,
-        notes: commission.notes,
-        status: commission.status,
-        createdBy: commission.created_by,
-        createdByName: commission.created_by_name,
-        branchId: commission.branch_id,
-        branchName: commission.branch_name,
-        createdAt: commission.created_at,
-        updatedAt: commission.updated_at,
-      },
+      commission: formattedCommission,
     });
   } catch (error: any) {
     console.error("❌ [COMMISSION] Error creating commission:", error);

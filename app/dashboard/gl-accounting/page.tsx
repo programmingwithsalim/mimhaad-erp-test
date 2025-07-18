@@ -2,6 +2,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GLAccountManagement } from "@/components/gl-accounting/gl-account-management";
 import { ManualGLFloatMapping } from "@/components/float-gl-mapping/manual-gl-float-mapping";
+import { GLMappingManagement } from "@/components/gl-accounting/gl-mapping-management";
 import { GLAccountingDashboard } from "@/components/gl-accounting/gl-accounting-dashboard";
 import { BranchProvider } from "@/contexts/branch-context";
 
@@ -20,9 +21,10 @@ export default function GLAccountingPage() {
         </div>
 
         <Tabs defaultValue="dashboard" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
             <TabsTrigger value="accounts">GL Accounts</TabsTrigger>
+            <TabsTrigger value="mappings">GL Mappings</TabsTrigger>
             <TabsTrigger value="mapping">Manual Mapping</TabsTrigger>
           </TabsList>
 
@@ -32,6 +34,10 @@ export default function GLAccountingPage() {
 
           <TabsContent value="accounts" className="space-y-6">
             <GLAccountManagement />
+          </TabsContent>
+
+          <TabsContent value="mappings" className="space-y-6">
+            <GLMappingManagement />
           </TabsContent>
 
           <TabsContent value="mapping" className="space-y-6">

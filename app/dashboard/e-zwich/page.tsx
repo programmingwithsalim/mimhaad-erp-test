@@ -61,12 +61,17 @@ import {
   ArrowRightLeft,
   Eye,
   RotateCcw,
+  User,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useDynamicFee } from "@/hooks/use-dynamic-fee";
 import { TransactionActions } from "@/components/transactions/transaction-actions";
 import { CardManagementInterface } from "@/components/e-zwich/card-management-interface";
 import { TransactionHistoryInterface } from "@/components/e-zwich/transaction-history-interface";
+import {
+  TransactionReceipt,
+  TransactionReceiptData,
+} from "@/components/shared/transaction-receipt";
 
 interface Transaction {
   id: string;
@@ -79,6 +84,12 @@ interface Transaction {
   status: string;
   created_at: string;
   settlement_account_id?: string;
+  customer_email?: string;
+  id_type?: string;
+  id_number?: string;
+  city?: string;
+  region?: string;
+  notes?: string;
 }
 
 export default function EZwichPage() {
@@ -100,6 +111,9 @@ export default function EZwichPage() {
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [showSettleDialog, setShowSettleDialog] = useState(false);
   const [currentTransaction, setCurrentTransaction] = useState<any>(null);
+  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
+    null
+  );
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -246,6 +260,53 @@ export default function EZwichPage() {
       return;
     }
 
+    // Validate amount (must be positive)
+    const amount = Number(withdrawalForm.amount);
+    if (amount <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Amount must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate card number (max 10 digits)
+    if (withdrawalForm.card_number.length > 10) {
+      toast({
+        title: "Invalid Card Number",
+        description: "Card number cannot exceed 10 digits",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate card number contains only digits
+    if (!/^\d+$/.test(withdrawalForm.card_number)) {
+      toast({
+        title: "Invalid Card Number",
+        description: "Card number must contain only digits",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate customer phone (if provided, must be exactly 10 digits)
+    if (withdrawalForm.customer_phone) {
+      if (
+        withdrawalForm.customer_phone.length !== 10 ||
+        !/^\d{10}$/.test(withdrawalForm.customer_phone)
+      ) {
+        toast({
+          title: "Invalid Phone Number",
+          description:
+            "Phone number must be exactly 10 digits (e.g., 0241234567)",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
@@ -323,6 +384,17 @@ export default function EZwichPage() {
       toast({
         title: "Missing information",
         description: "Please fill in all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate amount (must be positive)
+    const amount = Number(settleForm.amount);
+    if (amount <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Amount must be greater than 0",
         variant: "destructive",
       });
       return;
@@ -464,189 +536,6 @@ export default function EZwichPage() {
     }
   };
 
-  const printReceipt = () => {
-    if (!currentTransaction) return;
-
-    // Use the better receipt format from TransactionReceipt component
-    const receiptData = {
-      transactionId: currentTransaction.id,
-      sourceModule: "e_zwich",
-      transactionType: currentTransaction.type,
-      amount: currentTransaction.amount || 0,
-      fee: currentTransaction.fee || 0,
-      customerName: currentTransaction.customer_name,
-      customerPhone: currentTransaction.customer_phone,
-      reference: currentTransaction.reference || currentTransaction.id,
-      branchName: user?.branchName || "Branch",
-      date: currentTransaction.created_at,
-      additionalData: {
-        "Card Number": currentTransaction.card_number || "N/A",
-        "Partner Bank": currentTransaction.partner_bank || "N/A",
-      },
-    };
-
-    const receiptHTML = `
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Transaction Receipt</title>
-  <style>
-    body { 
-      font-family: 'Courier New', monospace; 
-      font-size: 12px; 
-      margin: 0; 
-      padding: 20px; 
-      max-width: 300px;
-      background: white;
-    }
-    .header { 
-      text-align: center; 
-      margin-bottom: 20px; 
-      border-bottom: 2px solid #000;
-      padding-bottom: 10px;
-    }
-    .logo { 
-      width: 60px; 
-      height: 60px; 
-      margin: 0 auto 10px; 
-    }
-    .line { 
-      border-bottom: 1px dashed #000; 
-      margin: 10px 0; 
-    }
-    .row { 
-      display: flex; 
-      justify-content: space-between; 
-      margin: 5px 0; 
-    }
-    .footer { 
-      text-align: center; 
-      margin-top: 20px; 
-      font-size: 10px; 
-      border-top: 1px solid #000;
-      padding-top: 10px;
-    }
-    .title {
-      font-size: 14px;
-      font-weight: bold;
-      text-align: center;
-      margin: 10px 0;
-    }
-    .total {
-      font-weight: bold;
-      font-size: 14px;
-      border-top: 1px solid #000;
-      padding-top: 5px;
-    }
-    @media print {
-      body { margin: 0; padding: 10px; }
-      .no-print { display: none; }
-    }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <img src="/logo.png" alt="MIMHAAD Logo" class="logo" />
-    <h3>MIMHAAD FINANCIAL SERVICES</h3>
-    <p>${receiptData.branchName}</p>
-    <p>Tel: 0241378880</p>
-    <p>${format(new Date(receiptData.date), "PPP p")}</p>
-  </div>
-  
-  <div class="title">E-ZWICH TRANSACTION RECEIPT</div>
-  
-  <div class="line"></div>
-  
-  <div class="row">
-    <span>Transaction ID:</span>
-    <span>${receiptData.transactionId}</span>
-  </div>
-  
-  <div class="row">
-    <span>Type:</span>
-    <span>${
-      receiptData.transactionType === "withdrawal"
-        ? "Withdrawal"
-        : "Card Issuance"
-    }</span>
-  </div>
-  
-  <div class="row">
-    <span>Customer:</span>
-    <span>${receiptData.customerName}</span>
-  </div>
-  
-  ${
-    receiptData.customerPhone
-      ? `
-  <div class="row">
-    <span>Phone:</span>
-    <span>${receiptData.customerPhone}</span>
-  </div>
-  `
-      : ""
-  }
-  
-  <div class="row">
-    <span>Card Number:</span>
-    <span>${receiptData.additionalData["Card Number"]}</span>
-  </div>
-  
-  ${
-    receiptData.transactionType === "withdrawal"
-      ? `
-  <div class="row">
-    <span>Partner Bank:</span>
-    <span>${receiptData.additionalData["Partner Bank"]}</span>
-  </div>
-  `
-      : ""
-  }
-  
-  <div class="row">
-    <span>Amount:</span>
-    <span>${formatCurrency(receiptData.amount)}</span>
-  </div>
-  
-  ${
-    receiptData.fee > 0
-      ? `
-  <div class="row">
-    <span>Fee:</span>
-    <span>${formatCurrency(receiptData.fee)}</span>
-  </div>
-  `
-      : ""
-  }
-  
-  <div class="row">
-    <span>Reference:</span>
-    <span>${receiptData.reference}</span>
-  </div>
-  
-  <div class="line"></div>
-  
-  <div class="row total">
-    <span>TOTAL:</span>
-    <span>${formatCurrency(receiptData.amount + receiptData.fee)}</span>
-  </div>
-  
-  <div class="footer">
-    <p>Thank you for using our service!</p>
-    <p>For inquiries, please call 0241378880</p>
-    <p>Powered by MIMHAAD Financial Services</p>
-  </div>
-</body>
-</html>`;
-
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(receiptHTML);
-      printWindow.document.close();
-      printWindow.print();
-    }
-  };
-
   // Custom transaction actions for E-Zwich
   const EZwichTransactionActions = ({ transaction }: { transaction: any }) => {
     const isWithdrawal = transaction.type === "withdrawal";
@@ -713,7 +602,28 @@ export default function EZwichPage() {
     };
 
     const handleViewReceipt = () => {
-      setCurrentTransaction(transaction);
+      // Format transaction data for the shared receipt component
+      const formattedReceiptData: TransactionReceiptData = {
+        transactionId: transaction.id,
+        sourceModule: "e_zwich",
+        transactionType: transaction.type,
+        amount: transaction.amount || 0,
+        fee: 0, // E-Zwich transactions typically don't have fees
+        customerName: transaction.customer_name,
+        customerPhone: transaction.customer_phone,
+        reference: transaction.id,
+        branchName: user?.branchName || "Main Branch",
+        date: transaction.created_at,
+        additionalData: {
+          "Card Number": transaction.card_number,
+          "Partner Bank": transaction.partner_bank,
+          "ID Type": transaction.id_type,
+          "ID Number": transaction.id_number,
+          City: transaction.city,
+          Region: transaction.region,
+        },
+      };
+      setReceiptData(formattedReceiptData);
       setShowReceiptDialog(true);
     };
 
@@ -934,13 +844,18 @@ export default function EZwichPage() {
                         <Label htmlFor="card_number">Card Number *</Label>
                         <Input
                           id="card_number"
+                          maxLength={10}
                           value={withdrawalForm.card_number}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            // Only allow digits
+                            const value = e.target.value.replace(/\D/g, "");
+                            // Limit to 10 digits
+                            const limitedValue = value.slice(0, 10);
                             setWithdrawalForm({
                               ...withdrawalForm,
-                              card_number: e.target.value,
-                            })
-                          }
+                              card_number: limitedValue,
+                            });
+                          }}
                           placeholder="Enter card number"
                           required
                         />
@@ -952,7 +867,7 @@ export default function EZwichPage() {
                           id="amount"
                           type="number"
                           step="0.01"
-                          min="0"
+                          min="0.01"
                           value={withdrawalForm.amount}
                           onChange={(e) =>
                             setWithdrawalForm({
@@ -985,14 +900,19 @@ export default function EZwichPage() {
                         <Label htmlFor="customer_phone">Customer Phone</Label>
                         <Input
                           id="customer_phone"
+                          maxLength={10}
                           value={withdrawalForm.customer_phone}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            // Only allow digits
+                            const value = e.target.value.replace(/\D/g, "");
+                            // Limit to 10 digits
+                            const limitedValue = value.slice(0, 10);
                             setWithdrawalForm({
                               ...withdrawalForm,
-                              customer_phone: e.target.value,
-                            })
-                          }
-                          placeholder="Enter phone number"
+                              customer_phone: limitedValue,
+                            });
+                          }}
+                          placeholder="0241234567"
                         />
                       </div>
 
@@ -1049,9 +969,13 @@ export default function EZwichPage() {
                         <Input
                           id="withdrawal_fee"
                           type="number"
-                          value={withdrawalForm.fee || ""}
-                          readOnly
-                          disabled
+                          value={withdrawalForm.fee || 0}
+                          onChange={(e) =>
+                            setWithdrawalForm({
+                              ...withdrawalForm,
+                              fee: e.target.value,
+                            })
+                          }
                         />
                       </div>
                     </div>
@@ -1181,7 +1105,7 @@ export default function EZwichPage() {
                         id="settle_amount"
                         type="number"
                         step="0.01"
-                        min="0"
+                        min="0.01"
                         value={settleForm.amount}
                         onChange={(e) =>
                           setSettleForm({
@@ -1332,68 +1256,11 @@ export default function EZwichPage() {
       </Tabs>
 
       {/* Receipt Dialog */}
-      <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Transaction Receipt</DialogTitle>
-            <DialogDescription>
-              Transaction details and receipt
-            </DialogDescription>
-          </DialogHeader>
-          {currentTransaction && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="font-medium">Transaction ID:</span>
-                  <p>{currentTransaction.id}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Type:</span>
-                  <p className="capitalize">{currentTransaction.type}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Customer:</span>
-                  <p>{currentTransaction.customer_name}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Card Number:</span>
-                  <p>{currentTransaction.card_number || "N/A"}</p>
-                </div>
-                <div>
-                  <span className="font-medium">Amount:</span>
-                  <p>
-                    {currentTransaction.amount
-                      ? formatCurrency(currentTransaction.amount)
-                      : "N/A"}
-                  </p>
-                </div>
-                <div>
-                  <span className="font-medium">Status:</span>
-                  <p>{currentTransaction.status}</p>
-                </div>
-                <div className="col-span-2">
-                  <span className="font-medium">Date:</span>
-                  <p>
-                    {format(
-                      new Date(currentTransaction.created_at),
-                      "PPP 'at' HH:mm"
-                    )}
-                  </p>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={printReceipt}>
-                  <Printer className="h-4 w-4 mr-2" />
-                  Print Receipt
-                </Button>
-                <Button onClick={() => setShowReceiptDialog(false)}>
-                  Close
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      <TransactionReceipt
+        data={receiptData}
+        open={showReceiptDialog}
+        onOpenChange={setShowReceiptDialog}
+      />
 
       {/* Edit Transaction Dialog */}
       <TransactionEditDialog

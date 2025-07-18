@@ -46,7 +46,9 @@ const formSchema = z.object({
     .min(3, "Customer name must be at least 3 characters"),
   customerPhone: z
     .string()
-    .min(10, "Phone number must be at least 10 characters"),
+    .min(10, "Phone number must be at least 10 characters")
+    .max(10, "Phone number must be exactly 10 digits")
+    .regex(/^\d{10}$/, "Phone number must contain only digits"),
   withdrawalAmount: z.coerce.number().min(1, "Amount must be greater than 0"),
   fee: z.coerce.number().min(0, "Fee must be 0 or greater"),
 });

@@ -181,7 +181,7 @@ export default function ExpensesPage() {
       // Build query parameters for statistics
       const params = new URLSearchParams();
       if (selectedBranch !== "all") {
-        params.append("branchId", selectedBranch);
+        params.append("branch_id", selectedBranch);
       }
 
       const response = await fetch(`/api/expenses-statistics?${params}`, {

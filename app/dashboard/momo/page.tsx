@@ -57,10 +57,15 @@ import {
   Trash2,
   Printer,
   Receipt,
+  Database,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EditMoMoTransactionDialog } from "@/components/transactions/edit-momo-transaction-dialog";
 import { TransactionActions } from "@/components/transactions/transaction-actions";
+import {
+  TransactionReceipt,
+  TransactionReceiptData,
+} from "@/components/shared/transaction-receipt";
 
 interface Transaction {
   id: string;
@@ -101,7 +106,9 @@ export default function MoMoPage() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [transactionToDelete, setTransactionToDelete] =
     useState<Transaction | null>(null);
-  const [receipt, setReceipt] = useState<any>(null);
+  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
+    null
+  );
 
   const [formData, setFormData] = useState({
     type: "",
@@ -136,12 +143,16 @@ export default function MoMoPage() {
           transactionTypeForFee,
           Number(formData.amount)
         );
+        // Only set the fee if it's empty or hasn't been manually modified
         setFormData((prev) => ({
           ...prev,
-          fee: feeResult.fee.toString(),
+          fee: prev.fee === "" ? feeResult.fee.toString() : prev.fee,
         }));
       } catch (err) {
-        setFormData((prev) => ({ ...prev, fee: "0" }));
+        setFormData((prev) => ({
+          ...prev,
+          fee: prev.fee === "" ? "0" : prev.fee,
+        }));
       } finally {
         setFeeLoading(false);
       }
@@ -239,6 +250,18 @@ export default function MoMoPage() {
       return;
     }
 
+    // Validate phone number - must be exactly 10 digits with no letters
+    const phoneRegex = /^\d{10}$/;
+    if (!phoneRegex.test(formData.phone_number)) {
+      toast({
+        title: "Invalid Phone Number",
+        description:
+          "Phone number must be exactly 10 digits (e.g., 0241234567)",
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (
       !formData.type ||
       !formData.amount ||
@@ -268,7 +291,7 @@ export default function MoMoPage() {
           serviceType: "momo",
           transactionType: transactionTypeForFee,
           amount: Number(formData.amount),
-          fee: Number(formData.fee) || 0,
+          fee: Number(formData.fee) || 0, // Use the fee from form (modified or auto-calculated)
           customerName: formData.customer_name,
           phoneNumber: formData.phone_number,
           provider: formData.provider,
@@ -291,7 +314,7 @@ export default function MoMoPage() {
 
         // Show receipt automatically if available
         if (result.receipt) {
-          setReceipt(result.receipt);
+          setReceiptData(result.receipt);
           setShowReceiptDialog(true);
         }
 
@@ -380,47 +403,57 @@ export default function MoMoPage() {
   };
 
   const exportToCSV = () => {
+    if (transactions.length === 0) {
+      toast({
+        title: "No Data",
+        description: "No transactions to export",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const headers = [
       "Date",
       "Type",
-      "Customer",
-      "Phone",
+      "Customer Name",
+      "Phone Number",
       "Provider",
       "Amount",
       "Fee",
       "Status",
+      "Reference",
     ];
+
     const csvData = transactions.map((transaction) => [
       format(new Date(transaction.created_at), "yyyy-MM-dd HH:mm:ss"),
       transaction.type,
       transaction.customer_name,
       transaction.phone_number,
       transaction.provider,
-      transaction.amount.toFixed(2),
-      transaction.fee.toFixed(2),
+      transaction.amount,
+      transaction.fee,
       transaction.status,
+      transaction.reference || "",
     ]);
 
-    const csvContent = [headers, ...csvData]
-      .map((row) => row.map((field) => `"${field}"`).join(","))
-      .join("\n");
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      [headers.join(","), ...csvData.map((row) => row.join(","))].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
+    link.setAttribute("href", encodedUri);
     link.setAttribute(
       "download",
       `momo-transactions-${format(new Date(), "yyyy-MM-dd")}.csv`
     );
-    link.style.visibility = "hidden";
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
 
     toast({
       title: "Export Successful",
-      description: `Exported ${transactions.length} transactions to CSV`,
+      description: "MoMo transactions exported to CSV",
     });
   };
 
@@ -462,34 +495,6 @@ export default function MoMoPage() {
         );
       default:
         return <Badge variant="outline">{status || "Unknown"}</Badge>;
-    }
-  };
-
-  const printReceipt = () => {
-    const printContent = document.getElementById("receipt-content");
-    if (printContent) {
-      const printWindow = window.open("", "_blank");
-      if (printWindow) {
-        printWindow.document.write(`
-          <html>
-            <head>
-              <title>Transaction Receipt</title>
-              <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .receipt { max-width: 300px; margin: 0 auto; }
-                .center { text-align: center; }
-                .line { border-bottom: 1px solid #000; margin: 10px 0; }
-                .row { display: flex; justify-content: space-between; margin: 5px 0; }
-              </style>
-            </head>
-            <body>
-              ${printContent.innerHTML}
-            </body>
-          </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
-      }
     }
   };
 
@@ -726,15 +731,28 @@ export default function MoMoPage() {
                         <Input
                           id="phone_number"
                           value={formData.phone_number}
-                          onChange={(e) =>
+                          onChange={(e) => {
+                            // Only allow digits
+                            const value = e.target.value.replace(/\D/g, "");
+                            // Limit to 10 digits
+                            const limitedValue = value.slice(0, 10);
                             setFormData({
                               ...formData,
-                              phone_number: e.target.value,
-                            })
-                          }
-                          placeholder="Enter phone number"
+                              phone_number: limitedValue,
+                            });
+                          }}
+                          placeholder="0241234567"
+                          maxLength={10}
+                          pattern="[0-9]{10}"
+                          title="Phone number must be exactly 10 digits"
                           required
                         />
+                        {formData.phone_number &&
+                          formData.phone_number.length !== 10 && (
+                            <p className="text-sm text-destructive">
+                              Phone number must be exactly 10 digits
+                            </p>
+                          )}
                       </div>
 
                       <div className="space-y-2">
@@ -827,14 +845,16 @@ export default function MoMoPage() {
                     All mobile money transactions
                   </CardDescription>
                 </div>
-                <Button
-                  onClick={exportToCSV}
-                  variant="outline"
-                  className="flex items-center gap-2 bg-transparent"
-                >
-                  <Download className="h-4 w-4" />
-                  Export CSV
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={exportToCSV}
+                    variant="outline"
+                    className="flex items-center gap-2 bg-transparent"
+                  >
+                    <Download className="h-4 w-4" />
+                    Export CSV
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent>
@@ -927,94 +947,11 @@ export default function MoMoPage() {
       </Tabs>
 
       {/* Receipt Dialog */}
-      <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5" />
-              Transaction Receipt
-            </DialogTitle>
-            <DialogDescription>
-              Transaction completed successfully
-            </DialogDescription>
-          </DialogHeader>
-          {receipt && (
-            <div id="receipt-content" className="space-y-4">
-              {typeof receipt === "string" ? (
-                <div dangerouslySetInnerHTML={{ __html: receipt }} />
-              ) : (
-                <>
-                  <div className="text-center border-b pb-4">
-                    <h3 className="text-lg font-bold">
-                      MIMHAAD FINANCIAL SERVICES
-                    </h3>
-                    <p className="text-sm">
-                      {user?.branchName || "Main Branch"}
-                    </p>
-                    <p className="text-sm">Tel: 0241378880</p>
-                    <p className="text-sm">{format(new Date(), "PPP")}</p>
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-sm">
-                      <span>Transaction ID:</span>
-                      <span className="font-mono">{receipt.id}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Customer:</span>
-                      <span>{receipt.customer_name}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Phone Number:</span>
-                      <span>{receipt.phone_number}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Transaction Type:</span>
-                      <span className="capitalize">{receipt.type}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Provider:</span>
-                      <span>{receipt.provider}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Amount:</span>
-                      <span>{formatCurrency(receipt.amount)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm">
-                      <span>Fee:</span>
-                      <span>{formatCurrency(receipt.fee)}</span>
-                    </div>
-                    <div className="flex justify-between text-sm font-medium border-t pt-2">
-                      <span>Total:</span>
-                      <span>
-                        {formatCurrency(
-                          receipt.amount +
-                            (receipt.type === "cash-out" ? receipt.fee : 0)
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-center text-xs border-t pt-4">
-                    <p>Thank you for using our service!</p>
-                    <p>For inquiries, please call 0241378880</p>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setShowReceiptDialog(false)}
-            >
-              Close
-            </Button>
-            <Button onClick={printReceipt}>
-              <Printer className="mr-2 h-4 w-4" />
-              Print Receipt
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <TransactionReceipt
+        data={receiptData}
+        open={showReceiptDialog}
+        onOpenChange={setShowReceiptDialog}
+      />
 
       <EditMoMoTransactionDialog
         transaction={editingTransaction}

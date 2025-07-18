@@ -32,6 +32,8 @@ import {
   Activity,
   BarChart3,
   MoreVertical,
+  PieChart,
+  Target,
 } from "lucide-react";
 import { FloatRechargeDialog } from "@/components/float-management/float-recharge-dialog";
 import { CreateFloatAccountModal } from "@/components/float-management/create-float-account-modal";
@@ -45,6 +47,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
 
 interface FloatAccountData {
   id: string;
@@ -69,7 +72,6 @@ export default function FloatManagementPage() {
   const { user } = useCurrentUser();
   const [floatAccounts, setFloatAccounts] = useState<FloatAccountData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showInactive, setShowInactive] = useState(false);
   const [selectedAccount, setSelectedAccount] =
     useState<FloatAccountData | null>(null);
   const [isRechargeDialogOpen, setIsRechargeDialogOpen] = useState(false);
@@ -77,6 +79,9 @@ export default function FloatManagementPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isStatementDialogOpen, setIsStatementDialogOpen] = useState(false);
+  const [accountTypeFilter, setAccountTypeFilter] = useState<string>("");
+  const [providerFilter, setProviderFilter] = useState<string>("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const isAdmin = user?.role === "Admin" || user?.role === "admin";
 
@@ -92,8 +97,18 @@ export default function FloatManagementPage() {
         params.append("branchId", user.branchId);
       }
 
-      if (showInactive) {
+      if (statusFilter === "inactive") {
         params.append("showInactive", "true");
+      }
+
+      if (accountTypeFilter) {
+        params.append("accountType", accountTypeFilter);
+      }
+      if (providerFilter) {
+        params.append("provider", providerFilter);
+      }
+      if (statusFilter === "active") {
+        params.append("isActive", "true");
       }
 
       const response = await fetch(`${url}${params.toString()}`, {
@@ -102,7 +117,15 @@ export default function FloatManagementPage() {
       if (response.ok) {
         const data = await response.json();
         if (data.success) {
-          setFloatAccounts(data.data || []);
+          // Ensure floatAccounts is always an array
+          const accounts = Array.isArray(data.data)
+            ? data.data
+            : Array.isArray(data.floatAccounts)
+            ? data.floatAccounts
+            : Array.isArray(data.accounts)
+            ? data.accounts
+            : [];
+          setFloatAccounts(accounts);
         } else {
           console.error("API error:", data.error);
           toast({
@@ -128,7 +151,7 @@ export default function FloatManagementPage() {
 
   useEffect(() => {
     fetchFloatAccounts();
-  }, [user?.branchId, showInactive]);
+  }, [user?.branchId, accountTypeFilter, providerFilter, statusFilter]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -293,24 +316,61 @@ export default function FloatManagementPage() {
     setSelectedAccount(null);
   };
 
-  // Calculate summary statistics with proper null handling
-  const totalAccounts = floatAccounts.length;
-  const activeAccounts = floatAccounts.filter((acc) => acc.is_active).length;
-  const totalBalance = floatAccounts.reduce(
+  // Ensure floatAccounts is always an array
+  const accountsArray = Array.isArray(floatAccounts) ? floatAccounts : [];
+
+  // Calculate comprehensive statistics
+  const totalAccounts = accountsArray.length;
+  const activeAccounts = accountsArray.filter((acc) => acc.is_active).length;
+  const inactiveAccounts = totalAccounts - activeAccounts;
+  const totalBalance = accountsArray.reduce(
     (sum, acc) => sum + (Number(acc.current_balance) || 0),
     0
   );
-  const lowBalanceAccounts = floatAccounts.filter(
+
+  // Balance analysis
+  const lowBalanceAccounts = accountsArray.filter(
     (acc) =>
       (Number(acc.current_balance) || 0) <= (Number(acc.min_threshold) || 0)
   ).length;
-  const excessBalanceAccounts = floatAccounts.filter(
+  const excessBalanceAccounts = accountsArray.filter(
     (acc) =>
       (Number(acc.current_balance) || 0) >= (Number(acc.max_threshold) || 0)
   ).length;
+  const optimalBalanceAccounts =
+    totalAccounts - lowBalanceAccounts - excessBalanceAccounts;
+
+  // Account type distribution
+  const accountTypeStats = accountsArray.reduce((stats, acc) => {
+    const type = acc.account_type;
+    if (!stats[type]) {
+      stats[type] = { count: 0, balance: 0 };
+    }
+    stats[type].count++;
+    stats[type].balance += Number(acc.current_balance) || 0;
+    return stats;
+  }, {} as Record<string, { count: number; balance: number }>);
+
+  const mostUsedType = Object.entries(accountTypeStats).sort(
+    (a, b) => b[1].count - a[1].count
+  )[0];
+  const highestBalanceType = Object.entries(accountTypeStats).sort(
+    (a, b) => b[1].balance - a[1].balance
+  )[0];
+
+  // Average balance per account
+  const averageBalancePerAccount =
+    totalAccounts > 0 ? totalBalance / totalAccounts : 0;
+
+  // Utilization rate (accounts with balance > 0)
+  const accountsWithBalance = accountsArray.filter(
+    (acc) => (Number(acc.current_balance) || 0) > 0
+  ).length;
+  const utilizationRate =
+    totalAccounts > 0 ? (accountsWithBalance / totalAccounts) * 100 : 0;
 
   // Group accounts by type for better organization
-  const groupedAccounts = floatAccounts.reduce((groups, account) => {
+  const groupedAccounts = accountsArray.reduce((groups, account) => {
     const type = account.account_type?.toLowerCase() || "other";
     if (!groups[type]) {
       groups[type] = [];
@@ -332,6 +392,14 @@ export default function FloatManagementPage() {
     })
   );
 
+  // Get unique account types and providers for filters
+  const uniqueAccountTypes = Array.from(
+    new Set(accountsArray.map((acc) => acc.account_type))
+  );
+  const uniqueProviders = Array.from(
+    new Set(accountsArray.map((acc) => acc.provider).filter(Boolean))
+  );
+
   if (loading) {
     return (
       <div className="container mx-auto p-6">
@@ -342,7 +410,7 @@ export default function FloatManagementPage() {
 
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold">Float Management</h1>
           <p className="text-muted-foreground">
@@ -353,21 +421,82 @@ export default function FloatManagementPage() {
                 }`}
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="showInactive"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="rounded border-gray-300"
-            />
-            <label
-              htmlFor="showInactive"
-              className="text-sm text-muted-foreground"
-            >
-              Show Inactive
-            </label>
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+          {/* Filters Section */}
+          <div className="flex flex-wrap gap-3 items-center">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Account Type
+              </label>
+              <select
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                value={accountTypeFilter}
+                onChange={(e) => setAccountTypeFilter(e.target.value)}
+              >
+                <option value="">All Types</option>
+                {uniqueAccountTypes.map((type) => (
+                  <option key={type} value={type}>
+                    {getAccountTypeLabel(type)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Provider
+              </label>
+              <select
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                value={providerFilter}
+                onChange={(e) => setProviderFilter(e.target.value)}
+              >
+                <option value="">All Providers</option>
+                {uniqueProviders.map((provider) => (
+                  <option key={provider} value={provider}>
+                    {provider}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs font-medium text-muted-foreground">
+                Status
+              </label>
+              <select
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+              >
+                <option value="all">All Status</option>
+                <option value="active">Active Only</option>
+                <option value="inactive">Inactive Only</option>
+              </select>
+            </div>
+
+            {/* Clear Filters Button */}
+            {(accountTypeFilter ||
+              providerFilter ||
+              statusFilter !== "all") && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-medium text-muted-foreground opacity-0">
+                  Clear
+                </label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setAccountTypeFilter("");
+                    setProviderFilter("");
+                    setStatusFilter("all");
+                  }}
+                  className="h-10 px-3 text-xs"
+                >
+                  Clear Filters
+                </Button>
+              </div>
+            )}
           </div>
           <CreateFloatAccountModal
             open={isCreateModalOpen}
@@ -383,65 +512,195 @@ export default function FloatManagementPage() {
         </div>
       </div>
 
-      {/* Summary Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
+      {/* Enhanced Statistics Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {/* Total Balance Card */}
+        <Card className="bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Total Accounts
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-blue-700">
+                  Total Float Balance
                 </p>
-                <p className="text-2xl font-bold">{totalAccounts}</p>
-              </div>
-              <Banknote className="h-8 w-8 text-muted-foreground" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Active Accounts
-                </p>
-                <p className="text-2xl font-bold">{activeAccounts}</p>
-              </div>
-              <Activity className="h-8 w-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Total Balance
-                </p>
-                <p className="text-2xl font-bold">
+                <p className="text-3xl font-bold text-blue-900">
                   {formatCurrency(totalBalance)}
                 </p>
+                <p className="text-xs text-blue-600">
+                  {totalAccounts} account{totalAccounts !== 1 ? "s" : ""}
+                </p>
               </div>
-              <TrendingUp className="h-8 w-8 text-blue-600" />
+              <div className="p-3 bg-blue-500 rounded-full">
+                <TrendingUp className="h-6 w-6 text-white" />
+              </div>
             </div>
           </CardContent>
         </Card>
-        <Card>
-          <CardContent className="p-4">
+
+        {/* Account Status Card */}
+        <Card className="bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <CardContent className="p-6">
             <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-muted-foreground">
-                  Low Balance
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-green-700">
+                  Account Status
                 </p>
-                <p className="text-2xl font-bold text-destructive">
-                  {lowBalanceAccounts}
+                <div className="space-y-1">
+                  <p className="text-2xl font-bold text-green-900">
+                    {activeAccounts}
+                  </p>
+                  <p className="text-xs text-green-600">
+                    Active • {inactiveAccounts} Inactive
+                  </p>
+                </div>
+                <p className="text-xs text-green-600">
+                  {totalAccounts > 0
+                    ? ((activeAccounts / totalAccounts) * 100).toFixed(1)
+                    : 0}
+                  % active rate
                 </p>
               </div>
-              <TrendingDown className="h-8 w-8 text-destructive" />
+              <div className="p-3 bg-green-500 rounded-full">
+                <Activity className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Balance Health Card */}
+        <Card className="bg-gradient-to-br from-amber-50 to-amber-100 border-amber-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-amber-700">
+                  Balance Health
+                </p>
+                <div className="space-y-1">
+                  <p className="text-2xl font-bold text-amber-900">
+                    {optimalBalanceAccounts}
+                  </p>
+                  <p className="text-xs text-amber-600">
+                    Optimal • {lowBalanceAccounts} Low • {excessBalanceAccounts}{" "}
+                    High
+                  </p>
+                </div>
+                <p className="text-xs text-amber-600">
+                  {totalAccounts > 0
+                    ? ((optimalBalanceAccounts / totalAccounts) * 100).toFixed(
+                        1
+                      )
+                    : 0}
+                  % optimal
+                </p>
+              </div>
+              <div className="p-3 bg-amber-500 rounded-full">
+                <BarChart3 className="h-6 w-6 text-white" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Performance Metrics Card */}
+        <Card className="bg-gradient-to-br from-purple-50 to-purple-100 border-purple-200">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-purple-700">
+                  Performance
+                </p>
+                <div className="space-y-1">
+                  <p className="text-2xl font-bold text-purple-900">
+                    {formatCurrency(averageBalancePerAccount)}
+                  </p>
+                  <p className="text-xs text-purple-600">Avg per account</p>
+                </div>
+                <p className="text-xs text-purple-600">
+                  {utilizationRate.toFixed(1)}% utilization
+                </p>
+              </div>
+              <div className="p-3 bg-purple-500 rounded-full">
+                <Target className="h-6 w-6 text-white" />
+              </div>
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Account Type Insights */}
+      {mostUsedType && highestBalanceType && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <PieChart className="h-5 w-5" />
+                Most Used Account Type
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">
+                    {getAccountTypeLabel(mostUsedType[0])}
+                  </span>
+                  <Badge variant="secondary">
+                    {mostUsedType[1].count} accounts
+                  </Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Total balance: {formatCurrency(mostUsedType[1].balance)}
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full"
+                    style={{
+                      width: `${
+                        totalAccounts > 0
+                          ? (mostUsedType[1].count / totalAccounts) * 100
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <DollarSign className="h-5 w-5" />
+                Highest Balance Type
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">
+                    {getAccountTypeLabel(highestBalanceType[0])}
+                  </span>
+                  <Badge variant="secondary">
+                    {formatCurrency(highestBalanceType[1].balance)}
+                  </Badge>
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {highestBalanceType[1].count} accounts
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-green-500 h-2 rounded-full"
+                    style={{
+                      width: `${
+                        totalBalance > 0
+                          ? (highestBalanceType[1].balance / totalBalance) * 100
+                          : 0
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       {/* Balance Distribution Chart */}
       {balanceDistribution.length > 0 && (
@@ -504,7 +763,7 @@ export default function FloatManagementPage() {
         </Card>
       )}
 
-      {floatAccounts.length === 0 ? (
+      {accountsArray.length === 0 ? (
         <Card>
           <CardContent className="text-center py-8">
             <p className="text-muted-foreground">No float accounts found</p>
@@ -703,10 +962,20 @@ export default function FloatManagementPage() {
                         </div>
                       </CardContent>
                       {!account.is_active && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <span className="bg-gray-900 bg-opacity-70 text-white px-4 py-2 rounded-lg text-lg font-bold">
-                            Inactive
-                          </span>
+                        <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-70 rounded-lg">
+                          <div className="text-center space-y-3">
+                            <span className="text-white text-lg font-bold block">
+                              Inactive Account
+                            </span>
+                            <Button
+                              size="sm"
+                              onClick={() => handleReactivate(account)}
+                              className="bg-green-600 hover:bg-green-700 text-white"
+                            >
+                              <Activity className="h-4 w-4 mr-2" />
+                              Reactivate
+                            </Button>
+                          </div>
                         </div>
                       )}
                     </Card>

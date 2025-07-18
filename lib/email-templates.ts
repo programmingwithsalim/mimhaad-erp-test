@@ -41,16 +41,29 @@ export const EmailTemplates = {
           <p><strong>Transaction ID:</strong> ${transactionDetails.id}</p>
           <p><strong>Amount:</strong> GHS ${transactionDetails.amount}</p>
           <p><strong>Type:</strong> ${transactionDetails.type}</p>
-          <p><strong>Date:</strong> ${new Date(transactionDetails.date).toLocaleString()}</p>
+          <p><strong>Date:</strong> ${new Date(
+            transactionDetails.date
+          ).toLocaleString()}</p>
         </div>
         <p>If you have any questions about this transaction, please contact our support team.</p>
         <p>Best regards,<br>The FinTech Platform Team</p>
       </div>
     `,
-    text: `Transaction Alert\n\nHello ${userName},\n\nA transaction has been processed on your account:\n\nTransaction ID: ${transactionDetails.id}\nAmount: GHS ${transactionDetails.amount}\nType: ${transactionDetails.type}\nDate: ${new Date(transactionDetails.date).toLocaleString()}\n\nIf you have any questions about this transaction, please contact our support team.\n\nBest regards,\nThe FinTech Platform Team`,
+    text: `Transaction Alert\n\nHello ${userName},\n\nA transaction has been processed on your account:\n\nTransaction ID: ${
+      transactionDetails.id
+    }\nAmount: GHS ${transactionDetails.amount}\nType: ${
+      transactionDetails.type
+    }\nDate: ${new Date(
+      transactionDetails.date
+    ).toLocaleString()}\n\nIf you have any questions about this transaction, please contact our support team.\n\nBest regards,\nThe FinTech Platform Team`,
   }),
 
-  lowBalanceAlert: (userName: string, accountType: string, currentBalance: number, threshold: number) => ({
+  lowBalanceAlert: (
+    userName: string,
+    accountType: string,
+    currentBalance: number,
+    threshold: number
+  ) => ({
     subject: "Low Balance Alert",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -58,13 +71,39 @@ export const EmailTemplates = {
         <p>Hello ${userName},</p>
         <p>Your ${accountType} account balance has fallen below the warning threshold:</p>
         <div style="background-color: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #ffc107;">
-          <p><strong>Current Balance:</strong> GHS ${currentBalance.toFixed(2)}</p>
+          <p><strong>Current Balance:</strong> GHS ${currentBalance.toFixed(
+            2
+          )}</p>
           <p><strong>Warning Threshold:</strong> GHS ${threshold.toFixed(2)}</p>
         </div>
         <p>Please consider adding funds to maintain service operations.</p>
         <p>Best regards,<br>The FinTech Platform Team</p>
       </div>
     `,
-    text: `Low Balance Alert\n\nHello ${userName},\n\nYour ${accountType} account balance has fallen below the warning threshold:\n\nCurrent Balance: GHS ${currentBalance.toFixed(2)}\nWarning Threshold: GHS ${threshold.toFixed(2)}\n\nPlease consider adding funds to maintain service operations.\n\nBest regards,\nThe FinTech Platform Team`,
+    text: `Low Balance Alert\n\nHello ${userName},\n\nYour ${accountType} account balance has fallen below the warning threshold:\n\nCurrent Balance: GHS ${currentBalance.toFixed(
+      2
+    )}\nWarning Threshold: GHS ${threshold.toFixed(
+      2
+    )}\n\nPlease consider adding funds to maintain service operations.\n\nBest regards,\nThe FinTech Platform Team`,
   }),
-}
+
+  loginAlert: (userName: string, loginData: any) => ({
+    subject: "New Login Alert",
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #28a745;">New Login Alert</h2>
+        <p>Hello ${userName},</p>
+        <p>A new login was detected on your account:</p>
+        <div style="background-color: #d4edda; padding: 15px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #28a745;">
+          <p><strong>Time:</strong> ${loginData.timestamp}</p>
+          <p><strong>IP Address:</strong> ${loginData.ipAddress}</p>
+          <p><strong>Location:</strong> ${loginData.location}</p>
+          <p><strong>Device:</strong> ${loginData.userAgent}</p>
+        </div>
+        <p>If this wasn't you, please contact our support team immediately and change your password.</p>
+        <p>Best regards,<br>The FinTech Platform Team</p>
+      </div>
+    `,
+    text: `New Login Alert\n\nHello ${userName},\n\nA new login was detected on your account:\n\nTime: ${loginData.timestamp}\nIP Address: ${loginData.ipAddress}\nLocation: ${loginData.location}\nDevice: ${loginData.userAgent}\n\nIf this wasn't you, please contact our support team immediately and change your password.\n\nBest regards,\nThe FinTech Platform Team`,
+  }),
+};

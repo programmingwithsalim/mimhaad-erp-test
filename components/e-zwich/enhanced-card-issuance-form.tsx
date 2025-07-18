@@ -55,7 +55,10 @@ interface EnhancedCardIssuanceFormProps {
 
 const bioSchema = z.object({
   customer_name: z.string().min(2, "Full name is required"),
-  customer_phone: z.string().min(8, "Phone number is required"),
+  customer_phone: z
+    .string()
+    .min(1, "Phone number is required")
+    .regex(/^\d{10}$/, "Phone number must be exactly 10 digits"),
   customer_email: z.string().email().optional().or(z.literal("")),
   date_of_birth: z.string().refine(
     (val) => {
@@ -125,19 +128,27 @@ const fullSchema = bioSchema
   .refine(
     (data) => {
       const { id_type, id_number } = data;
-      if (id_type === "ghana_card") {
-        return /^GHA-\d{9}-\d$/.test(id_number);
+      if (!id_type || !id_number) return true; // Skip validation if not provided
+
+      switch (id_type) {
+        case "ghana_card":
+          // GHA-000000000-0 format
+          return /^GHA-\d{9}-\d$/.test(id_number);
+        case "passport":
+          // P8888888 (First character is a letter)
+          return /^[A-Za-z]\d{7}$/.test(id_number);
+        case "voters_id":
+          // 0000000000 (10 digits)
+          return /^\d{10}$/.test(id_number);
+        case "nhis":
+          // 00000000 (8 digits)
+          return /^\d{8}$/.test(id_number);
+        case "drivers_license":
+          // FAT-00000000-00000 (First 3 characters are letters)
+          return /^[A-Za-z]{3}-\d{8}-\d{5}$/.test(id_number);
+        default:
+          return true; // Allow other types
       }
-      if (id_type === "voters_id" || id_type === "nhis") {
-        return /^\d{10}$/.test(id_number);
-      }
-      if (id_type === "passport") {
-        return /^[A-Za-z][A-Za-z0-9]{7,}$/.test(id_number);
-      }
-      if (id_type === "drivers_license") {
-        return /^[A-Za-z0-9]{5,}$/.test(id_number);
-      }
-      return false;
     },
     {
       message: "ID format is invalid for selected type",
@@ -160,10 +171,14 @@ export default function EnhancedCardIssuanceForm({
   const [step, setStep] = useState(0);
   const [selectedPartnerAccount, setSelectedPartnerAccount] =
     useState<EzwichPartnerAccount | null>(null);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
 
-  // Filter available batches (those with cards remaining)
+  // Filter available batches (those with cards remaining) for current user's branch
   const availableBatches =
-    batches?.filter((batch) => batch.quantity_available > 0) || [];
+    batches?.filter(
+      (batch) =>
+        batch.quantity_available > 0 && batch.branch_id === user?.branchId
+    ) || [];
 
   const methods = useForm<CardIssuanceFormData>({
     resolver: zodResolver(fullSchema),
@@ -182,7 +197,11 @@ export default function EnhancedCardIssuanceForm({
       id_type: "",
       id_number: "",
       batch_id: "",
-      payment_method: "", // changed from undefined to ""
+      payment_method: undefined as
+        | "momo"
+        | "agency-banking"
+        | "cash"
+        | undefined,
       partner_bank: "",
       fee: "15.00", // Default fee as string
       card_type: "standard",
@@ -522,8 +541,17 @@ export default function EnhancedCardIssuanceForm({
                           <FormControl>
                             <Input
                               {...field}
-                              placeholder="Enter phone number"
+                              placeholder="Enter 10-digit phone number"
                               required
+                              maxLength={10}
+                              onBlur={async () => {
+                                await trigger("customer_phone");
+                              }}
+                              onChange={(e) => {
+                                // Only allow digits
+                                const value = e.target.value.replace(/\D/g, "");
+                                field.onChange(value);
+                              }}
                             />
                           </FormControl>
                           <FormMessage />
@@ -626,36 +654,138 @@ export default function EnhancedCardIssuanceForm({
                         <FormItem>
                           <FormLabel>City</FormLabel>
                           <FormControl>
-                            <Select
-                              value={field.value}
-                              onValueChange={(value) => {
-                                field.onChange(value);
-                                handleCityChange(value);
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select city" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="Accra">Accra</SelectItem>
-                                <SelectItem value="Kumasi">Kumasi</SelectItem>
-                                <SelectItem value="Tamale">Tamale</SelectItem>
-                                <SelectItem value="Sekondi">Sekondi</SelectItem>
-                                <SelectItem value="Cape Coast">
-                                  Cape Coast
-                                </SelectItem>
-                                <SelectItem value="Ho">Ho</SelectItem>
-                                <SelectItem value="Sunyani">Sunyani</SelectItem>
-                                <SelectItem value="Koforidua">
-                                  Koforidua
-                                </SelectItem>
-                                <SelectItem value="Wa">Wa</SelectItem>
-                                <SelectItem value="Bolgatanga">
-                                  Bolgatanga
-                                </SelectItem>
-                                <SelectItem value="Other">Other</SelectItem>
-                              </SelectContent>
-                            </Select>
+                            <div className="relative">
+                              <Input
+                                {...field}
+                                placeholder="Enter city name"
+                                onFocus={() => setShowCitySuggestions(true)}
+                                onBlur={() => {
+                                  // Delay hiding suggestions to allow clicking on them
+                                  setTimeout(
+                                    () => setShowCitySuggestions(false),
+                                    200
+                                  );
+                                }}
+                                onChange={(e) => {
+                                  field.onChange(e.target.value);
+                                  setShowCitySuggestions(true);
+                                }}
+                              />
+                              {showCitySuggestions && field.value && (
+                                <div className="absolute z-10 w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                                  {[
+                                    "Accra",
+                                    "Kumasi",
+                                    "Tamale",
+                                    "Sekondi",
+                                    "Cape Coast",
+                                    "Ho",
+                                    "Sunyani",
+                                    "Koforidua",
+                                    "Wa",
+                                    "Bolgatanga",
+                                    "Tema",
+                                    "Ashaiman",
+                                    "Obuasi",
+                                    "Tarkwa",
+                                    "Bibiani",
+                                    "Konongo",
+                                    "Kintampo",
+                                    "Techiman",
+                                    "Ejura",
+                                    "Mampong",
+                                    "Nkawkaw",
+                                    "Kade",
+                                    "Akim Oda",
+                                    "Koforidua",
+                                    "Nsawam",
+                                    "Dodowa",
+                                    "Madina",
+                                    "Adenta",
+                                    "Tema",
+                                    "Ashaiman",
+                                    "Teshie",
+                                    "Nungua",
+                                    "Dansoman",
+                                    "Mamprobi",
+                                    "Kaneshie",
+                                    "Achimota",
+                                    "Legon",
+                                    "East Legon",
+                                    "Trasacco Valley",
+                                    "Cantonments",
+                                    "Ridge",
+                                    "Osu",
+                                    "Labone",
+                                    "Cantoments",
+                                    "Airport Residential",
+                                    "Roman Ridge",
+                                    "Ringway Estates",
+                                    "Abelemkpe",
+                                    "Tesano",
+                                    "Achimota",
+                                    "Fadama",
+                                    "Kanda",
+                                    "Nima",
+                                    "Mamobi",
+                                    "New Town",
+                                    "Korle Bu",
+                                    "Chorkor",
+                                    "Jamestown",
+                                    "Ussher Town",
+                                    "Bukom",
+                                    "James Town",
+                                    "Korle Gonno",
+                                    "Mamprobi",
+                                    "Dansoman",
+                                    "Kokomlemle",
+                                    "Adabraka",
+                                    "Asylum Down",
+                                    "Kaneshie",
+                                    "Darkuman",
+                                    "Awoshie",
+                                    "Pokuase",
+                                    "Amasaman",
+                                    "Dome",
+                                    "Taifa",
+                                    "Kwabenya",
+                                    "Haasto",
+                                    "Atomic",
+                                    "Madina",
+                                    "Adenta",
+                                    "Tema",
+                                    "Ashaiman",
+                                    "Teshie",
+                                    "Nungua",
+                                    "Dansoman",
+                                  ]
+                                    .filter(
+                                      (city) =>
+                                        city
+                                          .toLowerCase()
+                                          .includes(
+                                            field.value.toLowerCase()
+                                          ) &&
+                                        city.toLowerCase() !==
+                                          field.value.toLowerCase()
+                                    )
+                                    .slice(0, 8)
+                                    .map((suggestion, index) => (
+                                      <div
+                                        key={index}
+                                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-sm"
+                                        onMouseDown={(e) => {
+                                          e.preventDefault();
+                                          field.onChange(suggestion);
+                                          setShowCitySuggestions(false);
+                                        }}
+                                      >
+                                        {suggestion}
+                                      </div>
+                                    ))}
+                                </div>
+                              )}
+                            </div>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -668,11 +798,49 @@ export default function EnhancedCardIssuanceForm({
                         <FormItem>
                           <FormLabel>Region</FormLabel>
                           <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter region"
+                            <Select
+                              value={field.value}
+                              onValueChange={field.onChange}
                               required
-                            />
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select region" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Ashanti">Ashanti</SelectItem>
+                                <SelectItem value="Bono">Bono</SelectItem>
+                                <SelectItem value="Bono East">
+                                  Bono East
+                                </SelectItem>
+                                <SelectItem value="Ahafo">Ahafo</SelectItem>
+                                <SelectItem value="Central">Central</SelectItem>
+                                <SelectItem value="Eastern">Eastern</SelectItem>
+                                <SelectItem value="Greater Accra">
+                                  Greater Accra
+                                </SelectItem>
+                                <SelectItem value="North East">
+                                  North East
+                                </SelectItem>
+                                <SelectItem value="Northern">
+                                  Northern
+                                </SelectItem>
+                                <SelectItem value="Oti">Oti</SelectItem>
+                                <SelectItem value="Savannah">
+                                  Savannah
+                                </SelectItem>
+                                <SelectItem value="Upper East">
+                                  Upper East
+                                </SelectItem>
+                                <SelectItem value="Upper West">
+                                  Upper West
+                                </SelectItem>
+                                <SelectItem value="Volta">Volta</SelectItem>
+                                <SelectItem value="Western">Western</SelectItem>
+                                <SelectItem value="Western North">
+                                  Western North
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
                           </FormControl>
                           <FormMessage />
                         </FormItem>
@@ -727,19 +895,94 @@ export default function EnhancedCardIssuanceForm({
                     <FormField
                       name="id_number"
                       control={methods.control}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>ID Number *</FormLabel>
-                          <FormControl>
-                            <Input
-                              {...field}
-                              placeholder="Enter ID number"
-                              required
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
+                      render={({ field }) => {
+                        const idType = methods.watch("id_type");
+                        const getPlaceholder = () => {
+                          switch (idType) {
+                            case "ghana_card":
+                              return "GHA-123456789-0";
+                            case "passport":
+                              return "P1234567";
+                            case "voters_id":
+                              return "1234567890";
+                            case "nhis":
+                              return "12345678";
+                            case "drivers_license":
+                              return "FAT-12345678-12345";
+                            default:
+                              return "Enter ID number";
+                          }
+                        };
+
+                        const getMaxLength = () => {
+                          switch (idType) {
+                            case "ghana_card":
+                              return 13; // GHA-123456789-0
+                            case "passport":
+                              return 8; // P1234567
+                            case "voters_id":
+                              return 10; // 1234567890
+                            case "nhis":
+                              return 8; // 12345678
+                            case "drivers_license":
+                              return 18; // FAT-12345678-12345
+                            default:
+                              return 20;
+                          }
+                        };
+
+                        const validateAndFormat = (value: string) => {
+                          if (!idType) return value;
+
+                          switch (idType) {
+                            case "ghana_card":
+                              // Allow only GHA- followed by digits and a final digit
+                              return value.replace(/[^GHA-\d]/g, "");
+                            case "passport":
+                              // Allow only letters and digits, first character must be letter
+                              if (
+                                value.length > 0 &&
+                                !/^[A-Za-z]/.test(value)
+                              ) {
+                                return value.replace(/[^A-Za-z]/g, "");
+                              }
+                              return value.replace(/[^A-Za-z0-9]/g, "");
+                            case "voters_id":
+                            case "nhis":
+                              // Allow only digits
+                              return value.replace(/\D/g, "");
+                            case "drivers_license":
+                              // Allow letters, digits, and hyphens
+                              return value.replace(/[^A-Za-z0-9-]/g, "");
+                            default:
+                              return value;
+                          }
+                        };
+
+                        return (
+                          <FormItem>
+                            <FormLabel>ID Number *</FormLabel>
+                            <FormControl>
+                              <Input
+                                {...field}
+                                placeholder={getPlaceholder()}
+                                maxLength={getMaxLength()}
+                                required
+                                onBlur={async () => {
+                                  await trigger("id_number");
+                                }}
+                                onChange={(e) => {
+                                  const formattedValue = validateAndFormat(
+                                    e.target.value
+                                  );
+                                  field.onChange(formattedValue);
+                                }}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        );
+                      }}
                     />
                     <FormField
                       name="id_expiry_date"
@@ -810,30 +1053,51 @@ export default function EnhancedCardIssuanceForm({
                                 <SelectValue placeholder="Choose an available batch" />
                               </SelectTrigger>
                               <SelectContent>
-                                {availableBatches.map((batch) => (
-                                  <SelectItem key={batch.id} value={batch.id}>
-                                    <div className="flex flex-col w-full">
-                                      <div className="flex items-center justify-between">
-                                        <span className="font-medium">
-                                          {batch.batch_code}
-                                        </span>
-                                        <Badge variant="secondary">
-                                          {batch.quantity_available} available
-                                        </Badge>
-                                      </div>
-                                      <div className="text-xs text-muted-foreground mt-1">
-                                        {batch.partner_bank_name &&
-                                          `Bank: ${batch.partner_bank_name} • `}
-                                        Type: {batch.card_type} • Received:{" "}
-                                        {batch.quantity_received} • Issued:{" "}
-                                        {batch.quantity_issued}
-                                      </div>
-                                    </div>
+                                {availableBatches.length === 0 ? (
+                                  <SelectItem value="" disabled>
+                                    No batches available for your branch
                                   </SelectItem>
-                                ))}
+                                ) : (
+                                  availableBatches.map((batch) => (
+                                    <SelectItem key={batch.id} value={batch.id}>
+                                      <div className="flex flex-col w-full">
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium">
+                                            {batch.batch_code}
+                                          </span>
+                                          <Badge variant="secondary">
+                                            {batch.quantity_available} available
+                                          </Badge>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground mt-1">
+                                          {batch.partner_bank_name &&
+                                            `Bank: ${batch.partner_bank_name} • `}
+                                          Type: {batch.card_type} • Received:{" "}
+                                          {batch.quantity_received} • Issued:{" "}
+                                          {batch.quantity_issued}
+                                        </div>
+                                      </div>
+                                    </SelectItem>
+                                  ))
+                                )}
                               </SelectContent>
                             </Select>
                           </FormControl>
+                          {availableBatches.length === 0 && (
+                            <Alert className="mt-2 border-orange-200 bg-orange-50">
+                              <AlertDescription>
+                                <span className="font-medium text-orange-800">
+                                  ⚠️ No card batches available for your branch (
+                                  {user?.branchName || user?.branchId}).
+                                </span>
+                                <br />
+                                <span className="text-sm text-orange-700">
+                                  Please contact your administrator to add card
+                                  batches for your branch.
+                                </span>
+                              </AlertDescription>
+                            </Alert>
+                          )}
                           {selectedBatchData && (
                             <div className="p-3 bg-muted rounded-lg mt-2">
                               <div className="text-sm font-medium mb-2">
@@ -996,7 +1260,12 @@ export default function EnhancedCardIssuanceForm({
                       <FormItem>
                         <FormLabel>Fee (GHS)</FormLabel>
                         <FormControl>
-                          <Input {...field} readOnly disabled />
+                          <Input
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(e.target.value);
+                            }}
+                          />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -1266,7 +1535,14 @@ export default function EnhancedCardIssuanceForm({
                 Back
               </Button>
               {step < steps.length - 1 ? (
-                <Button type="button" onClick={nextStep}>
+                <Button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    nextStep();
+                  }}
+                >
                   Next
                 </Button>
               ) : (

@@ -28,7 +28,12 @@ import {
   Receipt,
   Eye,
   Printer,
+  CheckCircle,
 } from "lucide-react";
+import {
+  TransactionReceipt,
+  TransactionReceiptData,
+} from "@/components/shared/transaction-receipt";
 
 interface TransactionActionsProps {
   transaction: any;
@@ -57,12 +62,16 @@ export function TransactionActions({
   const { user } = useCurrentUser();
   const [showReverseDialog, setShowReverseDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [reverseReason, setReverseReason] = useState("");
   const [deleteReason, setDeleteReason] = useState("");
+  const [approvalNotes, setApprovalNotes] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [receipt, setReceipt] = useState<string>("");
+  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
+    null
+  );
+  const [showReceipt, setShowReceipt] = useState(false);
   const [currentTransaction, setCurrentTransaction] = useState<any>(null);
 
   const canEdit =
@@ -70,6 +79,8 @@ export function TransactionActions({
   const canDelete = userRole === "Admin" || userRole === "Finance";
   const canReverse =
     userRole === "Admin" || userRole === "Manager" || userRole === "Operations";
+  const canApprove =
+    userRole === "Admin" || userRole === "Manager" || userRole === "Cashier";
 
   // Special handling for Jumia transactions
   const isJumiaPackageReceipt =
@@ -124,7 +135,10 @@ export function TransactionActions({
               reason: reverseReason,
               userId: user?.id,
               branchId: user?.branchId,
-              processedBy: user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email,
+              processedBy:
+                user?.first_name && user?.last_name
+                  ? `${user.first_name} ${user.last_name}`
+                  : user?.email,
             }),
           }
         );
@@ -139,7 +153,10 @@ export function TransactionActions({
             reason: reverseReason,
             userId: user?.id,
             branchId: user?.branchId,
-            processedBy: user?.first_name && user?.last_name ? `${user.first_name} ${user.last_name}` : user?.email,
+            processedBy:
+              user?.first_name && user?.last_name
+                ? `${user.first_name} ${user.last_name}`
+                : user?.email,
           }),
         });
       }
@@ -242,22 +259,44 @@ export function TransactionActions({
 
   const handleGenerateReceipt = async () => {
     try {
-      const response = await fetch(
-        `/api/transactions/unified?action=receipt&transactionId=${
-          transaction.id
-        }&sourceModule=${sourceModule}&branchName=${
-          user?.branchName || "Branch"
-        }`
-      );
+      // Format transaction data for the shared receipt component
+      const formattedReceiptData: TransactionReceiptData = {
+        transactionId: transaction.id || transaction.transaction_id,
+        sourceModule: sourceModule as any,
+        transactionType:
+          transaction.type || transaction.transaction_type || "transaction",
+        amount: transaction.amount || 0,
+        fee: transaction.fee || 0,
+        customerName: transaction.customer_name || transaction.customerName,
+        customerPhone: transaction.customer_phone || transaction.customerPhone,
+        reference:
+          transaction.reference || transaction.id || transaction.transaction_id,
+        branchName: user?.branchName || "Main Branch",
+        date:
+          transaction.created_at ||
+          transaction.date ||
+          new Date().toISOString(),
+        additionalData: {
+          // Add any additional data specific to the transaction type
+          ...(transaction.meter_number && {
+            "Meter Number": transaction.meter_number,
+          }),
+          ...(transaction.provider && { Provider: transaction.provider }),
+          ...(transaction.tracking_id && {
+            "Tracking ID": transaction.tracking_id,
+          }),
+          ...(transaction.card_number && {
+            "Card Number": transaction.card_number,
+          }),
+          ...(transaction.partner_bank && {
+            "Partner Bank": transaction.partner_bank,
+          }),
+          ...(transaction.status && { Status: transaction.status }),
+        },
+      };
 
-      const result = await response.json();
-
-      if (result.success && result.receipt) {
-        setReceipt(result.receipt);
-        setShowReceiptDialog(true);
-      } else {
-        throw new Error(result.error || "Failed to generate receipt");
-      }
+      setReceiptData(formattedReceiptData);
+      setShowReceipt(true);
     } catch (error) {
       toast({
         title: "Receipt Generation Failed",
@@ -265,15 +304,6 @@ export function TransactionActions({
           error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
       });
-    }
-  };
-
-  const handlePrintReceipt = () => {
-    const printWindow = window.open("", "_blank");
-    if (printWindow && receipt) {
-      printWindow.document.write(receipt);
-      printWindow.document.close();
-      printWindow.print();
     }
   };
 
@@ -339,6 +369,52 @@ export function TransactionActions({
     }
   };
 
+  const handleApproval = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "approve",
+          transactionId: transaction.id,
+          sourceModule: sourceModule,
+          notes: approvalNotes,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.first_name && user?.last_name
+              ? `${user.first_name} ${user.last_name}`
+              : user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Approved",
+          description:
+            result.message || "Transaction has been approved successfully",
+        });
+        setShowApprovalDialog(false);
+        setApprovalNotes("");
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || "Failed to approve transaction");
+      }
+    } catch (error) {
+      toast({
+        title: "Approval Failed",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <>
       <DropdownMenu>
@@ -359,6 +435,13 @@ export function TransactionActions({
             <Receipt className="mr-2 h-4 w-4" />
             Generate Receipt
           </DropdownMenuItem>
+
+          {canApprove && transaction.status === "pending" && (
+            <DropdownMenuItem onClick={() => setShowApprovalDialog(true)}>
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Approve Transaction
+            </DropdownMenuItem>
+          )}
 
           {canEditTransaction && onEdit && (
             <DropdownMenuItem
@@ -475,34 +558,11 @@ export function TransactionActions({
       </Dialog>
 
       {/* Receipt Dialog */}
-      <Dialog open={showReceiptDialog} onOpenChange={setShowReceiptDialog}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Transaction Receipt</DialogTitle>
-            <DialogDescription>
-              Transaction receipt generated successfully
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div
-              className="border rounded-lg p-4 bg-gray-50"
-              dangerouslySetInnerHTML={{ __html: receipt }}
-            />
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowReceiptDialog(false)}
-              >
-                Close
-              </Button>
-              <Button onClick={handlePrintReceipt}>
-                <Printer className="mr-2 h-4 w-4" />
-                Print Receipt
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <TransactionReceipt
+        data={receiptData}
+        open={showReceipt}
+        onOpenChange={setShowReceipt}
+      />
 
       {/* Edit Transaction Dialog */}
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
@@ -603,6 +663,43 @@ export function TransactionActions({
               </div>
             </form>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Approval Dialog */}
+      <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Approve Transaction</DialogTitle>
+            <DialogDescription>
+              Approve this transaction. This will mark it as completed and
+              update any pending balances.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="approval-notes">Approval Notes (Optional)</Label>
+              <Textarea
+                id="approval-notes"
+                value={approvalNotes}
+                onChange={(e) => setApprovalNotes(e.target.value)}
+                placeholder="Enter any notes for this approval..."
+                rows={3}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowApprovalDialog(false)}
+                disabled={isProcessing}
+              >
+                Cancel
+              </Button>
+              <Button onClick={handleApproval} disabled={isProcessing}>
+                {isProcessing ? "Approving..." : "Approve Transaction"}
+              </Button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </>

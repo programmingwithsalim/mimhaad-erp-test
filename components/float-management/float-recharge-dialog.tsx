@@ -43,16 +43,11 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 
+// Update schema: only allow 'transfer' and require sourceAccountId
 const rechargeSchema = z.object({
   amount: z.number().min(1, "Amount must be greater than 0"),
-  sourceAccountId: z.string().optional(),
-  rechargeMethod: z.enum([
-    "manual",
-    "bank_transfer",
-    "cash_deposit",
-    "transfer",
-    "cash",
-  ]),
+  sourceAccountId: z.string().min(1, "Source account is required"),
+  rechargeMethod: z.literal("transfer"),
   reference: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -94,12 +89,13 @@ export function FloatRechargeDialog({
   );
   const [loadingAccounts, setLoadingAccounts] = useState(false);
 
+  // In defaultValues, set rechargeMethod to 'transfer' and sourceAccountId to ""
   const form = useForm<RechargeFormData>({
     resolver: zodResolver(rechargeSchema),
     defaultValues: {
       amount: 0,
       sourceAccountId: "",
-      rechargeMethod: "manual",
+      rechargeMethod: "transfer",
       reference: "",
       notes: "",
     },
@@ -201,6 +197,7 @@ export function FloatRechargeDialog({
           headers: {
             "Content-Type": "application/json",
           },
+          credentials: "include", // <-- Ensure cookies/session are sent
           body: JSON.stringify({
             amount: data.amount,
             sourceAccountId:
@@ -223,6 +220,8 @@ export function FloatRechargeDialog({
           }),
         }
       );
+
+      console.log(response);
 
       const result = await response.json();
 
@@ -258,20 +257,18 @@ export function FloatRechargeDialog({
     (acc) => acc.id === watchedSourceAccount
   );
 
+  // Helper to determine if this is a power float
+  const isPowerFloat = account?.account_type?.toLowerCase() === "power";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>
-            {account?.account_type?.toLowerCase() === "power"
-              ? "Recharge"
-              : "Deposit"}{" "}
-            Float Account
+            {isPowerFloat ? "Recharge" : "Deposit"} Float Account
           </DialogTitle>
           <DialogDescription>
-            {account?.account_type?.toLowerCase() === "power"
-              ? "Add funds to"
-              : "Deposit funds into"}{" "}
+            {isPowerFloat ? "Add funds to" : "Deposit funds into"}{" "}
             {account?.provider} ({account?.account_type}) float account
           </DialogDescription>
         </DialogHeader>
@@ -310,82 +307,51 @@ export function FloatRechargeDialog({
               )}
             />
 
+            {/* Remove recharge method select UI, always use transfer */}
+            {/* Remove conditional rendering for rechargeMethod, always show source account select */}
+
             <FormField
               control={form.control}
-              name="rechargeMethod"
+              name="sourceAccountId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Recharge Method</FormLabel>
-                  <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                  >
+                  <FormLabel>Source Account</FormLabel>
+                  <Select onValueChange={field.onChange} value={field.value}>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select recharge method" />
+                      <SelectTrigger disabled={loadingAccounts}>
+                        <SelectValue
+                          placeholder={
+                            loadingAccounts
+                              ? "Loading accounts..."
+                              : "Select source account"
+                          }
+                        />
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      <SelectItem value="manual">Manual Entry</SelectItem>
-                      <SelectItem value="bank_transfer">
-                        Bank Transfer
-                      </SelectItem>
-                      <SelectItem value="cash_deposit">Cash Deposit</SelectItem>
-                      <SelectItem value="transfer">
-                        Transfer from Other Account
-                      </SelectItem>
-                      <SelectItem value="cash">Cash</SelectItem>
+                      {availableAccounts.map((acc) => (
+                        <SelectItem key={acc.id} value={acc.id}>
+                          <div className="flex items-center gap-2">
+                            {getAccountIcon(acc.account_type)}
+                            <span>{acc.provider}</span>
+                            <span className="text-muted-foreground">
+                              ({formatCurrency(acc.current_balance)})
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                  {selectedSourceAccount && (
+                    <div className="text-sm text-muted-foreground mt-1">
+                      Available balance:{" "}
+                      {formatCurrency(selectedSourceAccount.current_balance)}
+                    </div>
+                  )}
                   <FormMessage />
                 </FormItem>
               )}
             />
-
-            {watchedRechargeMethod === "transfer" && (
-              <FormField
-                control={form.control}
-                name="sourceAccountId"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Source Account</FormLabel>
-                    <Select onValueChange={field.onChange} value={field.value}>
-                      <FormControl>
-                        <SelectTrigger disabled={loadingAccounts}>
-                          <SelectValue
-                            placeholder={
-                              loadingAccounts
-                                ? "Loading accounts..."
-                                : "Select source account"
-                            }
-                          />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        {availableAccounts.map((acc) => (
-                          <SelectItem key={acc.id} value={acc.id}>
-                            <div className="flex items-center gap-2">
-                              {getAccountIcon(acc.account_type)}
-                              <span>{acc.provider}</span>
-                              <span className="text-muted-foreground">
-                                ({formatCurrency(acc.current_balance)})
-                              </span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {selectedSourceAccount && (
-                      <div className="text-sm text-muted-foreground mt-1">
-                        Available balance:{" "}
-                        {formatCurrency(selectedSourceAccount.current_balance)}
-                      </div>
-                    )}
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            )}
 
             <FormField
               control={form.control}
@@ -427,7 +393,11 @@ export function FloatRechargeDialog({
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={isSubmitting} className="flex-1">
+              <Button
+                type="submit"
+                disabled={isSubmitting || !form.formState.isValid}
+                className="flex-1"
+              >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -436,7 +406,7 @@ export function FloatRechargeDialog({
                 ) : (
                   <>
                     <Plus className="mr-2 h-4 w-4" />
-                    Recharge Account
+                    {isPowerFloat ? "Recharge Account" : "Deposit to Account"}
                   </>
                 )}
               </Button>

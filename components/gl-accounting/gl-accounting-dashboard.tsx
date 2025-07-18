@@ -17,12 +17,13 @@ import { DateRangePicker } from "./date-range-picker";
 import { AccountFilter } from "./account-filter";
 import { TransactionTypeFilter } from "./transaction-type-filter";
 import type { DateRange } from "react-day-picker";
-import { RefreshCw, Filter, X } from "lucide-react";
+import { Filter, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { BranchSelector } from "@/components/branch/branch-selector";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useBranch } from "@/contexts/branch-context";
+import { useToast } from "@/hooks/use-toast";
 
 interface GLAccountingDashboardProps {
   initialDateRange?: DateRange;
@@ -33,6 +34,7 @@ export function GLAccountingDashboard({
 }: GLAccountingDashboardProps) {
   const { user } = useCurrentUser();
   const { selectedBranchId, setSelectedBranchId } = useBranch();
+  const { toast } = useToast();
   const branchIdToUse =
     user && user.role === "Admin" ? selectedBranchId : user?.branchId;
   const [dateRange, setDateRange] = useState<DateRange>(
@@ -93,6 +95,7 @@ export function GLAccountingDashboard({
           <BranchSelector onBranchChange={setSelectedBranchId} />
         </div>
       )}
+
       {/* 1. Dashboard Summary */}
       <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-100">
         <CardHeader className="pb-2">

@@ -1,132 +1,170 @@
-import { NextResponse } from "next/server"
-import { SettingsService } from "@/lib/settings-service"
+import { NextResponse } from "next/server";
+import { SettingsService } from "@/lib/settings-service";
+import { sql } from "@/lib/db";
 
 export async function POST(request: Request) {
   try {
-    const { amount, transactionType } = await request.json()
+    const { amount, transactionType, fee } = await request.json();
 
-    if (!amount || !transactionType) {
-      return NextResponse.json({ success: false, error: "Amount and transaction type are required" }, { status: 400 })
+    if (!transactionType) {
+      return NextResponse.json(
+        { success: false, error: "Transaction type is required" },
+        { status: 400 }
+      );
     }
 
-    let fee = 0
-    let feeType = "fixed"
-    let minimumFee = null
-    let maximumFee = null
-    let feeSource = "fallback" // Default to fallback since we'll handle DB errors
+    let calculatedFee = 0;
+    let feeType = "none";
+    let minimumFee = 0;
+    let maximumFee = 0;
+    let feeSource = "calculated";
 
-    try {
-      if (transactionType === "withdrawal") {
-        // Try to get E-Zwich withdrawal fee configuration
-        try {
-          const feeConfig = await SettingsService.getFeeConfiguration("e_zwich_withdrawal")
+    if (transactionType === "withdrawal") {
+      try {
+        // Try to get fee configuration from database
+        const feeConfig = await sql`
+          SELECT * FROM fee_config 
+          WHERE service_type = 'e-zwich' 
+          AND transaction_type = 'withdrawal'
+          AND is_active = true
+          ORDER BY created_at DESC
+          LIMIT 1
+        `;
 
-          if (feeConfig && feeConfig.is_active) {
-            feeType = feeConfig.fee_type
+        if (feeConfig.length > 0) {
+          const config = feeConfig[0];
+          feeSource = "database";
+          feeType = config.fee_type;
 
-            if (feeConfig.fee_type === "percentage") {
-              fee = (amount * feeConfig.fee_value) / 100
-              minimumFee = feeConfig.minimum_fee
-              maximumFee = feeConfig.maximum_fee
-
-              // Apply minimum and maximum limits
-              if (minimumFee && fee < minimumFee) {
-                fee = minimumFee
-              }
-              if (maximumFee && fee > maximumFee) {
-                fee = maximumFee
-              }
-            } else if (feeConfig.fee_type === "fixed") {
-              fee = feeConfig.fee_value
-            } else if (feeConfig.fee_type === "tiered") {
-              // Implement tiered fee logic if needed
-              fee = feeConfig.fee_value
-            }
-
-            feeSource = "database"
-          } else {
-            // Fallback to default calculation
-            if (amount >= 100) {
-              fee = Math.max(amount * 0.015, 1.5) // 1.5% with minimum of GHS 1.5
-              fee = Math.min(fee, 50) // Maximum of GHS 50
-              feeType = "percentage"
-              minimumFee = 1.5
-              maximumFee = 50
-            } else {
-              fee = 0 // Free for amounts below GHS 100
-              feeType = "free"
-            }
+          if (config.fee_type === "percentage") {
+            calculatedFee = Number(amount) * (Number(config.fee_value) / 100);
+          } else if (config.fee_type === "fixed") {
+            calculatedFee = Number(config.fee_value);
           }
-        } catch (dbError) {
-          console.error("Error fetching fee configuration from database:", dbError)
-          // Fallback calculation for withdrawal
-          if (amount >= 100) {
-            fee = Math.max(amount * 0.015, 1.5) // 1.5% with minimum of GHS 1.5
-            fee = Math.min(fee, 50) // Maximum of GHS 50
-            feeType = "percentage"
-            minimumFee = 1.5
-            maximumFee = 50
-          } else {
-            fee = 0 // Free for amounts below GHS 100
-            feeType = "free"
-          }
-        }
-      } else if (transactionType === "card_issuance") {
-        // Try to get E-Zwich card issuance fee configuration
-        try {
-          const feeConfig = await SettingsService.getFeeConfiguration("e_zwich_card_issuance")
 
-          if (feeConfig && feeConfig.is_active) {
-            fee = feeConfig.fee_value
-            feeType = feeConfig.fee_type
-            minimumFee = feeConfig.minimum_fee
-            maximumFee = feeConfig.maximum_fee
-            feeSource = "database"
-          } else {
-            // Fallback to default
-            fee = 15.0 // Fixed fee for card issuance
-            feeType = "fixed"
+          // Apply min/max limits
+          if (
+            config.minimum_fee &&
+            calculatedFee < Number(config.minimum_fee)
+          ) {
+            calculatedFee = Number(config.minimum_fee);
           }
-        } catch (dbError) {
-          console.error("Error fetching fee configuration from database:", dbError)
-          // Fallback to default for card issuance
-          fee = 15.0
-          feeType = "fixed"
-        }
-      }
-    } catch (error) {
-      console.error("Error in fee calculation logic:", error)
+          if (
+            config.maximum_fee &&
+            calculatedFee > Number(config.maximum_fee)
+          ) {
+            calculatedFee = Number(config.maximum_fee);
+          }
 
-      // Final fallback calculations
-      if (transactionType === "withdrawal") {
-        if (amount >= 100) {
-          fee = Math.max(amount * 0.015, 1.5)
-          fee = Math.min(fee, 50)
-          feeType = "percentage"
-          minimumFee = 1.5
-          maximumFee = 50
+          minimumFee = Number(config.minimum_fee) || 1.5;
+          maximumFee = Number(config.maximum_fee) || 50;
         } else {
-          fee = 0
-          feeType = "free"
+          // Fallback to default calculation for withdrawal
+          console.log(
+            "No E-Zwich fee config found, using fallback calculation"
+          );
+
+          if (amount >= 100) {
+            calculatedFee = Math.max(amount * 0.015, 1.5); // 1.5% with minimum of GHS 1.5
+            calculatedFee = Math.min(calculatedFee, 50); // Maximum of GHS 50
+            feeType = "percentage";
+            minimumFee = 1.5;
+            maximumFee = 50;
+          } else {
+            calculatedFee = 0; // Free for amounts below GHS 100
+            feeType = "free";
+          }
         }
-      } else if (transactionType === "card_issuance") {
-        fee = 15.0
-        feeType = "fixed"
+      } catch (dbError) {
+        console.error(
+          "Error fetching fee configuration from database:",
+          dbError
+        );
+        // Fallback calculation for withdrawal
+        if (amount >= 100) {
+          calculatedFee = Math.max(amount * 0.015, 1.5); // 1.5% with minimum of GHS 1.5
+          calculatedFee = Math.min(calculatedFee, 50); // Maximum of GHS 50
+          feeType = "percentage";
+          minimumFee = 1.5;
+          maximumFee = 50;
+        } else {
+          calculatedFee = 0; // Free for amounts below GHS 100
+          feeType = "free";
+        }
       }
+    } else if (transactionType === "card_issuance") {
+      // Try to get E-Zwich card issuance fee configuration
+      try {
+        const feeConfig = await SettingsService.getFeeConfiguration(
+          "e_zwich_card_issuance"
+        );
+
+        if (feeConfig && feeConfig.is_active) {
+          calculatedFee = feeConfig.fee_value;
+          feeType = feeConfig.fee_type;
+          minimumFee = feeConfig.minimum_fee;
+          maximumFee = feeConfig.maximum_fee;
+          feeSource = "database";
+        } else {
+          // Fallback to default
+          calculatedFee = 15.0; // Fixed fee for card issuance
+          feeType = "fixed";
+        }
+      } catch (dbError) {
+        console.error(
+          "Error fetching fee configuration from database:",
+          dbError
+        );
+        // Fallback to default for card issuance
+        calculatedFee = 15.0;
+        feeType = "fixed";
+      }
+    }
+
+    // If a specific fee was provided, use that instead of calculated fee
+    if (fee !== undefined && fee !== null && fee !== "") {
+      calculatedFee = Number(fee);
+      feeSource = "user_override";
     }
 
     return NextResponse.json({
       success: true,
-      fee: Number(fee.toFixed(2)),
+      fee: Number(calculatedFee.toFixed(2)),
       feeType,
       minimumFee,
       maximumFee,
       feeSource,
       amount: Number(amount),
       transactionType,
-    })
+    });
   } catch (error) {
-    console.error("Error calculating E-Zwich fee:", error)
-    return NextResponse.json({ success: false, error: "Failed to calculate fee" }, { status: 500 })
+    console.error("Error in fee calculation logic:", error);
+
+    // Final fallback calculations
+    let fallbackFee = 0;
+    let fallbackFeeType = "fixed";
+
+    if (transactionType === "withdrawal") {
+      if (amount >= 100) {
+        fallbackFee = Math.max(amount * 0.015, 1.5);
+        fallbackFee = Math.min(fallbackFee, 50);
+        fallbackFeeType = "percentage";
+      } else {
+        fallbackFee = 0;
+        fallbackFeeType = "free";
+      }
+    } else if (transactionType === "card_issuance") {
+      fallbackFee = 15.0;
+      fallbackFeeType = "fixed";
+    }
+
+    return NextResponse.json({
+      success: true,
+      fee: Number(fallbackFee.toFixed(2)),
+      feeType: fallbackFeeType,
+      feeSource: "fallback",
+      amount: Number(amount),
+      transactionType,
+    });
   }
 }

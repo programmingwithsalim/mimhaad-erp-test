@@ -314,9 +314,20 @@ export function PowerTransactionForm({
                 name="customerPhone"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Phone Number</FormLabel>
+                    <FormLabel>Customer Phone</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., +233 24 123 4567" {...field} />
+                      <Input
+                        placeholder="0241234567"
+                        maxLength={10}
+                        {...field}
+                        onChange={(e) => {
+                          // Only allow digits
+                          const value = e.target.value.replace(/\D/g, "");
+                          // Limit to 10 digits
+                          const limitedValue = value.slice(0, 10);
+                          field.onChange(limitedValue);
+                        }}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -220,3 +220,5 @@ chromatic.log
 
 # Nx
 .nx/cache
+
+db_test/

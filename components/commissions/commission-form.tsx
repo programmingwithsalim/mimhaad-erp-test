@@ -22,7 +22,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { useCurrentUser } from "@/hooks/use-current-user-fixed";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import { useToast } from "@/components/ui/use-toast";
 import {
   Calculator,
@@ -103,11 +103,39 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
   useEffect(() => {
     const fetchFloatAccounts = async () => {
       try {
-        const response = await fetch("/api/float-accounts");
+        // Build URL with branch filtering
+        let url = "/api/float-accounts";
+        const params = new URLSearchParams();
+
+        // If user is not admin, filter by their branch
+        if (
+          user &&
+          user.role !== "admin" &&
+          user.role !== "Admin" &&
+          user.branchId
+        ) {
+          params.append("branchId", user.branchId);
+        }
+
+        if (params.toString()) {
+          url += "?" + params.toString();
+        }
+
+        const response = await fetch(url, {
+          headers: {
+            "Content-Type": "application/json",
+            // Add user context headers for proper authentication
+            "x-user-id": user?.id || "",
+            "x-user-name": user?.name || user?.username || "Unknown User",
+            "x-user-role": user?.role || "user",
+            "x-branch-id": user?.branchId || "",
+            "x-branch-name": user?.branchName || "Unknown Branch",
+          },
+        });
         if (response.ok) {
           const data = await response.json();
           // Handle the nested structure from the API
-          const accounts = data.accounts || data;
+          const accounts = data.accounts || data.data || data;
 
           // Filter for active accounts that can be commission partners
           const activeAccounts = accounts.filter(
@@ -120,7 +148,9 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
 
           console.log(
             "📊 [COMMISSION] Loaded float accounts:",
-            activeAccounts.length
+            activeAccounts.length,
+            "for branch:",
+            user?.branchId || "all branches (admin)"
           );
           setFloatAccounts(activeAccounts);
         } else {
@@ -175,7 +205,7 @@ export default function CommissionForm({ onSuccess }: CommissionFormProps) {
     };
 
     fetchFloatAccounts();
-  }, [toast]);
+  }, [toast, user]);
 
   const handlePartnerChange = (value: string) => {
     const account = floatAccounts.find((acc) => acc.id === value);

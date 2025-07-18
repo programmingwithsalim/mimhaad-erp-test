@@ -1,7 +1,8 @@
-import { type NextRequest, NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { type NextRequest, NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
+import { getSession } from "@/lib/auth-service";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 // Helper function to check if table exists
 async function tableExists(tableName: string): Promise<boolean> {
@@ -12,11 +13,11 @@ async function tableExists(tableName: string): Promise<boolean> {
         WHERE table_schema = 'public' 
         AND table_name = ${tableName}
       )
-    `
-    return result[0]?.exists || false
+    `;
+    return result[0]?.exists || false;
   } catch (error) {
-    console.error(`Error checking if table ${tableName} exists:`, error)
-    return false
+    console.error(`Error checking if table ${tableName} exists:`, error);
+    return false;
   }
 }
 
@@ -27,13 +28,15 @@ async function logTransaction(
   amount: number,
   balanceBefore: number,
   balanceAfter: number,
-  description: string,
+  description: string
 ): Promise<void> {
   try {
-    const exists = await tableExists("float_transactions")
+    const exists = await tableExists("float_transactions");
     if (!exists) {
-      console.log("float_transactions table doesn't exist, skipping transaction log")
-      return
+      console.log(
+        "float_transactions table doesn't exist, skipping transaction log"
+      );
+      return;
     }
 
     // Check if the required columns exist before inserting
@@ -42,9 +45,9 @@ async function logTransaction(
       FROM information_schema.columns 
       WHERE table_name = 'float_transactions' 
       AND column_name IN ('balance_before', 'balance_after')
-    `
+    `;
 
-    const hasBalanceColumns = columnCheck.length >= 2
+    const hasBalanceColumns = columnCheck.length >= 2;
 
     if (hasBalanceColumns) {
       // Use the full schema with balance columns
@@ -68,7 +71,7 @@ async function logTransaction(
           ${`TXN-${Date.now()}`},
           CURRENT_TIMESTAMP
         )
-      `
+      `;
     } else {
       // Use simplified schema without balance columns
       await sql`
@@ -87,38 +90,59 @@ async function logTransaction(
           ${`TXN-${Date.now()}`},
           CURRENT_TIMESTAMP
         )
-      `
+      `;
     }
-    console.log("Transaction logged successfully")
+    console.log("Transaction logged successfully");
   } catch (error) {
-    console.error("Error logging transaction (non-critical):", error)
+    console.error("Error logging transaction (non-critical):", error);
     // Don't throw error - transaction logging is optional
   }
 }
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const session = await getSession();
+  if (!session?.user || session.user.role?.toLowerCase() !== "super-admin") {
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Forbidden: Only super-admins can use this endpoint.",
+      },
+      { status: 403 }
+    );
+  }
   try {
-    const accountId = params.id
+    const accountId = params.id;
 
     // Validate account ID
     if (!accountId || accountId === "undefined" || accountId === "null") {
-      console.error("Invalid account ID received:", accountId)
+      console.error("Invalid account ID received:", accountId);
       return NextResponse.json(
         {
           success: false,
           error: "Invalid account ID provided",
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
-    const body = await request.json()
-    const { amount, description, transaction_type } = body
+    const body = await request.json();
+    const { amount, description, transaction_type } = body;
 
-    console.log("Updating account balance:", { accountId, amount, description, transaction_type })
+    console.log("Updating account balance:", {
+      accountId,
+      amount,
+      description,
+      transaction_type,
+    });
 
     if (amount === undefined || amount === null) {
-      return NextResponse.json({ success: false, error: "Amount is required" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Amount is required" },
+        { status: 400 }
+      );
     }
 
     // Get current account details
@@ -126,17 +150,20 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       SELECT id, current_balance, account_type, account_number, branch_id
       FROM float_accounts 
       WHERE id = ${accountId}
-    `
+    `;
 
     if (accountResult.length === 0) {
-      return NextResponse.json({ success: false, error: "Account not found" }, { status: 404 })
+      return NextResponse.json(
+        { success: false, error: "Account not found" },
+        { status: 404 }
+      );
     }
 
-    const account = accountResult[0]
-    const currentBalance = Number.parseFloat(account.current_balance || "0")
-    const newBalance = currentBalance + amount
+    const account = accountResult[0];
+    const currentBalance = Number.parseFloat(account.current_balance || "0");
+    const newBalance = currentBalance + amount;
 
-    console.log("Balance calculation:", { currentBalance, amount, newBalance })
+    console.log("Balance calculation:", { currentBalance, amount, newBalance });
 
     // Check for negative balance (only for debits)
     if (amount < 0 && newBalance < 0) {
@@ -144,10 +171,12 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         {
           success: false,
           error: "Insufficient balance",
-          details: `Current balance: ${currentBalance}, Requested: ${Math.abs(amount)}`,
+          details: `Current balance: ${currentBalance}, Requested: ${Math.abs(
+            amount
+          )}`,
         },
-        { status: 400 },
-      )
+        { status: 400 }
+      );
     }
 
     // Update the account balance
@@ -158,13 +187,16 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ${accountId}
       RETURNING *
-    `
+    `;
 
     if (updateResult.length === 0) {
-      return NextResponse.json({ success: false, error: "Failed to update account" }, { status: 500 })
+      return NextResponse.json(
+        { success: false, error: "Failed to update account" },
+        { status: 500 }
+      );
     }
 
-    console.log("Account balance updated successfully")
+    console.log("Account balance updated successfully");
 
     // Log the transaction (optional - won't fail if table doesn't exist)
     await logTransaction(
@@ -173,27 +205,29 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       amount,
       currentBalance,
       newBalance,
-      description || "Balance update",
-    )
+      description || "Balance update"
+    );
 
     return NextResponse.json({
       success: true,
       data: {
         ...updateResult[0],
-        current_balance: Number.parseFloat(updateResult[0].current_balance || "0"),
+        current_balance: Number.parseFloat(
+          updateResult[0].current_balance || "0"
+        ),
         previous_balance: currentBalance,
         transaction_amount: amount,
       },
-    })
+    });
   } catch (error) {
-    console.error("Error updating float account balance:", error)
+    console.error("Error updating float account balance:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to update account balance",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

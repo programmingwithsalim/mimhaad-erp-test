@@ -1,7 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, ArrowRight, Eye } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Eye,
+  DollarSign,
+  AlertCircle,
+  FileText,
+} from "lucide-react";
 import { format } from "date-fns";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +30,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
+import { useCurrentUser } from "@/hooks/use-current-user";
 import type { PaginationInfo } from "@/hooks/use-all-transactions";
 
 interface Transaction {
@@ -50,6 +70,7 @@ interface TransactionsTableProps {
   onNextPage: () => void;
   onPrevPage: () => void;
   onViewTransaction: (transaction: Transaction) => void;
+  onTransactionUpdate?: () => void;
 }
 
 export function TransactionsTable({
@@ -60,12 +81,92 @@ export function TransactionsTable({
   onNextPage,
   onPrevPage,
   onViewTransaction,
+  onTransactionUpdate,
 }: TransactionsTableProps) {
   const [pageSize, setPageSize] = useState(pagination.limit);
+  const [disbursingTransaction, setDisbursingTransaction] = useState<
+    string | null
+  >(null);
+  const { toast } = useToast();
+  const { user } = useCurrentUser();
+
+  const isCashier = user?.role?.toLowerCase() === "cashier";
+  const isManager = user?.role?.toLowerCase() === "manager";
+  const isAdmin = user?.role?.toLowerCase() === "admin";
+  const canDisburse = isCashier || isManager || isAdmin;
+
+  const handleDisburse = async (transaction: Transaction) => {
+    if (!canDisburse) {
+      toast({
+        title: "Access Denied",
+        description: "You don't have permission to disburse transactions",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (transaction.status?.toLowerCase() === "reversed") {
+      toast({
+        title: "Cannot Disburse",
+        description: "Reversed transactions cannot be disbursed",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (transaction.status?.toLowerCase() === "disbursed") {
+      toast({
+        title: "Already Disbursed",
+        description: "This transaction has already been disbursed",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setDisbursingTransaction(transaction.id);
+
+    try {
+      const response = await fetch(
+        `/api/transactions/${transaction.id}/disburse`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            sourceModule: transaction.service_type,
+            reason: "Cash disbursement by cashier",
+          }),
+        }
+      );
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Disbursed",
+          description: `Successfully disbursed ${transaction.customer_name}'s transaction`,
+        });
+        onTransactionUpdate?.();
+      } else {
+        throw new Error(result.error || "Failed to disburse transaction");
+      }
+    } catch (error) {
+      toast({
+        title: "Disbursement Failed",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setDisbursingTransaction(null);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
       case "completed":
+      case "disbursed":
         return "bg-green-100 text-green-800";
       case "pending":
         return "bg-yellow-100 text-yellow-800";
@@ -164,17 +265,31 @@ export function TransactionsTable({
   return (
     <div className="space-y-4">
       {/* Table */}
-      <div className="rounded-md border">
+      <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Service & Time</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Amount</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Branch</TableHead>
-              <TableHead>Actions</TableHead>
+              <TableHead className="w-[200px] whitespace-nowrap">
+                Service & Time
+              </TableHead>
+              <TableHead className="w-[150px] whitespace-nowrap">
+                Customer
+              </TableHead>
+              <TableHead className="w-[100px] whitespace-nowrap">
+                Type
+              </TableHead>
+              <TableHead className="w-[100px] whitespace-nowrap">
+                Amount
+              </TableHead>
+              <TableHead className="w-[100px] whitespace-nowrap">
+                Status
+              </TableHead>
+              <TableHead className="w-[100px] whitespace-nowrap">
+                Branch
+              </TableHead>
+              <TableHead className="w-[80px] whitespace-nowrap">
+                Actions
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -183,71 +298,118 @@ export function TransactionsTable({
                 key={transaction.id}
                 className="hover:bg-muted/50 group"
               >
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
                   <div className="flex items-center space-x-3">
-                    <Avatar className="h-8 w-8">
+                    <Avatar className="h-8 w-8 flex-shrink-0">
                       {getServiceIcon(transaction.service_type)}
                     </Avatar>
-                    <div>
-                      <div className="font-medium text-sm capitalize">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-sm capitalize truncate">
                         {transaction.service_type.replace("_", " ")}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground truncate">
                         {format(
                           new Date(transaction.created_at),
                           "MMM dd, yyyy"
                         )}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground truncate">
                         {format(new Date(transaction.created_at), "HH:mm:ss")}
                       </div>
                     </div>
                   </div>
                 </TableCell>
-                <TableCell>
-                  <div>
-                    <div className="font-medium text-sm">
-                      {transaction.customer_name}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {transaction.phone_number}
-                    </div>
-                  </div>
+                <TableCell
+                  className="max-w-[150px] truncate"
+                  title={transaction.customer_name}
+                >
+                  {transaction.customer_name}
                 </TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
                   <Badge variant="outline" className="capitalize">
-                    {transaction.type.replace("-", " ")}
+                    {transaction.type?.replace(/[_-]/g, " ") || "Unknown"}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  <div>
-                    <div className="font-medium">
-                      ₵{transaction.amount.toLocaleString()}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      Fee: ₵{transaction.fee.toLocaleString()}
-                    </div>
-                  </div>
+                <TableCell className="font-mono whitespace-nowrap">
+                  ₵{transaction.amount.toLocaleString()}
                 </TableCell>
-                <TableCell>
+                <TableCell className="whitespace-nowrap">
                   <Badge className={getStatusColor(transaction.status)}>
                     {transaction.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  <div className="text-sm">
-                    {transaction.branch_name || "N/A"}
-                  </div>
+                <TableCell
+                  className="max-w-[100px] truncate"
+                  title={transaction.branch_name || transaction.branch_id}
+                >
+                  {transaction.branch_name || transaction.branch_id || "N/A"}
                 </TableCell>
-                <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="opacity-0 group-hover:opacity-100"
-                    onClick={() => onViewTransaction(transaction)}
-                  >
-                    <Eye className="h-4 w-4" />
-                  </Button>
+                <TableCell className="whitespace-nowrap">
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onViewTransaction(transaction)}
+                      title="View transaction details"
+                    >
+                      <Eye className="h-4 w-4" />
+                    </Button>
+
+                    {canDisburse &&
+                      transaction.status?.toLowerCase() !== "reversed" &&
+                      transaction.status?.toLowerCase() !== "disbursed" && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={
+                                disbursingTransaction === transaction.id
+                              }
+                              title="Disburse transaction"
+                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
+                            >
+                              <DollarSign className="h-4 w-4" />
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Confirm Disbursement
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to mark this transaction
+                                as disbursed? This action indicates that cash
+                                has been given to the customer.
+                                <br />
+                                <br />
+                                <strong>Transaction Details:</strong>
+                                <br />
+                                Customer: {transaction.customer_name}
+                                <br />
+                                Amount: ₵{transaction.amount.toLocaleString()}
+                                <br />
+                                Reference: {transaction.reference}
+                                <br />
+                                Service:{" "}
+                                {transaction.service_type.replace("_", " ")}
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => handleDisburse(transaction)}
+                                className="bg-green-600 hover:bg-green-700"
+                              >
+                                {disbursingTransaction === transaction.id
+                                  ? "Disbursing..."
+                                  : "Confirm Disbursement"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}

@@ -109,6 +109,42 @@ export async function POST(
       );
     }
 
+    // After updating the expense status, auto-debit the float account if payment_source is not 'cash'
+    const paymentSource = expense.payment_source;
+    const expenseAmount = Number(expense.amount);
+    if (paymentSource && paymentSource !== "cash") {
+      // Fetch the float account
+      const floatAccountResult =
+        await sql`SELECT * FROM float_accounts WHERE id = ${paymentSource}`;
+      if (!floatAccountResult[0]) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Float account for payment source not found.",
+          },
+          { status: 400 }
+        );
+      }
+      const floatAccount = floatAccountResult[0];
+      const currentBalance = Number(floatAccount.current_balance);
+      if (currentBalance < expenseAmount) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Insufficient float account balance for this expense.",
+          },
+          { status: 400 }
+        );
+      }
+      const newBalance = currentBalance - expenseAmount;
+      // Update float account balance
+      await sql`UPDATE float_accounts SET current_balance = ${newBalance}, updated_at = NOW() WHERE id = ${paymentSource}`;
+      // Record float transaction
+      await sql`INSERT INTO float_transactions (id, account_id, type, amount, balance_before, balance_after, description, created_by, branch_id, created_at) VALUES (gen_random_uuid(), ${paymentSource}, 'expense_debit', ${-expenseAmount}, ${currentBalance}, ${newBalance}, ${"Expense auto-debit on approval"}, ${approver_id}, ${
+        expense.branch_id
+      }, NOW())`;
+    }
+
     // Post GL entries after approval
     const glResult = await UnifiedGLPostingService.createGLEntries({
       transactionId: id,

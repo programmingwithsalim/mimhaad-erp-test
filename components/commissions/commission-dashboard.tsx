@@ -37,10 +37,10 @@ export function CommissionDashboard() {
   // Use the commissions hook
   const {
     commissions,
+    statistics: hookStatistics,
     isLoading,
     error,
     refetch: refreshCommissions,
-    createCommission,
     updateCommission,
     deleteCommission,
     markCommissionPaid,
@@ -55,8 +55,8 @@ export function CommissionDashboard() {
     canViewAllBranches,
   });
 
-  // Calculate statistics
-  const statistics = {
+  // Calculate local statistics
+  const localStatistics = {
     totalAmount:
       commissions?.reduce((sum, c) => sum + (Number(c.amount) || 0), 0) || 0,
     totalCount: commissions?.length || 0,
@@ -73,20 +73,42 @@ export function CommissionDashboard() {
     paidCount: commissions?.filter((c) => c.status === "paid")?.length || 0,
   };
 
-  const handleAddCommission = async (data: any) => {
+  const handleAddCommission = async () => {
     try {
-      await createCommission(data);
+      console.log("🔄 [COMMISSION] Refreshing commission data...");
+      // The commission form already handles the API call, so we just need to refresh the data
+      await refreshCommissions();
+      console.log("✅ [COMMISSION] Commission data refreshed successfully");
       setShowAddDialog(false);
       toast({
         title: "Commission Added",
         description: "Commission has been successfully created.",
       });
     } catch (error) {
-      console.error("Error adding commission:", error);
+      console.error("❌ [COMMISSION] Error in handleAddCommission:", error);
+      console.error("❌ [COMMISSION] Error details:", {
+        message: error instanceof Error ? error.message : "Unknown error",
+        stack: error instanceof Error ? error.stack : "No stack trace",
+      });
       toast({
         title: "Error",
         description:
           error instanceof Error ? error.message : "Failed to add commission",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleRefresh = async () => {
+    try {
+      console.log("🔄 [COMMISSION] Refreshing commission data from table...");
+      await refreshCommissions();
+      console.log("✅ [COMMISSION] Commission data refreshed successfully");
+    } catch (error) {
+      console.error("❌ [COMMISSION] Error refreshing commissions:", error);
+      toast({
+        title: "Error",
+        description: "Failed to refresh commission data",
         variant: "destructive",
       });
     }
@@ -249,10 +271,10 @@ export function CommissionDashboard() {
             ) : (
               <>
                 <div className="text-2xl font-bold">
-                  {formatCurrency(statistics.totalAmount)}
+                  {formatCurrency(localStatistics.totalAmount)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {statistics.totalCount} entries
+                  {localStatistics.totalCount} entries
                 </p>
               </>
             )}
@@ -270,10 +292,10 @@ export function CommissionDashboard() {
             ) : (
               <>
                 <div className="text-2xl font-bold text-yellow-600">
-                  {formatCurrency(statistics.pendingAmount)}
+                  {formatCurrency(localStatistics.pendingAmount)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {statistics.pendingCount} pending
+                  {localStatistics.pendingCount} pending
                 </p>
               </>
             )}
@@ -291,10 +313,10 @@ export function CommissionDashboard() {
             ) : (
               <>
                 <div className="text-2xl font-bold text-green-600">
-                  {formatCurrency(statistics.paidAmount)}
+                  {formatCurrency(localStatistics.paidAmount)}
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  {statistics.paidCount} completed
+                  {localStatistics.paidCount} completed
                 </p>
               </>
             )}
@@ -312,9 +334,11 @@ export function CommissionDashboard() {
             ) : (
               <>
                 <div className="text-2xl font-bold">
-                  {statistics.totalCount > 0
+                  {localStatistics.totalCount > 0
                     ? Math.round(
-                        (statistics.paidCount / statistics.totalCount) * 100
+                        (localStatistics.paidCount /
+                          localStatistics.totalCount) *
+                          100
                       )
                     : 0}
                   %
@@ -452,7 +476,7 @@ export function CommissionDashboard() {
           <CommissionTable
             commissions={commissions || []}
             isLoading={isLoading}
-            onRefresh={refreshCommissions}
+            onRefresh={handleRefresh}
             onEdit={handleEditCommission}
             onDelete={handleDeleteCommission}
             onMarkPaid={handleMarkPaid}

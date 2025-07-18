@@ -22,35 +22,30 @@ const ROLE_ROUTE_RESTRICTIONS: Record<
     roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
   },
   "/dashboard/float-management": { roles: ["Admin", "Manager", "Finance"] },
-  "/dashboard/expenses": { roles: ["Admin", "Manager", "Finance"] },
+  "/dashboard/expenses": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
   "/dashboard/commissions": { roles: ["Admin", "Manager", "Finance"] },
   "/dashboard/reports": { roles: ["Admin", "Manager", "Finance"] },
   "/dashboard/analytics": { roles: ["Admin", "Manager", "Finance"] },
   "/dashboard/momo": {
-    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+    roles: ["Admin", "Manager", "Operations"],
   },
   "/dashboard/agency-banking": {
-    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+    roles: ["Admin", "Manager", "Operations"],
   },
   "/dashboard/e-zwich": {
-    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+    roles: ["Admin", "Manager", "Operations"],
   },
   "/dashboard/power": {
-    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+    roles: ["Admin", "Manager", "Operations"],
   },
   "/dashboard/jumia": {
-    roles: ["Admin", "Manager", "Operations", "Supervisor", "Cashier"],
+    roles: ["Admin", "Manager", "Operations"],
   },
   "/dashboard/inventory": { roles: ["Admin", "Manager", "Finance"] },
   "/dashboard/transactions": {
-    roles: [
-      "Admin",
-      "Manager",
-      "Finance",
-      "Operations",
-      "Supervisor",
-      "Cashier",
-    ],
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
   },
 };
 
@@ -60,7 +55,7 @@ const API_ROUTE_RESTRICTIONS: Record<
   { roles: Role[]; permissions?: Permission[] }
 > = {
   "/api/users": { roles: ["Admin"] },
-  "/api/branches": { roles: ["Admin"] },
+  "/api/branches": { roles: ["Admin", "Manager", "Finance"] },
   "/api/settings": { roles: ["Admin", "Manager", "Finance"] },
   "/api/gl": { roles: ["Admin", "Finance"] },
   "/api/audit-logs": { roles: ["Admin", "Manager", "Finance"] },

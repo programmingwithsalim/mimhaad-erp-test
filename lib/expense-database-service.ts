@@ -142,6 +142,56 @@ export async function createExpenseHead(
   }
 }
 
+export async function getExpenseHeadById(
+  id: string
+): Promise<ExpenseHead | null> {
+  try {
+    const result = await sql`
+      SELECT * FROM expense_heads WHERE id = ${id}
+    `;
+    return (result[0] as ExpenseHead) || null;
+  } catch (error) {
+    console.error("Error fetching expense head by ID:", error);
+    return null;
+  }
+}
+
+export async function updateExpenseHead(
+  id: string,
+  data: Partial<Omit<ExpenseHead, "id" | "created_at" | "updated_at">>
+): Promise<ExpenseHead | null> {
+  try {
+    const result = await sql`
+      UPDATE expense_heads 
+      SET 
+        name = COALESCE(${data.name}, name),
+        category = COALESCE(${data.category}, category),
+        description = COALESCE(${data.description}, description),
+        gl_account_code = COALESCE(${data.gl_account_code}, gl_account_code),
+        is_active = COALESCE(${data.is_active}, is_active),
+        updated_at = NOW()
+      WHERE id = ${id}
+      RETURNING *
+    `;
+    return (result[0] as ExpenseHead) || null;
+  } catch (error) {
+    console.error("Error updating expense head:", error);
+    return null;
+  }
+}
+
+export async function deleteExpenseHead(id: string): Promise<boolean> {
+  try {
+    const result = await sql`
+      DELETE FROM expense_heads WHERE id = ${id}
+    `;
+    return true;
+  } catch (error) {
+    console.error("Error deleting expense head:", error);
+    return false;
+  }
+}
+
 // Expense Operations - Optimized for performance
 export async function getExpenses(
   filters?: ExpenseFilters
@@ -563,74 +613,122 @@ export async function getExpenseStatistics(
   try {
     console.log("Fetching expense statistics...", filters);
 
-    // Build WHERE clause for branch filtering
-    let whereClause = "";
-    let params: any[] = [];
-    let paramIndex = 1;
+    // Get basic statistics
+    let statsResult;
     if (filters?.branch_id) {
-      whereClause = `WHERE e.branch_id = $${paramIndex}`;
-      params.push(filters.branch_id);
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_expenses,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
+          COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
+          COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount,
+          COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount,
+          COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
+          COALESCE(SUM(CASE WHEN status = 'rejected' THEN amount ELSE 0 END), 0) as rejected_amount
+        FROM expenses e
+        WHERE e.branch_id = ${filters.branch_id}
+      `;
+    } else {
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_expenses,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
+          COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
+          COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount,
+          COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount,
+          COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
+          COALESCE(SUM(CASE WHEN status = 'rejected' THEN amount ELSE 0 END), 0) as rejected_amount
+        FROM expenses e
+      `;
     }
 
-    // Get basic statistics
-    const statsResult = await sql.unsafe(
-      `SELECT 
-        COUNT(*) as total_expenses,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
-        COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount,
-        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
-        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount,
-        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
-        COALESCE(SUM(CASE WHEN status = 'rejected' THEN amount ELSE 0 END), 0) as rejected_amount
-      FROM expenses e
-      ${whereClause}
-      `,
-      params
-    );
+    if (
+      !statsResult ||
+      !Array.isArray(statsResult) ||
+      statsResult.length === 0 ||
+      !statsResult[0]
+    ) {
+      throw new Error("No statistics returned from database query");
+    }
 
     // Get category breakdown
-    const categoryResult = await sql.unsafe(
-      `SELECT 
-        eh.category,
-        COUNT(*) as count,
-        COALESCE(SUM(e.amount), 0) as amount
-      FROM expenses e
-      LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
-      ${whereClause}
-      GROUP BY eh.category
-      ORDER BY amount DESC
-      `,
-      params
-    );
+    let categoryResult;
+    if (filters?.branch_id) {
+      categoryResult = await sql`
+        SELECT 
+          eh.category,
+          COUNT(*) as count,
+          COALESCE(SUM(e.amount), 0) as amount
+        FROM expenses e
+        LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
+        WHERE e.branch_id = ${filters.branch_id}
+        GROUP BY eh.category
+        ORDER BY amount DESC
+      `;
+    } else {
+      categoryResult = await sql`
+        SELECT 
+          eh.category,
+          COUNT(*) as count,
+          COALESCE(SUM(e.amount), 0) as amount
+        FROM expenses e
+        LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
+        GROUP BY eh.category
+        ORDER BY amount DESC
+      `;
+    }
 
     // Get payment source breakdown
-    const paymentSourceResult = await sql.unsafe(
-      `SELECT 
-        payment_source,
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as amount
-      FROM expenses e
-      ${whereClause}
-      GROUP BY payment_source
-      ORDER BY amount DESC
-      `,
-      params
-    );
+    let paymentSourceResult;
+    if (filters?.branch_id) {
+      paymentSourceResult = await sql`
+        SELECT 
+          payment_source,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as amount
+        FROM expenses e
+        WHERE e.branch_id = ${filters.branch_id}
+        GROUP BY payment_source
+        ORDER BY amount DESC
+      `;
+    } else {
+      paymentSourceResult = await sql`
+        SELECT 
+          payment_source,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as amount
+        FROM expenses e
+        GROUP BY payment_source
+        ORDER BY amount DESC
+      `;
+    }
 
     // Get recent expenses
-    const recentResult = await sql.unsafe(
-      `SELECT e.*, eh.name as expense_head_name, eh.category as expense_head_category
-      FROM expenses e
-      LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
-      ${whereClause}
-      ORDER BY e.created_at DESC
-      LIMIT 10
-      `,
-      params
-    );
+    let recentResult;
+    if (filters?.branch_id) {
+      recentResult = await sql`
+        SELECT e.*, eh.name as expense_head_name, eh.category as expense_head_category
+        FROM expenses e
+        LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
+        WHERE e.branch_id = ${filters.branch_id}
+        ORDER BY e.created_at DESC
+        LIMIT 10
+      `;
+    } else {
+      recentResult = await sql`
+        SELECT e.*, eh.name as expense_head_name, eh.category as expense_head_category
+        FROM expenses e
+        LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
+        ORDER BY e.created_at DESC
+        LIMIT 10
+      `;
+    }
 
     const stats = statsResult[0];
     const byCategory: Record<string, { count: number; amount: number }> = {};
@@ -640,30 +738,30 @@ export async function getExpenseStatistics(
     categoryResult.forEach((row: any) => {
       if (row.category) {
         byCategory[row.category] = {
-          count: Number.parseInt(row.count),
-          amount: Number.parseFloat(row.amount),
+          count: Number(row.count),
+          amount: Number(row.amount),
         };
       }
     });
 
     paymentSourceResult.forEach((row: any) => {
       byPaymentSource[row.payment_source] = {
-        count: Number.parseInt(row.count),
-        amount: Number.parseFloat(row.amount),
+        count: Number(row.count),
+        amount: Number(row.amount),
       };
     });
 
     const statistics = {
-      total_expenses: Number.parseInt(stats.total_expenses),
-      total_amount: Number.parseFloat(stats.total_amount),
-      pending_count: Number.parseInt(stats.pending_count),
-      pending_amount: Number.parseFloat(stats.pending_amount),
-      approved_count: Number.parseInt(stats.approved_count),
-      approved_amount: Number.parseFloat(stats.approved_amount),
-      paid_count: Number.parseInt(stats.paid_count),
-      paid_amount: Number.parseFloat(stats.paid_amount),
-      rejected_count: Number.parseInt(stats.rejected_count),
-      rejected_amount: Number.parseFloat(stats.rejected_amount),
+      total_expenses: Number(stats.total_expenses),
+      total_amount: Number(stats.total_amount),
+      pending_count: Number(stats.pending_count),
+      pending_amount: Number(stats.pending_amount),
+      approved_count: Number(stats.approved_count),
+      approved_amount: Number(stats.approved_amount),
+      paid_count: Number(stats.paid_count),
+      paid_amount: Number(stats.paid_amount),
+      rejected_count: Number(stats.rejected_count),
+      rejected_amount: Number(stats.rejected_amount),
       by_category: byCategory,
       by_payment_source: byPaymentSource,
       recent_expenses: recentResult as Expense[],
@@ -673,20 +771,6 @@ export async function getExpenseStatistics(
     return statistics;
   } catch (error) {
     console.error("Error fetching expense statistics:", error);
-    return {
-      total_expenses: 0,
-      total_amount: 0,
-      pending_count: 0,
-      pending_amount: 0,
-      approved_count: 0,
-      approved_amount: 0,
-      paid_count: 0,
-      paid_amount: 0,
-      rejected_count: 0,
-      rejected_amount: 0,
-      by_category: {},
-      by_payment_source: {},
-      recent_expenses: [],
-    };
+    throw error;
   }
 }

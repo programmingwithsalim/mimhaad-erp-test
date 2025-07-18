@@ -3,203 +3,156 @@
 import { useState, useEffect, useCallback } from "react";
 import { useCurrentUser } from "./use-current-user";
 
-interface CashInTillAccount {
+interface CashAccount {
   id: string;
-  account_name: string;
   current_balance: number;
   min_threshold: number;
   max_threshold: number;
+  account_name: string;
   account_type: string;
-  provider: string;
   branch_id: string;
   is_active: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
-interface UseCashInTillReturn {
-  cashAccount: CashInTillAccount | null;
-  isLoading: boolean;
-  error: string | null;
-  isLowBalance: boolean;
-  balanceStatus: "healthy" | "warning" | "critical";
-  refreshCashTill: () => Promise<void>;
-  updateBalance: (amount: number, description?: string) => Promise<void>;
-}
-
-export function useCashInTillRobust(): UseCashInTillReturn {
-  const [cashAccount, setCashAccount] = useState<CashInTillAccount | null>(
-    null
-  );
+export function useCashInTillRobust() {
+  const { user } = useCurrentUser();
+  const [cashAccount, setCashAccount] = useState<CashAccount | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { user } = useCurrentUser();
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const fetchCashInTill = useCallback(async () => {
-    if (!user?.branchId) {
+  // Determine branch ID to use
+  const branchId = user?.branchId || "635844ab-029a-43f8-8523-d7882915266a";
+
+  // Calculate balance status
+  const balanceStatus = useCallback(() => {
+    if (!cashAccount) return "loading";
+
+    const balance = cashAccount.current_balance;
+    const minThreshold = cashAccount.min_threshold;
+
+    if (balance >= minThreshold) return "healthy";
+    if (balance >= minThreshold * 0.5) return "warning";
+    return "critical";
+  }, [cashAccount]);
+
+  // Fetch cash account data
+  const fetchCashAccount = useCallback(async () => {
+    if (!branchId) {
       setError("No branch ID available");
       setIsLoading(false);
       return;
     }
 
-    try {
-      setIsLoading(true);
-      setError(null);
+    setIsLoading(true);
+    setError(null);
 
-      // Fetch cash in till from float accounts
-      const response = await fetch(
-        `/api/float-accounts?branchId=${user.branchId}&type=cash-in-till&isActive=true`,
+    try {
+      // Try to get the cash-in-till account
+      const response = await fetch(`/api/branches/${branchId}/cash-in-till`, {
+        cache: "no-store",
+        headers: {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.account) {
+          setCashAccount(data.account);
+          return;
+        }
+      }
+
+      // Fallback: try float accounts API
+      const floatResponse = await fetch(
+        `/api/float-accounts?branchId=${branchId}&accountType=cash-in-till`,
         {
           cache: "no-store",
           headers: {
-            "Cache-Control": "no-cache",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            Pragma: "no-cache",
+            Expires: "0",
           },
         }
       );
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch cash in till: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.accounts && data.accounts.length > 0) {
-        // Find cash in till account
-        const cashTillAccount = data.accounts.find(
-          (acc: any) =>
-            acc.account_type === "cash-in-till" ||
-            acc.provider?.toLowerCase().includes("cash") ||
-            acc.account_name?.toLowerCase().includes("cash")
-        );
-
-        if (cashTillAccount) {
+      if (floatResponse.ok) {
+        const floatData = await floatResponse.json();
+        console.log("Float accounts API response:", floatData);
+        
+        // Check different possible response formats
+        const accounts = floatData.data || floatData.accounts || floatData.floatAccounts || [];
+        
+        if (Array.isArray(accounts) && accounts.length > 0) {
+          const account = accounts[0];
+          console.log("Found cash in till account:", account);
+          
+          // Transform the account data to match expected format
           setCashAccount({
-            ...cashTillAccount,
-            current_balance: Number(cashTillAccount.current_balance) || 0,
-            min_threshold: Number(cashTillAccount.min_threshold) || 1000,
-            max_threshold: Number(cashTillAccount.max_threshold) || 50000,
+            id: account.id,
+            current_balance: Number(account.current_balance) || 0,
+            min_threshold: Number(account.min_threshold) || 0,
+            max_threshold: Number(account.max_threshold) || 0,
+            account_name: account.account_name || "Cash in Till",
+            account_type: account.account_type || "cash-in-till",
+            branch_id: account.branch_id,
+            is_active: account.is_active !== false,
           });
-        } else {
-          // Create default if none found
-          setCashAccount({
-            id: `default-cash-${user.branchId}`,
-            account_name: "Cash in Till",
-            current_balance: 0,
-            min_threshold: 1000,
-            max_threshold: 50000,
-            account_type: "cash-in-till",
-            provider: "Cash",
-            branch_id: user.branchId,
-            is_active: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
+          return;
         }
-      } else {
-        // Create default cash till account
-        setCashAccount({
-          id: `default-cash-${user.branchId}`,
-          account_name: "Cash in Till",
-          current_balance: 0,
-          min_threshold: 1000,
-          max_threshold: 50000,
-          account_type: "cash-in-till",
-          provider: "Cash",
-          branch_id: user.branchId,
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
       }
+
+      // If no account found, create a default one
+      setCashAccount({
+        id: "default-cash-till",
+        current_balance: 0,
+        min_threshold: 1000,
+        max_threshold: 50000,
+        account_name: "Cash in Till",
+        account_type: "cash-in-till",
+        branch_id: branchId,
+        is_active: true,
+      });
     } catch (err) {
-      console.error("Error fetching cash in till:", err);
+      console.error("Error fetching cash account:", err);
       setError(
-        err instanceof Error ? err.message : "Failed to fetch cash in till"
+        err instanceof Error ? err.message : "Failed to fetch cash account"
       );
 
-      // Provide fallback data
-      if (user?.branchId) {
-        setCashAccount({
-          id: `fallback-cash-${user.branchId}`,
-          account_name: "Cash in Till",
-          current_balance: 0,
-          min_threshold: 1000,
-          max_threshold: 50000,
-          account_type: "cash-in-till",
-          provider: "Cash",
-          branch_id: user.branchId,
-          is_active: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      }
+      // Set default account on error
+      setCashAccount({
+        id: "default-cash-till",
+        current_balance: 0,
+        min_threshold: 1000,
+        max_threshold: 50000,
+        account_name: "Cash in Till",
+        account_type: "cash-in-till",
+        branch_id: branchId,
+        is_active: true,
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [user?.branchId]);
+  }, [branchId]);
 
-  const updateBalance = useCallback(
-    async (amount: number, description?: string) => {
-      if (!user?.branchId || !cashAccount) {
-        throw new Error("No branch or cash account available");
-      }
+  // Refresh function
+  const refreshCashTill = useCallback(async () => {
+    setRefreshTrigger((prev) => prev + 1);
+  }, []);
 
-      try {
-        const response = await fetch(
-          `/api/float-accounts/${cashAccount.id}/update-balance`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              amount,
-              description,
-              userId: user.id,
-            }),
-          }
-        );
-
-        if (!response.ok) {
-          throw new Error(`Failed to update balance: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.success && data.account) {
-          setCashAccount(data.account);
-        }
-      } catch (err) {
-        console.error("Error updating cash balance:", err);
-        throw err;
-      }
-    },
-    [user?.branchId, user?.id, cashAccount]
-  );
-
+  // Fetch data on mount and when refresh is triggered
   useEffect(() => {
-    fetchCashInTill();
-  }, [fetchCashInTill]);
-
-  // Calculate balance status
-  const isLowBalance = cashAccount
-    ? cashAccount.current_balance < cashAccount.min_threshold
-    : false;
-  const balanceStatus: "healthy" | "warning" | "critical" = cashAccount
-    ? cashAccount.current_balance < cashAccount.min_threshold * 0.5
-      ? "critical"
-      : cashAccount.current_balance < cashAccount.min_threshold
-      ? "warning"
-      : "healthy"
-    : "critical";
+    fetchCashAccount();
+  }, [fetchCashAccount, refreshTrigger]);
 
   return {
     cashAccount,
     isLoading,
     error,
-    isLowBalance,
-    balanceStatus,
-    refreshCashTill: fetchCashInTill,
-    updateBalance,
+    balanceStatus: balanceStatus(),
+    refreshCashTill,
   };
 }

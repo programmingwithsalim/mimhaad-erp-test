@@ -1,13 +1,17 @@
-import { sql } from "@vercel/postgres";
+import { neon } from "@neondatabase/serverless";
+import { AutoGLMappingService } from "./auto-gl-mapping-service";
+import { BranchStaffService } from "./branch-staff-service";
+
+const sql = neon(process.env.DATABASE_URL!);
 
 export interface FloatAccount {
   id: string;
   branch_id: string;
   account_type:
-    | "cash_till"
+    | "cash-in-till"
     | "momo"
-    | "agency_banking"
-    | "e_zwich"
+    | "agency-banking"
+    | "e-zwich"
     | "power"
     | "jumia";
   provider?: string; // For power (NEDCo, ECG), momo (MTN, Telecel, etc.)
@@ -19,9 +23,9 @@ export interface FloatAccount {
   created_by: string;
   created_at: string;
   updated_at: string;
-  last_updated: string;
-  isezwichpartner: boolean;
-  name: string;
+  last_updated?: string; // Optional since it's derived from updated_at
+  isezwichpartner?: boolean; // Optional since column doesn't exist in table
+  name?: string; // Optional since it's generated
 }
 
 export class FloatAccountService {
@@ -31,121 +35,298 @@ export class FloatAccountService {
   static async createFloatAccount(data: {
     branch_id: string;
     account_type:
-      | "cash_till"
+      | "cash-in-till"
       | "momo"
-      | "agency_banking"
-      | "e_zwich"
+      | "agency-banking"
+      | "e-zwich"
       | "power"
       | "jumia";
     provider?: string;
     account_number: string;
     initial_balance?: number;
   }): Promise<FloatAccount> {
-    const {
-      branch_id,
-      account_type,
-      provider,
-      account_number,
-      initial_balance = 0,
-    } = data;
+    try {
+      console.log("💰 [FLOAT] Creating float account:", data);
 
-    // Check if this type of account already exists for this branch
-    if (account_type === "cash_till") {
-      const existingCashTill = await sql`
-        SELECT id FROM float_accounts 
-        WHERE branch_id = ${branch_id} 
-        AND account_type = 'cash_till' 
-        AND is_active = true
-      `;
+      // Normalize account type for database (convert hyphens to underscores)
+      const normalizedAccountType = data.account_type.replace(/-/g, "_");
 
-      if (existingCashTill.rows.length > 0) {
-        throw new Error(
-          `Cash in Till account already exists for branch ${branch_id}`
+      // Check if isezwichpartner column exists
+      let hasIsezwichpartner = false;
+      try {
+        const columnCheck = await sql`
+          SELECT EXISTS (
+            SELECT 1 
+            FROM information_schema.columns 
+            WHERE table_name = 'float_accounts' 
+            AND column_name = 'isezwichpartner'
+          ) as exists
+        `;
+
+        hasIsezwichpartner = columnCheck[0]?.exists || false;
+      } catch (error) {
+        console.warn(
+          "Could not check isezwichpartner column, assuming it doesn't exist:",
+          error
         );
+        hasIsezwichpartner = false;
       }
-    } else if (account_type === "power" && provider) {
-      const existingPowerAccount = await sql`
-        SELECT id FROM float_accounts 
-        WHERE branch_id = ${branch_id} 
-        AND account_type = 'power' 
-        AND provider = ${provider}
-        AND is_active = true
-      `;
 
-      if (existingPowerAccount.rows.length > 0) {
-        throw new Error(
-          `Power float account for ${provider} already exists for branch ${branch_id}`
-        );
+      // Create the float account with conditional columns
+      let result;
+      if (hasIsezwichpartner) {
+        result = await sql`
+          INSERT INTO float_accounts (
+            id,
+            branch_id,
+            account_type,
+            provider,
+            account_number,
+            current_balance,
+            min_threshold,
+            max_threshold,
+            is_active,
+            created_by,
+            created_at,
+            updated_at,
+            isezwichpartner
+          ) VALUES (
+            gen_random_uuid(),
+            ${data.branch_id},
+            ${
+              data.account_type
+            }, -- Keep original hyphenated format for database
+            ${data.provider || null},
+            ${data.account_number},
+            ${data.initial_balance || 0},
+            0,
+            1000000,
+            true,
+            'system',
+            NOW(),
+            NOW(),
+            false
+          ) RETURNING *
+        `;
+      } else {
+        result = await sql`
+          INSERT INTO float_accounts (
+            id,
+            branch_id,
+            account_type,
+            provider,
+            account_number,
+            current_balance,
+            min_threshold,
+            max_threshold,
+            is_active,
+            created_by,
+            created_at,
+            updated_at
+          ) VALUES (
+            gen_random_uuid(),
+            ${data.branch_id},
+            ${
+              data.account_type
+            }, -- Keep original hyphenated format for database
+            ${data.provider || null},
+            ${data.account_number},
+            ${data.initial_balance || 0},
+            0,
+            1000000,
+            true,
+            'system',
+            NOW(),
+            NOW()
+          ) RETURNING *
+        `;
       }
+
+      const floatAccount = result[0];
+
+      console.log("✅ [FLOAT] Float account created:", floatAccount.id);
+
+      // Create GL accounts and mappings using the AutoGLMappingService
+      try {
+        const module = this.getModuleFromAccountType(floatAccount.account_type);
+        const transactionType = `${floatAccount.account_type.replace(
+          /-/g,
+          "_"
+        )}_float`;
+        const requiredMappings = this.getRequiredMappingsForAccountType(
+          floatAccount.account_type
+        );
+
+        await AutoGLMappingService.ensureGLMappings(
+          module,
+          transactionType,
+          floatAccount.branch_id,
+          requiredMappings
+        );
+        console.log("✅ [FLOAT] GL accounts and mappings created successfully");
+      } catch (glError) {
+        console.error(
+          "❌ [FLOAT] Failed to create GL accounts/mappings:",
+          glError
+        );
+        // Don't fail the entire operation for GL mapping issues
+      }
+
+      // Update branch staff count
+      try {
+        await BranchStaffService.updateBranchStaffCount(data.branch_id);
+      } catch (error) {
+        console.warn("⚠️ [FLOAT] Failed to update branch staff count:", error);
+      }
+
+      return {
+        id: floatAccount.id,
+        branch_id: floatAccount.branch_id,
+        account_type: floatAccount.account_type,
+        provider: floatAccount.provider,
+        account_number: floatAccount.account_number,
+        current_balance: Number(floatAccount.current_balance),
+        min_threshold: Number(floatAccount.min_threshold),
+        max_threshold: Number(floatAccount.max_threshold),
+        is_active: floatAccount.is_active,
+        created_by: floatAccount.created_by,
+        created_at: floatAccount.created_at,
+        updated_at: floatAccount.updated_at,
+        last_updated: floatAccount.updated_at, // Use updated_at as last_updated
+        isezwichpartner: hasIsezwichpartner
+          ? floatAccount.isezwichpartner
+          : false, // Use actual value if column exists, otherwise default
+        name: `${data.account_type
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase())} Account`, // Generate name
+      };
+    } catch (error) {
+      console.error("❌ [FLOAT] Error creating float account:", error);
+      throw new Error("Failed to create float account");
     }
-
-    // Create the float account
-    const floatAccount = await sql`
-      INSERT INTO float_accounts (
-        id,
-        branch_id,
-        account_type,
-        provider,
-        account_number,
-        current_balance,
-        min_threshold,
-        max_threshold,
-        is_active,
-        created_by,
-        created_at,
-        updated_at,
-        last_updated,
-        isezwichpartner
-      ) VALUES (
-        gen_random_uuid(),
-        ${branch_id},
-        ${account_type},
-        ${provider || null},
-        ${account_number},
-        ${initial_balance},
-        ${0},
-        ${0},
-        true,
-        ${"system"},
-        NOW(),
-        NOW(),
-        NOW(),
-        false
-      ) RETURNING *
-    `;
-
-    const newFloatAccount = floatAccount.rows[0];
-
-    // Automatically create GL account for this float account
-    const glAccount = await this.createGLAccountForFloatAccount(
-      newFloatAccount
-    );
-
-    // Automatically create GL mappings for this float account
-    await this.createGLMappingsForFloatAccount(newFloatAccount, glAccount.id);
-
-    // After creating the float account, add:
-    await this.createAllGLAccountsAndMappingsForFloatAccount(newFloatAccount);
-
-    console.log(`✅ Created float account: ${account_number} with GL mappings`);
-
-    return {
-      ...newFloatAccount,
-      current_balance: Number(newFloatAccount.current_balance),
-    };
   }
 
   /**
-   * Create a GL account for a float account
+   * Create reversal GL mappings for a float account using AutoGLMappingService
+   */
+  private static async createReversalGLMappingsForFloatAccount(
+    floatAccount: any,
+    existingMappings: Record<string, string>
+  ): Promise<void> {
+    const module = this.getModuleFromAccountType(floatAccount.account_type);
+    const transactionType = `${floatAccount.account_type.replace(
+      /-/g,
+      "_"
+    )}_float`;
+
+    try {
+      await AutoGLMappingService.ensureReversalMappings(
+        module,
+        transactionType,
+        floatAccount.branch_id,
+        existingMappings
+      );
+
+      console.log(
+        `✅ [FLOAT] Created reversal mappings for ${floatAccount.account_type}`
+      );
+    } catch (error) {
+      console.warn(
+        `⚠️ [FLOAT] Failed to create reversal mappings for ${floatAccount.account_type}:`,
+        error
+      );
+      // Don't throw error for reversal mappings - they're not critical
+    }
+  }
+
+  /**
+   * Get reversal transaction types for a given account type
+   */
+  private static getReversalTransactionTypes(accountType: string): string[] {
+    switch (accountType) {
+      case "momo":
+        return [
+          "reversal_cash-in",
+          "reversal_cash-out",
+          "reversal_deposit",
+          "reversal_withdrawal",
+        ];
+      case "agency_banking":
+        return ["reversal_deposit", "reversal_withdrawal"];
+      case "e_zwich":
+        return ["reversal_card_issuance", "reversal_withdrawal"];
+      case "power":
+        return ["reversal_purchase", "reversal_payment"];
+      case "jumia":
+        return ["reversal_purchase", "reversal_payment"];
+      case "cash_till":
+        return ["reversal_cash-in", "reversal_cash-out"];
+      default:
+        return ["reversal_deposit", "reversal_withdrawal"];
+    }
+  }
+
+  private static generateGLAccountName(
+    floatAccount: any,
+    type: string,
+    mapping: string
+  ): string {
+    // Handle undefined account_type
+    if (!floatAccount.account_type) {
+      return `Unknown Float Account${
+        floatAccount.provider ? ` - ${floatAccount.provider}` : ""
+      }`;
+    }
+
+    const provider = floatAccount.provider ? ` - ${floatAccount.provider}` : "";
+    const accountType = this.prettyType(floatAccount.account_type);
+
+    switch (mapping) {
+      case "main":
+        return `${accountType} Float Account${provider}`;
+      case "revenue":
+        return `${accountType} Fee Revenue${provider}`; // For fee income from transactions
+      case "expense":
+        return `${accountType} Fee Expense${provider}`; // For fee expenses (net effect with revenue)
+      case "commission":
+        return `${accountType} Commission Revenue${provider}`; // For commission income
+      case "fee":
+        return `${accountType} Transaction Fees${provider}`; // For transaction fee tracking
+      default:
+        return `${accountType} GL Account${provider}`;
+    }
+  }
+
+  private static prettyType(type: string): string {
+    switch (type) {
+      case "cash-in-till":
+      case "cash_till":
+        return "Cash in Till";
+      case "momo":
+        return "MoMo";
+      case "agency-banking":
+      case "agency_banking":
+        return "Agency Banking";
+      case "e-zwich":
+      case "e_zwich":
+        return "E-Zwich";
+      case "power":
+        return "Power";
+      case "jumia":
+        return "Jumia";
+      default:
+        return type.charAt(0).toUpperCase() + type.slice(1);
+    }
+  }
+
+  /**
+   * Create GL account for float account
    */
   private static async createGLAccountForFloatAccount(
-    floatAccount: any
+    floatAccount: any,
+    glAccountCode: string,
+    glAccountName: string
   ): Promise<any> {
-    const glAccountCode = this.generateGLAccountCode(floatAccount);
-    const accountType = this.prettyType(floatAccount.account_type);
-    const provider = floatAccount.provider ? ` - ${floatAccount.provider}` : "";
-    const glAccountName = `${accountType} Float Account${provider}`;
-
     const glAccount = await sql`
       INSERT INTO gl_accounts (
         id,
@@ -168,7 +349,7 @@ export class FloatAccountService {
       ) RETURNING *
     `;
 
-    return glAccount.rows[0];
+    return glAccount[0];
   }
 
   /**
@@ -242,9 +423,52 @@ export class FloatAccountService {
   }
 
   /**
-   * Get required GL mappings for an account type
+   * Get module name from account type
+   */
+  private static getModuleFromAccountType(accountType: string): string {
+    switch (accountType) {
+      case "momo":
+        return "momo";
+      case "agency-banking":
+        return "agency_banking";
+      case "e-zwich":
+        return "e_zwich";
+      case "power":
+        return "power";
+      case "jumia":
+        return "jumia";
+      case "cash-in-till":
+        return "cash_till";
+      default:
+        return accountType.replace(/-/g, "_");
+    }
+  }
+
+  /**
+   * Get required mapping types for an account type
    */
   private static getRequiredMappingsForAccountType(
+    accountType: string
+  ): string[] {
+    switch (accountType) {
+      case "momo":
+      case "agency-banking":
+      case "e-zwich":
+        return ["main", "liability", "fee", "revenue", "expense"];
+      case "power":
+      case "jumia":
+        return ["main", "revenue", "fee", "expense"];
+      case "cash-in-till":
+        return ["main"];
+      default:
+        return ["main"];
+    }
+  }
+
+  /**
+   * Get required GL mappings for an account type (legacy method)
+   */
+  private static getRequiredMappingsForAccountTypeLegacy(
     accountType: string,
     glAccountId: string,
     floatAccountId: string
@@ -389,11 +613,29 @@ export class FloatAccountService {
       SELECT * FROM float_accounts WHERE id = ${id} AND is_active = true
     `;
 
-    if (result.rows.length === 0) return null;
+    if (result.length === 0) return null;
 
+    const row = result[0];
     return {
-      ...result.rows[0],
-      current_balance: Number(result.rows[0].current_balance),
+      id: row.id,
+      branch_id: row.branch_id,
+      account_type: row.account_type,
+      provider: row.provider,
+      account_number: row.account_number,
+      current_balance: Number(row.current_balance),
+      min_threshold: Number(row.min_threshold),
+      max_threshold: Number(row.max_threshold),
+      is_active: row.is_active,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      last_updated: row.updated_at, // Use updated_at as last_updated
+      isezwichpartner: row.isezwichpartner || false, // Handle case where column doesn't exist
+      name:
+        row.name ||
+        `${row.account_type
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase())} Account`, // Generate name if not exists
     };
   }
 
@@ -409,9 +651,26 @@ export class FloatAccountService {
       ORDER BY account_type, provider, created_at
     `;
 
-    return result.rows.map((row) => ({
-      ...row,
+    return result.map((row) => ({
+      id: row.id,
+      branch_id: row.branch_id,
+      account_type: row.account_type,
+      provider: row.provider,
+      account_number: row.account_number,
       current_balance: Number(row.current_balance),
+      min_threshold: Number(row.min_threshold),
+      max_threshold: Number(row.max_threshold),
+      is_active: row.is_active,
+      created_by: row.created_by,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      last_updated: row.updated_at, // Use updated_at as last_updated
+      isezwichpartner: row.isezwichpartner || false, // Handle case where column doesn't exist
+      name:
+        row.name ||
+        `${row.account_type
+          .replace(/-/g, " ")
+          .replace(/\b\w/g, (l) => l.toUpperCase())} Account`, // Generate name if not exists
     }));
   }
 
@@ -430,230 +689,198 @@ export class FloatAccountService {
   }
 
   /**
-   * Deactivate float account
+   * Deactivate float account and clean up associated GL accounts and mappings
    */
   static async deactivateFloatAccount(id: string): Promise<void> {
-    await sql`
-      UPDATE float_accounts 
-      SET is_active = false, updated_at = NOW()
-      WHERE id = ${id}
-    `;
-  }
+    try {
+      console.log(
+        "🗑️ [FLOAT] Deactivating float account and cleaning up GL resources:",
+        id
+      );
 
-  private static async createAllGLAccountsAndMappingsForFloatAccount(
-    floatAccount: any
-  ): Promise<void> {
-    // Define the GL account types and mapping types needed for each float account type
-    const glTypes = [
-      { type: "Asset", suffix: "", mapping: "main" },
-      { type: "Revenue", suffix: "-REV", mapping: "revenue" },
-      { type: "Expense", suffix: "-EXP", mapping: "expense" },
-      { type: "Revenue", suffix: "-COM", mapping: "commission" }, // Fixed: Commission should be Revenue
-      { type: "Revenue", suffix: "-FEE", mapping: "fee" },
-    ];
-    const branchCode = floatAccount.branch_id.substring(0, 6);
-    const provider = floatAccount.provider
-      ? `-${floatAccount.provider.toUpperCase().replace(/\s/g, "")}`
-      : "";
-    const baseCode = (() => {
-      switch (floatAccount.account_type) {
-        case "cash_till":
-          return `CASH-${branchCode}`;
-        case "momo":
-          return `MOMO-${branchCode}${provider}`;
-        case "agency_banking":
-          return `AGB-${branchCode}${provider}`;
-        case "e_zwich":
-          return `EZWICH-${branchCode}`;
-        case "power":
-          return `PWR-${branchCode}${provider}`;
-        case "jumia":
-          return `JUMIA-${branchCode}`;
-        default:
-          return `FLOAT-${branchCode}-${
-            floatAccount.account_type?.toUpperCase() || "UNKNOWN"
-          }`;
-      }
-    })();
-
-    // For each GL type, create if not exists
-    const glAccounts: Record<string, any> = {};
-    for (const { type, suffix, mapping } of glTypes) {
-      const code = baseCode + suffix;
-
-      // Check if GL account exists
-      const existing =
-        await sql`SELECT * FROM gl_accounts WHERE code = ${code} AND branch_id = ${floatAccount.branch_id}`;
-      let glAccount;
-      if (existing.rows.length > 0) {
-        glAccount = existing.rows[0];
-      } else {
-        const name = this.generateGLAccountName(floatAccount, type, mapping);
-
-        const result = await sql`
-          INSERT INTO gl_accounts (id, code, name, type, branch_id, is_active, created_at, updated_at)
-          VALUES (gen_random_uuid(), ${code}, ${name}, ${type}, ${floatAccount.branch_id}, true, NOW(), NOW())
-          RETURNING *
-        `;
-        glAccount = result.rows[0];
-      }
-      glAccounts[mapping] = glAccount;
-    }
-
-    // Create mappings for normal transaction types
-    for (const mapping of Object.keys(glAccounts)) {
-      // Check if mapping exists
-      const exists = await sql`
-        SELECT * FROM gl_mappings WHERE float_account_id = ${floatAccount.id} AND mapping_type = ${mapping} AND is_active = true
+      // Get the float account details before deactivation
+      const floatAccount = await sql`
+        SELECT * FROM float_accounts WHERE id = ${id}
       `;
-      if (exists.rows.length === 0) {
-        await sql`
-          INSERT INTO gl_mappings (
-            id, branch_id, transaction_type, gl_account_id, float_account_id, mapping_type, is_active, created_at, updated_at
-          ) VALUES (
-            gen_random_uuid(),
-            ${floatAccount.branch_id},
-            ${floatAccount.account_type + "_float"},
-            ${glAccounts[mapping].id},
-            ${floatAccount.id},
-            ${mapping},
-            true,
-            NOW(),
-            NOW()
-          )
-        `;
+
+      if (floatAccount.length === 0) {
+        throw new Error("Float account not found");
       }
-    }
 
-    // Create reversal mappings for transaction reversals
-    await this.createReversalGLMappings(floatAccount, glAccounts);
-  }
+      const account = floatAccount[0];
+      const transactionType = `${account.account_type.replace(
+        /-/g,
+        "_"
+      )}_float`;
 
-  /**
-   * Create reversal GL mappings for a float account
-   */
-  private static async createReversalGLMappings(
-    floatAccount: any,
-    glAccounts: Record<string, any>
-  ): Promise<void> {
-    // Define reversal transaction types based on account type
-    const reversalTransactionTypes = this.getReversalTransactionTypes(
-      floatAccount.account_type
-    );
+      console.log(
+        `🗑️ [FLOAT] Cleaning up GL resources for ${account.account_type} (${transactionType})`
+      );
 
-    console.log(
-      `🔄 [FLOAT] Creating reversal GL mappings for ${floatAccount.account_type} account`
-    );
+      // 1. Deactivate the float account
+      await sql`
+        UPDATE float_accounts 
+        SET is_active = false, updated_at = NOW()
+        WHERE id = ${id}
+      `;
 
-    for (const reversalType of reversalTransactionTypes) {
-      for (const mapping of Object.keys(glAccounts)) {
-        // Check if reversal mapping already exists
-        const exists = await sql`
-          SELECT * FROM gl_mappings 
-          WHERE float_account_id = ${floatAccount.id} 
-          AND transaction_type = ${reversalType} 
-          AND mapping_type = ${mapping} 
-          AND is_active = true
+      // 2. Deactivate GL mappings associated with this float account type
+      await sql`
+        UPDATE gl_mappings 
+        SET is_active = false, updated_at = NOW()
+        WHERE transaction_type = ${transactionType}
+          AND branch_id = ${account.branch_id}
+      `;
+
+      console.log(
+        `🗑️ [FLOAT] Deactivated GL mappings for transaction type: ${transactionType}`
+      );
+
+      // 3. Get the GL account IDs that were used by this float account type
+      const glAccounts = await sql`
+        SELECT DISTINCT gl_account_id 
+        FROM gl_mappings 
+        WHERE transaction_type = ${transactionType}
+          AND branch_id = ${account.branch_id}
+          AND is_active = false
+      `;
+
+      // 4. Check if these GL accounts are used by other active mappings
+      for (const glAccount of glAccounts) {
+        const otherMappings = await sql`
+          SELECT COUNT(*) as count
+          FROM gl_mappings 
+          WHERE gl_account_id = ${glAccount.gl_account_id}
+            AND is_active = true
         `;
 
-        if (exists.rows.length === 0) {
+        // If no other active mappings use this GL account, deactivate it
+        if (otherMappings[0].count === 0) {
           await sql`
-            INSERT INTO gl_mappings (
-              id, branch_id, transaction_type, gl_account_id, float_account_id, mapping_type, is_active, created_at, updated_at
-            ) VALUES (
-              gen_random_uuid(),
-              ${floatAccount.branch_id},
-              ${reversalType},
-              ${glAccounts[mapping].id},
-              ${floatAccount.id},
-              ${mapping},
-              true,
-              NOW(),
-              NOW()
-            )
+            UPDATE gl_accounts 
+            SET is_active = false, updated_at = NOW()
+            WHERE id = ${glAccount.gl_account_id}
           `;
           console.log(
-            `✅ [FLOAT] Created reversal mapping: ${reversalType} -> ${mapping}`
+            `🗑️ [FLOAT] Deactivated GL account: ${glAccount.gl_account_id}`
+          );
+        } else {
+          console.log(
+            `ℹ️ [FLOAT] GL account ${glAccount.gl_account_id} still in use by other mappings, keeping active`
           );
         }
       }
+
+      console.log(
+        `✅ [FLOAT] Successfully deactivated float account and cleaned up GL resources: ${id}`
+      );
+    } catch (error) {
+      console.error("❌ [FLOAT] Error deactivating float account:", error);
+      throw new Error(
+        `Failed to deactivate float account: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 
   /**
-   * Get reversal transaction types for a given account type
+   * Permanently delete float account and all associated GL resources
+   * WARNING: This will permanently delete GL accounts and mappings
    */
-  private static getReversalTransactionTypes(accountType: string): string[] {
-    switch (accountType) {
-      case "momo":
-        return [
-          "reversal_cash-in",
-          "reversal_cash-out",
-          "reversal_deposit",
-          "reversal_withdrawal",
-        ];
-      case "agency_banking":
-        return ["reversal_deposit", "reversal_withdrawal"];
-      case "e_zwich":
-        return ["reversal_card_issuance", "reversal_withdrawal"];
-      case "power":
-        return ["reversal_purchase", "reversal_payment"];
-      case "jumia":
-        return ["reversal_purchase", "reversal_payment"];
-      case "cash_till":
-        return ["reversal_cash-in", "reversal_cash-out"];
-      default:
-        return ["reversal_deposit", "reversal_withdrawal"];
-    }
-  }
+  static async deleteFloatAccount(id: string): Promise<void> {
+    try {
+      console.log(
+        "🗑️ [FLOAT] Permanently deleting float account and GL resources:",
+        id
+      );
 
-  private static generateGLAccountName(
-    floatAccount: any,
-    type: string,
-    mapping: string
-  ): string {
-    // Handle undefined account_type
-    if (!floatAccount.account_type) {
-      return `Unknown Float Account${
-        floatAccount.provider ? ` - ${floatAccount.provider}` : ""
-      }`;
-    }
+      // Get the float account details before deletion
+      const floatAccount = await sql`
+        SELECT * FROM float_accounts WHERE id = ${id}
+      `;
 
-    const provider = floatAccount.provider ? ` - ${floatAccount.provider}` : "";
-    const accountType = this.prettyType(floatAccount.account_type);
+      if (floatAccount.length === 0) {
+        throw new Error("Float account not found");
+      }
 
-    switch (mapping) {
-      case "main":
-        return `${accountType} Float Account${provider}`;
-      case "revenue":
-        return `${accountType} Fee Revenue${provider}`; // For fee income from transactions
-      case "expense":
-        return `${accountType} Fee Expense${provider}`; // For fee expenses (net effect with revenue)
-      case "commission":
-        return `${accountType} Commission Revenue${provider}`; // For commission income
-      case "fee":
-        return `${accountType} Transaction Fees${provider}`; // For transaction fee tracking
-      default:
-        return `${accountType} GL Account${provider}`;
-    }
-  }
+      const account = floatAccount[0];
+      const transactionType = `${account.account_type.replace(
+        /-/g,
+        "_"
+      )}_float`;
 
-  private static prettyType(type: string): string {
-    switch (type) {
-      case "cash_till":
-        return "Cash in Till";
-      case "momo":
-        return "MoMo";
-      case "agency_banking":
-        return "Agency Banking";
-      case "e_zwich":
-        return "E-Zwich";
-      case "power":
-        return "Power";
-      case "jumia":
-        return "Jumia";
-      default:
-        return type.charAt(0).toUpperCase() + type.slice(1);
+      console.log(
+        `🗑️ [FLOAT] Deleting GL resources for ${account.account_type} (${transactionType})`
+      );
+
+      // 1. Get the GL account IDs that were used by this float account type
+      const glAccounts = await sql`
+        SELECT DISTINCT gl_account_id 
+        FROM gl_mappings 
+        WHERE transaction_type = ${transactionType}
+          AND branch_id = ${account.branch_id}
+      `;
+
+      // 2. Check if these GL accounts are used by other mappings
+      const accountsToDelete = [];
+      for (const glAccount of glAccounts) {
+        const otherMappings = await sql`
+          SELECT COUNT(*) as count
+          FROM gl_mappings 
+          WHERE gl_account_id = ${glAccount.gl_account_id}
+            AND transaction_type != ${transactionType}
+        `;
+
+        // Only delete if no other transaction types use this GL account
+        if (otherMappings[0].count === 0) {
+          accountsToDelete.push(glAccount.gl_account_id);
+        } else {
+          console.log(
+            `ℹ️ [FLOAT] GL account ${glAccount.gl_account_id} used by other transaction types, skipping deletion`
+          );
+        }
+      }
+
+      // 3. Delete GL mappings for this float account type
+      await sql`
+        DELETE FROM gl_mappings 
+        WHERE transaction_type = ${transactionType}
+          AND branch_id = ${account.branch_id}
+      `;
+
+      console.log(
+        `🗑️ [FLOAT] Deleted GL mappings for transaction type: ${transactionType}`
+      );
+
+      // 4. Delete GL accounts that are no longer used
+      if (accountsToDelete.length > 0) {
+        await sql`
+          DELETE FROM gl_accounts 
+          WHERE id = ANY(${accountsToDelete})
+        `;
+        console.log(
+          `🗑️ [FLOAT] Deleted ${accountsToDelete.length} GL accounts:`,
+          accountsToDelete
+        );
+      }
+
+      // 5. Delete the float account
+      await sql`
+        DELETE FROM float_accounts 
+        WHERE id = ${id}
+      `;
+
+      console.log(
+        `✅ [FLOAT] Successfully deleted float account and GL resources: ${id}`
+      );
+    } catch (error) {
+      console.error("❌ [FLOAT] Error deleting float account:", error);
+      throw new Error(
+        `Failed to delete float account: ${
+          error instanceof Error ? error.message : String(error)
+        }`
+      );
     }
   }
 }

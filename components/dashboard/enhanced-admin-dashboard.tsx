@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -117,6 +118,7 @@ export function EnhancedAdminDashboard({
   userStats,
 }: EnhancedAdminDashboardProps) {
   const { toast } = useToast();
+  const router = useRouter();
   const { user } = useCurrentUser();
   const [loading, setLoading] = useState(false);
 
@@ -421,19 +423,35 @@ export function EnhancedAdminDashboard({
                 <CardDescription>Common administrative tasks</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push("/dashboard/user-management")}
+                >
                   <Users className="mr-2 h-4 w-4" />
                   Manage Users
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push("/dashboard/branch-management")}
+                >
                   <Building2 className="mr-2 h-4 w-4" />
                   Manage Branches
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push("/dashboard/settings")}
+                >
                   <Shield className="mr-2 h-4 w-4" />
                   System Settings
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => router.push("/dashboard/reports")}
+                >
                   <FileText className="mr-2 h-4 w-4" />
                   View Reports
                 </Button>

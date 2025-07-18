@@ -13,6 +13,31 @@ async function getUserFullName(userId: string): Promise<string> {
       return "System User";
     }
 
+    // Check if userId is an email address (contains @)
+    if (userId.includes("@")) {
+      // Try to find user by email
+      const users = await sql`
+        SELECT first_name, last_name, email FROM users WHERE email = ${userId}
+      `;
+
+      if (users && users.length > 0) {
+        const { first_name, last_name, email } = users[0];
+        if (first_name && last_name) {
+          return `${first_name} ${last_name}`;
+        } else if (first_name) {
+          return first_name;
+        } else if (last_name) {
+          return last_name;
+        } else if (email) {
+          return email;
+        }
+      }
+
+      // If email not found, return the email as fallback
+      return userId;
+    }
+
+    // Try to find user by UUID
     const users = await sql`
       SELECT first_name, last_name, email FROM users WHERE id = ${userId}
     `;
@@ -80,13 +105,15 @@ export class UnifiedTransactionService {
         return { success: false, error: validation.error };
       }
 
-      // 2. Get fee configuration
-      const feeConfig = await this.getFeeConfiguration(
-        data.serviceType,
-        data.transactionType
-      );
-      if (feeConfig) {
-        data.fee = this.calculateFee(data.amount, feeConfig);
+      // 2. Get fee configuration only if fee is not provided or is 0
+      if (!data.fee || data.fee === 0) {
+        const feeConfig = await this.getFeeConfiguration(
+          data.serviceType,
+          data.transactionType
+        );
+        if (feeConfig) {
+          data.fee = this.calculateFee(data.amount, feeConfig);
+        }
       }
 
       // 3. Process based on service type
@@ -184,9 +211,9 @@ export class UnifiedTransactionService {
         // Cash-Out/Withdrawal: Customer withdraws cash, we receive amount + fee to MoMo float
         // Customer gives us: amount + fee from their MoMo account
         // Customer receives: amount only in cash
-        // We keep: fee as revenue
+        // We keep: fee as revenue in cash till
         momoFloatChange = data.amount + data.fee; // We receive amount + fee to our MoMo float
-        cashTillChange = -data.amount; // We only pay the amount in cash (not the fee)
+        cashTillChange = -data.amount + data.fee; // We pay the amount in cash but keep the fee in cash till
 
         // Validate cash in till balance (only need the amount, not the fee)
         if (cashTill.current_balance < data.amount) {
@@ -345,33 +372,43 @@ export class UnifiedTransactionService {
       let cashTillChange = 0;
 
       if (data.transactionType === "deposit") {
-        // Deposit: Agency float decreases, cash in till increases
-        agencyFloatChange = -(data.amount + data.fee);
-        cashTillChange = data.amount + data.fee;
+        // Deposit: Customer gives us cash + fee, we send amount to customer's bank account
+        // Cash in till increases by amount + fee (we receive cash + fee)
+        // Bank float decreases by amount only (we send only the amount to customer's account)
+        agencyFloatChange = -data.amount; // Only the amount, not the fee
+        cashTillChange = data.amount + data.fee; // Amount + fee goes to cash till
 
-        // Validate agency float balance
-        if (agencyFloat.current_balance < data.amount + data.fee) {
+        // Validate agency float balance (only need the amount, not the fee)
+        if (agencyFloat.current_balance < data.amount) {
           return {
             success: false,
             error: "Insufficient agency banking float balance",
           };
         }
       } else if (data.transactionType === "withdrawal") {
-        // Withdrawal: Agency float increases, cash in till decreases
-        agencyFloatChange = data.amount + data.fee;
-        cashTillChange = -(data.amount + data.fee);
+        // Withdrawal: Customer gives us amount from bank account, we give cash to customer
+        // Cash in till decreases by amount only (we pay only the amount in cash)
+        // Bank float increases by amount only (we receive only the amount from customer's account)
+        // Fee is added to cash in till (we keep the fee as revenue)
+        agencyFloatChange = data.amount; // Only the amount, not the fee
+        cashTillChange = -data.amount + data.fee; // We pay amount in cash but keep fee
 
-        // Validate cash in till balance
-        if (cashTill.current_balance < data.amount + data.fee) {
+        // Validate cash in till balance (only need the amount, not the fee)
+        if (cashTill.current_balance < data.amount) {
           return { success: false, error: "Insufficient cash in till balance" };
         }
-      } else if (data.transactionType === "interbank_transfer") {
-        // Interbank Transfer: Agency float decreases, cash in till increases + transfer fee
-        agencyFloatChange = -(data.amount + data.fee);
-        cashTillChange = data.amount + data.fee;
+      } else if (
+        data.transactionType === "interbank_transfer" ||
+        data.transactionType === "interbank"
+      ) {
+        // Interbank Transfer: Customer gives us cash + fee, we send amount to customer's other bank
+        // Cash in till increases by amount + fee (we receive cash + fee)
+        // Bank float decreases by amount only (we send only the amount to customer's other bank)
+        agencyFloatChange = -data.amount; // Only the amount, not the fee
+        cashTillChange = data.amount + data.fee; // Amount + fee goes to cash till
 
-        // Validate agency float balance
-        if (agencyFloat.current_balance < data.amount + data.fee) {
+        // Validate agency float balance (only need the amount, not the fee)
+        if (agencyFloat.current_balance < data.amount) {
           return {
             success: false,
             error: "Insufficient agency banking float balance",
@@ -1056,6 +1093,17 @@ export class UnifiedTransactionService {
       return { valid: false, error: "Customer name is required" };
     }
 
+    // Validate phone number for MoMo transactions
+    if (data.serviceType === "momo" && data.phoneNumber) {
+      const phoneRegex = /^\d{10}$/;
+      if (!phoneRegex.test(data.phoneNumber)) {
+        return {
+          valid: false,
+          error: "Phone number must be exactly 10 digits (e.g., 0241234567)",
+        };
+      }
+    }
+
     if (!data.branchId) {
       return { valid: false, error: "Branch ID is required" };
     }
@@ -1146,7 +1194,7 @@ export class UnifiedTransactionService {
       if (!reversalType && sourceModule === "e_zwich") {
         reversalType = "withdrawal";
       }
-      await MissingGLMethods.createReversalGLEntries({
+      await UnifiedGLPostingService.createReversalGLEntries({
         transactionId: reversalTransaction.id,
         sourceModule: sourceModule,
         transactionType: `reversal_${reversalType}`,
@@ -1399,10 +1447,10 @@ export class UnifiedTransactionService {
       }
 
       // Create deletion GL entries (same as reversal)
-      await MissingGLMethods.createReversalGLEntries({
+      await UnifiedGLPostingService.createReversalGLEntries({
         transactionId: transactionId,
         sourceModule: sourceModule,
-        transactionType: `deletion_${transactionType}`,
+        transactionType: transactionType,
         amount: transaction.amount,
         fee: transaction.fee || 0,
         customerName: transaction.customer_name,
@@ -1410,6 +1458,7 @@ export class UnifiedTransactionService {
         processedBy: userId,
         branchId: branchId,
         branchName: "Branch",
+        reason: reason,
         metadata: {
           originalTransactionId: transactionId,
           reason: reason,

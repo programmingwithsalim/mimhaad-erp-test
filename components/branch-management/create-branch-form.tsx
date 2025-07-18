@@ -34,7 +34,7 @@ const formSchema = z.object({
   code: z.string().min(2, "Code must be at least 2 characters"),
   location: z.string().min(2, "Location must be at least 2 characters"),
   region: z.string().min(2, "Region must be at least 2 characters"),
-  manager: z.string().min(2, "Manager name must be at least 2 characters"),
+  manager: z.string().optional(),
   contact_phone: z.string().optional(),
   email: z.string().email("Invalid email address").optional().or(z.literal("")),
   status: z.enum(["active", "inactive"]),
@@ -152,7 +152,7 @@ export function CreateBranchForm({
             name="manager"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Branch Manager*</FormLabel>
+                <FormLabel>Branch Manager</FormLabel>
                 <Select
                   onValueChange={field.onChange}
                   value={field.value}

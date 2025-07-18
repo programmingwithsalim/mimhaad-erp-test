@@ -292,7 +292,7 @@ export async function createJumiaTransaction(
           const glResult = await UnifiedGLPostingService.createGLEntries({
             transactionId: createdTransaction.transaction_id,
             sourceModule: "jumia",
-            transactionType: "jumia_float",
+            transactionType: createdTransaction.transaction_type,
             amount: Number(createdTransaction.amount),
             fee: 0,
             customerName: createdTransaction.customer_name,
@@ -302,7 +302,14 @@ export async function createJumiaTransaction(
               createdTransaction.transaction_id,
             processedBy: createdTransaction.user_id,
             branchId: createdTransaction.branch_id,
-            metadata: { delivery_status: createdTransaction.delivery_status },
+            metadata: {
+              delivery_status: createdTransaction.delivery_status,
+              // Add payment account info for settlements
+              ...(createdTransaction.transaction_type === "settlement" && {
+                paymentAccountCode: (transaction as any).paymentAccountCode,
+                paymentAccountName: (transaction as any).paymentAccountName,
+              }),
+            },
           });
           if (!glResult.success) {
             throw new Error(glResult.error || "Unified GL posting failed");
@@ -398,26 +405,48 @@ async function handleFloatAccountUpdates(
       await updateFloatAccountBalance(
         jumiaFloatId,
         amount,
-        "jumia_pod_collection",
+        transaction.transaction_type,
         `Jumia POD collection - ${transaction.transaction_id}`
       );
     } else if (
       transaction.transaction_type === "settlement" &&
       transaction.amount > 0
     ) {
-      // Settlement: Debit the Jumia float account only
-      let amount = 0;
+      // Settlement: Debit the Jumia float account AND the chosen payment float account
+      let jumiaAmount = 0;
       if (operation === "create") {
-        amount = -transaction.amount;
+        jumiaAmount = -transaction.amount; // Debit Jumia float (reduce liability)
       } else if (operation === "delete" || operation === "reverse") {
-        amount = transaction.amount; // Credit the float account after reversal or deletion
+        jumiaAmount = transaction.amount; // Credit Jumia float (increase liability)
       }
+
+      // Update Jumia float account
       await updateFloatAccountBalance(
         jumiaFloatId,
-        amount,
-        "jumia_settlement",
+        jumiaAmount,
+        transaction.transaction_type,
         `Jumia settlement - ${transaction.transaction_id}`
       );
+
+      // Also debit the chosen payment float account if specified
+      if (
+        transaction.float_account_id &&
+        transaction.float_account_id !== jumiaFloatId
+      ) {
+        let paymentAmount = 0;
+        if (operation === "create") {
+          paymentAmount = -transaction.amount; // Debit payment float account
+        } else if (operation === "delete" || operation === "reverse") {
+          paymentAmount = transaction.amount; // Credit payment float account
+        }
+
+        await updateFloatAccountBalance(
+          transaction.float_account_id,
+          paymentAmount,
+          transaction.transaction_type,
+          `Jumia settlement payment - ${transaction.transaction_id}`
+        );
+      }
     }
   } catch (error) {
     console.error("Error handling float account updates:", error);
@@ -476,7 +505,13 @@ export async function getJumiaTransactions(
     `;
 
     if (Array.isArray(result)) {
-      return result as JumiaTransaction[];
+      // Ensure proper sorting by created_at in descending order
+      const sortedTransactions = result.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+      return sortedTransactions as JumiaTransaction[];
     }
 
     return [];
@@ -506,7 +541,13 @@ export async function getAllJumiaTransactions(
     `;
 
     if (Array.isArray(result)) {
-      return result as JumiaTransaction[];
+      // Ensure proper sorting by created_at in descending order
+      const sortedTransactions = result.sort((a, b) => {
+        const dateA = new Date(a.created_at).getTime();
+        const dateB = new Date(b.created_at).getTime();
+        return dateB - dateA;
+      });
+      return sortedTransactions as JumiaTransaction[];
     }
 
     return [];

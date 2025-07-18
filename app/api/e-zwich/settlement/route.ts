@@ -18,6 +18,26 @@ export async function GET(request: NextRequest) {
     }
 
     // Get E-Zwich settlement accounts (partner accounts)
+    // Check if isezwichpartner column exists
+    let hasIsezwichpartner = false;
+    try {
+      const columnCheck = await sql`
+        SELECT EXISTS (
+          SELECT 1 
+          FROM information_schema.columns 
+          WHERE table_name = 'float_accounts' 
+          AND column_name = 'isezwichpartner'
+        ) as exists
+      `;
+      hasIsezwichpartner = columnCheck[0]?.exists || false;
+    } catch (error) {
+      console.warn(
+        "Could not check isezwichpartner column, using account_type filter:",
+        error
+      );
+      hasIsezwichpartner = false;
+    }
+
     const settlementAccounts = await sql`
       SELECT 
         id,
@@ -31,7 +51,11 @@ export async function GET(request: NextRequest) {
       FROM float_accounts 
       WHERE branch_id = ${branchId}
         AND is_active = true
-        AND (isezwichpartner = true OR account_type = 'e-zwich')
+        AND ${
+          hasIsezwichpartner
+            ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
+            : sql`account_type = 'e-zwich'`
+        }
       ORDER BY account_name ASC
     `;
 
@@ -43,7 +67,11 @@ export async function GET(request: NextRequest) {
       FROM float_accounts 
       WHERE branch_id = ${branchId}
         AND is_active = true
-        AND (isezwichpartner = true OR account_type = 'e-zwich')
+        AND ${
+          hasIsezwichpartner
+            ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
+            : sql`account_type = 'e-zwich'`
+        }
     `;
 
     return NextResponse.json({
@@ -98,12 +126,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if isezwichpartner column exists
+    let hasIsezwichpartner = false;
+    try {
+      const columnCheck = await sql`
+        SELECT EXISTS (
+          SELECT 1 
+          FROM information_schema.columns 
+          WHERE table_name = 'float_accounts' 
+          AND column_name = 'isezwichpartner'
+        ) as exists
+      `;
+      hasIsezwichpartner = columnCheck[0]?.exists || false;
+    } catch (error) {
+      console.warn(
+        "Could not check isezwichpartner column, using account_type filter:",
+        error
+      );
+      hasIsezwichpartner = false;
+    }
+
     // Validate settlement account exists and is E-Zwich partner
     const settlementAccount = await sql`
       SELECT * FROM float_accounts 
       WHERE id = ${settlement_account_id}
         AND is_active = true
-        AND (isezwichpartner = true OR account_type = 'e-zwich')
+        AND ${
+          hasIsezwichpartner
+            ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
+            : sql`account_type = 'e-zwich'`
+        }
     `;
 
     if (settlementAccount.length === 0) {

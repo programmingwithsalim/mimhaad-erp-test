@@ -494,9 +494,10 @@ export class TransactionManagementService {
         if (type === "cash-out") return amount + fee; // float increases
         break;
       case "agency_banking":
-        if (type === "deposit") return -(amount + fee); // float decreases
-        if (type === "withdrawal") return amount + fee; // float increases
-        if (type === "interbank transfer") return -(amount + fee); // float decreases
+        if (type === "deposit") return -amount; // float decreases by amount only
+        if (type === "withdrawal") return amount; // float increases by amount only
+        if (type === "interbank transfer" || type === "interbank")
+          return -amount; // float decreases by amount only
         break;
       case "e_zwich":
         if (type === "withdrawal") return amount + fee; // float increases
@@ -935,9 +936,10 @@ export class TransactionManagementService {
         if (type === "cash-out") return -(amount + fee); // cash till decreases
         break;
       case "agency_banking":
-        if (type === "deposit") return amount + fee; // cash till increases
-        if (type === "withdrawal") return -(amount + fee); // cash till decreases
-        if (type === "interbank transfer") return amount + fee; // cash till increases
+        if (type === "deposit") return amount + fee; // cash till increases by amount + fee
+        if (type === "withdrawal") return -amount + fee; // cash till decreases by amount, but keeps fee
+        if (type === "interbank transfer" || type === "interbank")
+          return amount + fee; // cash till increases by amount + fee
         break;
       case "e_zwich":
         if (type === "withdrawal") return -(amount + fee); // cash till decreases

@@ -220,6 +220,45 @@ html[data-sidebar-collapsed="false"] {
     );
     color: hsl(var(--sidebar-foreground));
   }
+
+  /* Collapsible navigation animations */
+  .nav-section-content {
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .nav-section-content[data-expanded="true"] {
+    max-height: 500px;
+    opacity: 1;
+  }
+
+  .nav-section-content[data-expanded="false"] {
+    max-height: 0;
+    opacity: 0;
+  }
+
+  /* Chevron rotation animation */
+  .nav-section-chevron {
+    transition: transform 0.2s ease-in-out;
+  }
+
+  .nav-section-chevron[data-expanded="true"] {
+    transform: rotate(180deg);
+  }
+
+  /* Section header hover effects */
+  .nav-section-header {
+    transition: all 0.2s ease-in-out;
+  }
+
+  .nav-section-header:hover {
+    background-color: hsl(var(--accent) / 0.1);
+  }
+
+  .nav-section-header[data-active="true"] {
+    background-color: hsl(var(--primary) / 0.1);
+    color: hsl(var(--primary));
+  }
 }
 
 /* Dark mode enhancements */

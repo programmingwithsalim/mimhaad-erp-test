@@ -36,9 +36,7 @@ const formSchema = z.object({
   region: z.string({
     required_error: "Please select a region.",
   }),
-  manager: z.string().min(1, {
-    message: "Please select a manager.",
-  }),
+  manager: z.string().optional(),
   contact_phone: z
     .string()
     .min(10, {
@@ -181,7 +179,7 @@ export function BranchForm({ branch, onSubmit, onCancel }: BranchFormProps) {
             name="manager"
             render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Branch Manager*</FormLabel>
+                <FormLabel>Branch Manager</FormLabel>
                 <Select onValueChange={field.onChange} value={field.value} disabled={managersLoading}>
                   <FormControl>
                     <SelectTrigger>

@@ -96,7 +96,9 @@ export function GLAccountManagement() {
 
   // Determine branchId to use
   const branchIdToUse =
-    user && user.role === "Admin" ? selectedBranchId : user?.branchId;
+    user && user.role === "Admin"
+      ? selectedBranchId || user?.branchId
+      : user?.branchId || "635844ab-029a-43f8-8523-d7882915266a"; // Fallback to main branch
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -153,54 +155,83 @@ export function GLAccountManagement() {
     }
   }, [toast, branchIdToUse]);
 
-  // Separate useEffect for search
+  // Single useEffect to handle all data fetching
   useEffect(() => {
-    if (searchTerm.trim() !== "") {
-      setPage(1);
-      fetchAllAccounts();
-    }
-  }, [searchTerm, fetchAllAccounts]);
-
-  // Separate useEffect for pagination (only when not searching)
-  useEffect(() => {
-    if (searchTerm.trim() === "") {
-      fetchAccounts();
-    }
-  }, [page, pageSize, searchTerm, fetchAccounts]);
-
-  // Remove backend pagination, fetch all accounts once
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      let url = `/api/gl/accounts/complete?all=true`;
-      if (branchIdToUse) {
-        url += `&branchId=${branchIdToUse}`;
-      }
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.success) {
-        setAccounts(data.accounts || []);
-      } else {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        let url = `/api/gl/accounts/complete?all=true`;
+        if (branchIdToUse) {
+          url += `&branchId=${branchIdToUse}`;
+        }
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.success) {
+          setAccounts(data.accounts || []);
+          setTotalAccounts(data.accounts?.length || 0);
+        } else {
+          setAccounts([]);
+          setTotalAccounts(0);
+        }
+      } catch (error) {
+        console.error("Error fetching GL accounts:", error);
         setAccounts([]);
+        setTotalAccounts(0);
+        toast({
+          title: "Error",
+          description: "Failed to fetch GL accounts",
+          variant: "destructive",
+        });
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
-    fetchAll();
-  }, [branchIdToUse]);
+
+    if (branchIdToUse) {
+      fetchData();
+    }
+  }, [branchIdToUse, toast]);
+
+  // Reset page when search term changes
+  useEffect(() => {
+    setPage(1);
+  }, [searchTerm]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (
-      !formData.account_code ||
-      !formData.account_name ||
-      !formData.account_type ||
-      !branchIdToUse
-    ) {
+    if (!formData.account_code) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Account code is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.account_name) {
+      toast({
+        title: "Validation Error",
+        description: "Account name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.account_type) {
+      toast({
+        title: "Validation Error",
+        description: "Account type is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!branchIdToUse) {
+      toast({
+        title: "Validation Error",
+        description: "Branch selection is required",
         variant: "destructive",
       });
       return;
@@ -245,7 +276,9 @@ export function GLAccountManagement() {
       setIsEditDialogOpen(false);
       setSelectedAccount(null);
       resetForm();
-      fetchAccounts();
+      // Refresh data by triggering useEffect
+      setSearchTerm("");
+      setPage(1);
     } catch (error) {
       console.error("Error saving GL account:", error);
       toast({
@@ -294,7 +327,9 @@ export function GLAccountManagement() {
         description: "GL account deleted successfully",
       });
 
-      fetchAccounts();
+      // Refresh data by triggering useEffect
+      setSearchTerm("");
+      setPage(1);
     } catch (error) {
       console.error("Error deleting GL account:", error);
       toast({
@@ -381,7 +416,14 @@ export function GLAccountManagement() {
             </CardDescription>
           </div>
           <div className="flex gap-2">
-            <Button onClick={fetchAccounts} variant="outline" size="sm">
+            <Button
+              onClick={() => {
+                setSearchTerm("");
+                setPage(1);
+              }}
+              variant="outline"
+              size="sm"
+            >
               <RefreshCw className="h-4 w-4" />
             </Button>
             <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>

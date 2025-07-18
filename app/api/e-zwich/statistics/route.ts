@@ -63,13 +63,37 @@ export async function GET(request: NextRequest) {
       `,
     ]);
 
+    // Check if isezwichpartner column exists
+    let hasIsezwichpartner = false;
+    try {
+      const columnCheck = await sql`
+        SELECT EXISTS (
+          SELECT 1 
+          FROM information_schema.columns 
+          WHERE table_name = 'float_accounts' 
+          AND column_name = 'isezwichpartner'
+        ) as exists
+      `;
+      hasIsezwichpartner = columnCheck[0]?.exists || false;
+    } catch (error) {
+      console.warn(
+        "Could not check isezwichpartner column, using account_type filter:",
+        error
+      );
+      hasIsezwichpartner = false;
+    }
+
     // Get active providers count (E-Zwich partners)
     const providerStats = await sql`
       SELECT COUNT(*) as active_providers
       FROM float_accounts 
       WHERE branch_id = ${branchId}
       AND is_active = true
-      AND (isezwichpartner = true OR account_type = 'e-zwich')
+      AND ${
+        hasIsezwichpartner
+          ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
+          : sql`account_type = 'e-zwich'`
+      }
     `;
 
     // Get float balance from E-Zwich partner accounts
@@ -78,7 +102,11 @@ export async function GET(request: NextRequest) {
       FROM float_accounts 
       WHERE branch_id = ${branchId}
       AND is_active = true
-      AND (isezwichpartner = true OR account_type = 'e-zwich')
+      AND ${
+        hasIsezwichpartner
+          ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
+          : sql`account_type = 'e-zwich'`
+      }
     `;
 
     // Calculate totals

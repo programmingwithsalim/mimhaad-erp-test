@@ -32,6 +32,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useBranches } from "@/hooks/use-branches";
 import { useCurrentUser } from "@/hooks/use-current-user";
+import { useFloatAccountsByBranch } from "@/hooks/use-float-accounts";
 
 interface ExpenseFormProps {
   open: boolean;
@@ -106,30 +107,6 @@ export function ExpenseForm({
         description: "Failed to load expense heads. Using fallback data.",
         variant: "destructive",
       });
-      // Set fallback expense heads
-      setExpenseHeads([
-        {
-          id: "1",
-          name: "Office Supplies",
-          category: "Operational",
-          description: "Stationery and office materials",
-          is_active: true,
-        },
-        {
-          id: "2",
-          name: "Utilities",
-          category: "Operational",
-          description: "Electricity, water, internet bills",
-          is_active: true,
-        },
-        {
-          id: "3",
-          name: "Travel & Transport",
-          category: "Operational",
-          description: "Business travel and transportation",
-          is_active: true,
-        },
-      ]);
     } finally {
       setLoadingExpenseHeads(false);
     }
@@ -137,9 +114,19 @@ export function ExpenseForm({
 
   useEffect(() => {
     if (open) {
+      // Only reset date and branch_id when opening a new form (not on every render)
+      if (!editId) {
+        setDate(new Date());
+        if (user && user.role !== "Admin") {
+          setFormData((prev) => ({
+            ...prev,
+            branch_id: user.branchId || "",
+          }));
+        }
+      }
       fetchExpenseHeads();
     }
-  }, [open]);
+  }, [open, user, editId]);
 
   // Fetch expense details if editing
   useEffect(() => {
@@ -196,6 +183,25 @@ export function ExpenseForm({
     }
   }, [editId, toast, user]);
 
+  // Fetch float accounts for payment source
+  const { accounts: floatAccounts, loading: loadingFloats } =
+    useFloatAccountsByBranch(formData.branch_id);
+
+  // Filter out E-Zwich, Power, and Jumia floats
+  const filteredFloatAccounts = floatAccounts.filter(
+    (acc) =>
+      acc.is_active !== false &&
+      !["e-zwich", "power", "jumia"].includes(acc.account_type?.toLowerCase?.())
+  );
+
+  // Debug log for payment source
+  console.log(
+    "Filtered float accounts:",
+    filteredFloatAccounts,
+    "Branch ID:",
+    formData.branch_id
+  );
+
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
@@ -248,6 +254,18 @@ export function ExpenseForm({
       toast({
         title: "Validation Error",
         description: "Please select a branch",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      !formData.payment_source ||
+      !filteredFloatAccounts.some((acc) => acc.id === formData.payment_source)
+    ) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a valid payment source (float account)",
         variant: "destructive",
       });
       return;
@@ -468,30 +486,22 @@ export function ExpenseForm({
                   onValueChange={(value) =>
                     handleSelectChange("payment_source", value)
                   }
-                  disabled={expenseStatus === "approved"}
+                  disabled={loadingFloats || filteredFloatAccounts.length === 0}
+                  required
                 >
                   <SelectTrigger>
-                    <SelectValue />
+                    <SelectValue
+                      placeholder={
+                        loadingFloats ? "Loading..." : "Select float account"
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank">
-                      Bank Transfer (Cal Bank)
-                    </SelectItem>
-                    <SelectItem value="momo">Mobile Money (Z-Pay)</SelectItem>
-                    <SelectItem value="momo_mtn">Mobile Money (MTN)</SelectItem>
-                    <SelectItem value="momo_telecel">
-                      Mobile Money (Telecel)
-                    </SelectItem>
-                    <SelectItem value="agency_gcb">
-                      Agency Banking (GCB)
-                    </SelectItem>
-                    <SelectItem value="agency_fidelity">
-                      Agency Banking (Fidelity)
-                    </SelectItem>
-                    <SelectItem value="card">
-                      Card Payment (Cal Bank)
-                    </SelectItem>
+                    {filteredFloatAccounts.map((acc) => (
+                      <SelectItem key={acc.id} value={acc.id}>
+                        {acc.provider} ({acc.account_type}) - {acc.branch_name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

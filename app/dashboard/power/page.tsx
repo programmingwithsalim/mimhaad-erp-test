@@ -42,7 +42,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { useBranchFloatAccountsFixed } from "@/hooks/use-branch-float-accounts-fixed";
+import { useBranchFloatAccounts } from "@/hooks/use-branch-float-accounts";
 import { useDynamicFee } from "@/hooks/use-dynamic-fee";
 import { formatCurrency } from "@/lib/currency";
 import { Badge } from "@/components/ui/badge";
@@ -55,6 +55,11 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { TransactionActions } from "@/components/transactions/transaction-actions";
+import {
+  TransactionReceipt,
+  TransactionReceiptData,
+} from "@/components/shared/transaction-receipt";
+import { EnhancedPowerTransactionForm } from "@/components/power/enhanced-power-transaction-form";
 
 const powerTransactionSchema = z.object({
   meterNumber: z.string().min(1, "Meter number is required"),
@@ -79,12 +84,16 @@ export default function PowerPageEnhancedFixed() {
   const [currentTransaction, setCurrentTransaction] = useState<any>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
+    null
+  );
+  const [showReceipt, setShowReceipt] = useState(false);
 
   const {
     accounts: floatAccounts,
     loading: isLoadingAccounts,
     refetch: refreshAccounts,
-  } = useBranchFloatAccountsFixed();
+  } = useBranchFloatAccounts();
 
   // Filter power accounts
   const powerFloats = floatAccounts.filter(
@@ -249,10 +258,29 @@ export default function PowerPageEnhancedFixed() {
           title: "Success",
           description: "Power transaction processed successfully",
         });
+
+        // Set receipt data for shared component
+        setReceiptData({
+          transactionId: result.transaction.id,
+          sourceModule: "power",
+          transactionType: "sale",
+          amount: data.amount,
+          fee: calculatedFee,
+          customerName: data.customerName || "",
+          customerPhone: data.customerPhone || "",
+          reference: result.transaction.reference || result.transaction.id,
+          branchName: user?.branchName || "Main Branch",
+          date: new Date().toISOString(),
+          additionalData: {
+            provider: selectedFloat.provider,
+            meterNumber: data.meterNumber,
+          },
+        });
+        setShowReceipt(true);
+
         form.reset();
         setCalculatedFee(0);
         refreshAccounts();
-        handlePrintReceipt(result.transaction);
       } else {
         throw new Error(result.error || "Failed to process transaction");
       }
@@ -286,7 +314,7 @@ export default function PowerPageEnhancedFixed() {
 
       // Fetch transactions from unified API
       fetch(
-        `/api/transactions/unified?branchId=${user.branchId}&serviceType=power`
+        `/api/transactions/unified?branchId=${user.branchId}&serviceType=power&orderBy=created_at&orderDirection=desc`
       )
         .then((res) => res.json())
         .then((data) => {
@@ -365,7 +393,7 @@ export default function PowerPageEnhancedFixed() {
         // Refresh transactions from unified API
         if (user?.branchId) {
           fetch(
-            `/api/transactions/unified?branchId=${user.branchId}&serviceType=power`
+            `/api/transactions/unified?branchId=${user.branchId}&serviceType=power&orderBy=created_at&orderDirection=desc`
           )
             .then((res) => res.json())
             .then((data) => {
@@ -441,31 +469,6 @@ export default function PowerPageEnhancedFixed() {
     } finally {
       setIsEditing(false);
     }
-  };
-  const handlePrintReceipt = (tx: any) => {
-    const printWindow = window.open("", "_blank", "width=350,height=600");
-    if (!printWindow) return;
-    const receiptContent = `<!DOCTYPE html><html><head><title>Power Sale Receipt</title><style>body { font-family: monospace; font-size: 12px; margin: 0; padding: 10px; } .header { text-align: center; margin-bottom: 20px; } .logo { width: 60px; height: 60px; margin: 0 auto 10px; } .line { border-bottom: 1px dashed #000; margin: 10px 0; } .row { display: flex; justify-content: space-between; margin: 5px 0; } .footer { text-align: center; margin-top: 20px; font-size: 10px; }</style></head><body><div class='header'><h3>MIMHAAD FINANCIAL SERVICES</h3><p>${
-      user?.branchName || ""
-    }</p><p>Tel: 0241378880</p><p>${
-      tx.created_at ? new Date(tx.created_at).toLocaleString() : ""
-    }</p></div><div class='line'></div><h4 style='text-align: center;'>POWER SALE RECEIPT</h4><div class='line'></div><div class='row'><span>Transaction ID:</span><span>${
-      tx.id
-    }</span></div><div class='row'><span>Meter Number:</span><span>${
-      tx.meter_number
-    }</span></div><div class='row'><span>Provider:</span><span>${
-      tx.provider
-    }</span></div><div class='row'><span>Amount:</span><span>GHS ${Number(
-      tx.amount
-    ).toFixed(2)}</span></div><div class='row'><span>Customer:</span><span>${
-      tx.customer_name || "-"
-    }</span></div><div class='row'><span>Phone:</span><span>${
-      tx.customer_phone || "-"
-    }</span></div><div class='line'></div><div class='footer'><p>Thank you for using our service!</p><p>For inquiries, please call 0241378880</p><p>Powered by MIMHAAD Financial Services</p></div></body></html>`;
-    printWindow.document.write(receiptContent);
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
   };
 
   const getStatusBadge = (status: string) => {
@@ -602,214 +605,25 @@ export default function PowerPageEnhancedFixed() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Transaction Form */}
             <div className="lg:col-span-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Process Power Transaction</CardTitle>
-                  <CardDescription>
-                    Process electricity bill payments for customers
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Form {...form}>
-                    <form
-                      onSubmit={form.handleSubmit(onSubmit)}
-                      className="space-y-6"
-                    >
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Meter Number */}
-                        <FormField
-                          control={form.control}
-                          name="meterNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Meter Number</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter meter number"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-
-                        {/* Power Provider */}
-                        <FormField
-                          control={form.control}
-                          name="floatAccountId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Power Provider</FormLabel>
-                              <Select
-                                onValueChange={field.onChange}
-                                defaultValue={field.value}
-                              >
-                                <FormControl>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select power provider" />
-                                  </SelectTrigger>
-                                </FormControl>
-                                <SelectContent>
-                                  {powerFloats.map((float) => {
-                                    const status = getFloatStatus(
-                                      float.current_balance,
-                                      float.min_threshold
-                                    );
-                                    return (
-                                      <SelectItem
-                                        key={float.id}
-                                        value={float.id}
-                                      >
-                                        <div className="flex items-center justify-between w-full">
-                                          <span>{float.provider}</span>
-                                          <div className="flex items-center gap-2 ml-2">
-                                            <Badge
-                                              variant={status.color as any}
-                                              className="text-xs"
-                                            >
-                                              {status.label}
-                                            </Badge>
-                                            <span className="text-xs text-muted-foreground">
-                                              {formatCurrency(
-                                                float.current_balance
-                                              )}
-                                            </span>
-                                          </div>
-                                        </div>
-                                      </SelectItem>
-                                    );
-                                  })}
-                                </SelectContent>
-                              </Select>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Customer Name */}
-                        <FormField
-                          control={form.control}
-                          name="customerName"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Customer Name (Optional)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter customer name"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        {/* Customer Phone */}
-                        <FormField
-                          control={form.control}
-                          name="customerPhone"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Customer Phone (Optional)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Enter customer phone"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        {/* Amount */}
-                        <FormField
-                          control={form.control}
-                          name="amount"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Amount (GHS)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  type="number"
-                                  step="0.01"
-                                  min="1"
-                                  placeholder="0.00"
-                                  {...field}
-                                  onChange={(e) =>
-                                    field.onChange(Number(e.target.value))
-                                  }
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        {/* Reference */}
-                        <FormField
-                          control={form.control}
-                          name="reference"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Reference (Optional)</FormLabel>
-                              <FormControl>
-                                <Input
-                                  placeholder="Auto-generated if empty"
-                                  {...field}
-                                />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      {/* Fee Display */}
-
-                      <div className="p-4 bg-muted rounded-lg">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">
-                            Transaction Fee:
-                          </span>
-                          <span className="font-bold">
-                            {formatCurrency(calculatedFee)}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-center mt-2">
-                          <span className="text-sm font-medium">
-                            Total Required:
-                          </span>
-                          <span className="text-lg font-bold text-primary">
-                            {formatCurrency(watchedAmount + calculatedFee)}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Submit Button */}
-                      <Button
-                        type="submit"
-                        disabled={isSubmitting}
-                        className="w-full"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                            Processing...
-                          </>
-                        ) : (
-                          <>
-                            <Zap className="mr-2 h-4 w-4" />
-                            Process Power Transaction
-                          </>
-                        )}
-                      </Button>
-                    </form>
-                  </Form>
-                </CardContent>
-              </Card>
+              <EnhancedPowerTransactionForm
+                powerFloats={powerFloats}
+                user={user}
+                onSuccess={(transaction) => {
+                  // Refresh transactions after successful transaction
+                  if (user?.branchId) {
+                    fetch(
+                      `/api/transactions/unified?branchId=${user.branchId}&serviceType=power&orderBy=created_at&orderDirection=desc`
+                    )
+                      .then((res) => res.json())
+                      .then((data) => {
+                        if (data.success && Array.isArray(data.transactions)) {
+                          setTransactions(data.transactions);
+                        }
+                      });
+                  }
+                  refreshAccounts();
+                }}
+              />
             </div>
 
             {/* Float Balances Sidebar */}
@@ -918,7 +732,7 @@ export default function PowerPageEnhancedFixed() {
                                 // Refresh transactions from unified API
                                 if (user?.branchId) {
                                   fetch(
-                                    `/api/transactions/unified?branchId=${user.branchId}&serviceType=power`
+                                    `/api/transactions/unified?branchId=${user.branchId}&serviceType=power&orderBy=created_at&orderDirection=desc`
                                   )
                                     .then((res) => res.json())
                                     .then((data) => {
@@ -976,6 +790,11 @@ export default function PowerPageEnhancedFixed() {
           </Button>
         </DialogContent>
       </Dialog>
+      <TransactionReceipt
+        data={receiptData}
+        open={showReceipt}
+        onOpenChange={setShowReceipt}
+      />
     </div>
   );
 }

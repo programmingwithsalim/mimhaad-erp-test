@@ -50,6 +50,7 @@ import {
   Edit,
   Trash2,
   Printer,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { EditAgencyBankingTransactionDialog } from "@/components/transactions/edit-agency-banking-transaction-dialog";
@@ -228,27 +229,44 @@ export default function AgencyBankingPage() {
       return;
     }
 
+    // Validate amount (must be positive)
+    const amount = Number(formData.amount);
+    if (amount <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Amount must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate account number (max 15 characters)
+    if (formData.account_number.length > 15) {
+      toast({
+        title: "Invalid Account Number",
+        description: "Account number cannot be more than 15 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSubmitting(true);
 
     try {
-      const response = await fetch("/api/transactions/unified", {
+      const response = await fetch("/api/agency-banking/transaction", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          serviceType: "agency_banking",
-          transactionType: formData.type,
+          type: formData.type,
           amount: Number(formData.amount),
           fee: Number(formData.fee) || 0,
-          customerName: formData.customer_name,
-          accountNumber: formData.account_number,
-          provider: selectedPartnerBank?.provider || "Unknown Bank",
+          customer_name: formData.customer_name,
+          account_number: formData.account_number,
+          partner_bank_id: formData.partner_bank_id,
           reference: `AGENCY-${Date.now()}`,
           notes: formData.notes,
-          branchId: user.branchId,
-          userId: user.id,
-          processedBy: user.name || user.username,
         }),
       });
 
@@ -688,8 +706,12 @@ export default function AgencyBankingPage() {
                             })
                           }
                           placeholder="Enter account number"
+                          maxLength={15}
                           required
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Maximum 15 characters
+                        </p>
                       </div>
 
                       <div className="space-y-2">
@@ -698,7 +720,7 @@ export default function AgencyBankingPage() {
                           id="amount"
                           type="number"
                           step="0.01"
-                          min="0"
+                          min="0.01"
                           value={formData.amount}
                           onChange={(e) =>
                             setFormData({ ...formData, amount: e.target.value })
@@ -706,6 +728,9 @@ export default function AgencyBankingPage() {
                           placeholder="0.00"
                           required
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Must be greater than 0
+                        </p>
                       </div>
 
                       <div className="space-y-2">
@@ -716,10 +741,14 @@ export default function AgencyBankingPage() {
                           step="0.01"
                           min="0"
                           value={formData.fee}
-                          readOnly
-                          disabled={feeLoading}
+                          onChange={(e) =>
+                            setFormData({ ...formData, fee: e.target.value })
+                          }
                           placeholder={feeLoading ? "Calculating..." : "0.00"}
                         />
+                        <p className="text-xs text-muted-foreground">
+                          Auto-calculated fee can be modified as needed
+                        </p>
                       </div>
                     </div>
 
