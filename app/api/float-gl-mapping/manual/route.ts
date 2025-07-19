@@ -19,10 +19,16 @@ export async function GET(request: NextRequest) {
     const pageSize = parseInt(searchParams.get("pageSize") || "20", 10);
     const offset = (page - 1) * pageSize;
 
-    // Get user's branch ID
-    const userBranchId = user.branchId;
+    // Parse branchId from query or use user's branchId
+    let branchId = searchParams.get("branchId");
+    if (!branchId && user.role !== "Admin") {
+      branchId = user.branchId;
+    }
 
-    // Fetch float accounts for the user's branch
+    // Use user's branch ID if no branch specified and user is not admin
+    const effectiveBranchId = branchId || user.branchId;
+
+    // Fetch float accounts for the effective branch
     const floatAccounts = await sql`
       SELECT 
         fa.id,
@@ -34,11 +40,11 @@ export async function GET(request: NextRequest) {
         COALESCE(b.name, 'Unknown Branch') as branch_name
       FROM float_accounts fa
       LEFT JOIN branches b ON fa.branch_id = b.id
-      WHERE fa.branch_id = ${userBranchId}
+      WHERE fa.branch_id = ${effectiveBranchId}
       ORDER BY fa.provider, fa.account_type
     `;
 
-    // Fetch GL accounts (filtered by branch)
+    // Fetch GL accounts (filtered by effective branch)
     const glAccounts = await sql`
       SELECT 
         id,
@@ -47,7 +53,7 @@ export async function GET(request: NextRequest) {
         type as account_type,
         is_active
       FROM gl_accounts 
-      WHERE is_active = true AND branch_id = ${userBranchId}
+      WHERE is_active = true AND branch_id = ${effectiveBranchId}
       ORDER BY code
     `;
 
@@ -63,7 +69,7 @@ export async function GET(request: NextRequest) {
         gm.created_at,
         gm.updated_at
       FROM gl_mappings gm
-      WHERE gm.branch_id = ${userBranchId}
+      WHERE gm.branch_id = ${effectiveBranchId}
         AND gm.float_account_id IS NOT NULL
       ORDER BY gm.created_at DESC
       LIMIT ${pageSize} OFFSET ${offset}
@@ -73,7 +79,7 @@ export async function GET(request: NextRequest) {
     const totalResult = await sql`
       SELECT COUNT(*) as total 
       FROM gl_mappings 
-      WHERE branch_id = ${userBranchId}
+      WHERE branch_id = ${effectiveBranchId}
         AND float_account_id IS NOT NULL
     `;
     const totalMappings = Number(totalResult[0]?.total || 0);
@@ -126,7 +132,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { float_account_id, gl_account_id, mapping_type } = body;
+    const { float_account_id, gl_account_id, mapping_type, branch_id } = body;
 
     // Validate required fields
     if (!float_account_id || !gl_account_id || !mapping_type) {
@@ -136,14 +142,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const userBranchId = user.branchId;
+    // Determine effective branch ID
+    const effectiveBranchId = (user.role === "Admin" || user.role === "admin") 
+      ? (branch_id || user.branchId) 
+      : user.branchId;
 
     // Check if mapping already exists
     const existingMapping = await sql`
       SELECT id FROM gl_mappings 
       WHERE float_account_id = ${float_account_id} 
       AND mapping_type = ${mapping_type}
-      AND branch_id = ${userBranchId}
+      AND branch_id = ${effectiveBranchId}
     `;
 
     if (existingMapping.length > 0) {
@@ -183,7 +192,7 @@ export async function POST(request: NextRequest) {
         ${gl_account_id},
         ${float_account_id},
         ${mapping_type},
-        ${userBranchId},
+        ${effectiveBranchId},
         true
       ) RETURNING *
     `;

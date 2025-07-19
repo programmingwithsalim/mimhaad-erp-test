@@ -25,6 +25,7 @@ import {
 import { useCardBatches, useIssuedCards } from "@/hooks/use-e-zwich";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { useCurrentUser } from "@/hooks/use-current-user";
 
 interface PartnerBank {
   id: string;
@@ -38,6 +39,7 @@ export function EZwichCardIssuance() {
   const { batches } = useCardBatches();
   const { issueCard } = useIssuedCards();
   const { toast } = useToast();
+  const { user } = useCurrentUser();
 
   const [selectedBatch, setSelectedBatch] = useState<string>("");
   const [selectedPartnerBank, setSelectedPartnerBank] = useState<string>("");
@@ -55,26 +57,28 @@ export function EZwichCardIssuance() {
     const fetchPartnerBanks = async () => {
       try {
         setLoadingBanks(true);
+
+        // Use the dedicated E-Zwich partner banks endpoint
         const response = await fetch(
-          "/api/float-accounts?isezwichpartner=true"
+          `/api/float-accounts/ezwich-partners?branchId=${user?.branchId || ""}`
         );
         const data = await response.json();
 
         if (data.success) {
-          setPartnerBanks(data.data || []);
+          setPartnerBanks(data.accounts || []);
         } else {
-          console.error("Failed to fetch partner banks:", data.error);
+          console.error("Failed to fetch E-Zwich partner banks:", data.error);
           toast({
             title: "Error",
-            description: "Failed to load partner banks",
+            description: "Failed to load E-Zwich partner banks",
             variant: "destructive",
           });
         }
       } catch (error) {
-        console.error("Error fetching partner banks:", error);
+        console.error("Error fetching E-Zwich partner banks:", error);
         toast({
           title: "Error",
-          description: "Failed to load partner banks",
+          description: "Failed to load E-Zwich partner banks",
           variant: "destructive",
         });
       } finally {
@@ -82,8 +86,11 @@ export function EZwichCardIssuance() {
       }
     };
 
-    fetchPartnerBanks();
-  }, [toast]);
+    // Only fetch if user is available
+    if (user?.branchId) {
+      fetchPartnerBanks();
+    }
+  }, [user?.branchId, toast]);
 
   // Filter available batches (those with cards remaining)
   const availableBatches =

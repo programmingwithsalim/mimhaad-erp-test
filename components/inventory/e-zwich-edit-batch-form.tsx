@@ -88,7 +88,7 @@ export function EZwichEditBatchForm({
     const fetchPartnerBanks = async () => {
       try {
         setLoadingBanks(true);
-        
+
         // Use the dedicated E-Zwich partner banks endpoint
         const response = await fetch(
           `/api/float-accounts/ezwich-partners?branchId=${user?.branchId || ""}`

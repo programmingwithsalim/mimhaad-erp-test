@@ -174,6 +174,8 @@ export function AuditTrailDashboard({
     if (!showStatistics) return;
     try {
       setLoadingStats(true);
+      console.log("[AuditTrail] Starting to fetch statistics...");
+
       let statsUrl = "/api/audit-logs/statistics";
       let branchIdToSend = undefined;
       if (user) {
@@ -191,10 +193,16 @@ export function AuditTrailDashboard({
       if (branchIdToSend) {
         statsUrl += `?branchId=${encodeURIComponent(branchIdToSend)}`;
       }
-      console.log("[AuditTrail] Fetching stats with branchId:", branchIdToSend);
+      console.log("[AuditTrail] Fetching stats with URL:", statsUrl);
+      console.log("[AuditTrail] Branch ID to send:", branchIdToSend);
+
       const response = await fetch(statsUrl);
       const data = await response.json();
+
+      console.log("[AuditTrail] Statistics response:", data);
+
       if (data.success) {
+        console.log("[AuditTrail] Setting statistics:", data.data);
         setStatistics(data.data);
       } else {
         console.error("Failed to fetch statistics:", data.error);
@@ -218,11 +226,13 @@ export function AuditTrailDashboard({
 
   // Initial data fetch
   useEffect(() => {
+    console.log("[AuditTrail] Initial useEffect triggered");
     fetchAuditLogs();
     fetchStatistics();
   }, []);
 
   useEffect(() => {
+    console.log("[AuditTrail] User useEffect triggered, user:", user);
     fetchAuditLogs();
     fetchStatistics();
   }, [user]);

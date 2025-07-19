@@ -90,11 +90,15 @@ export default function FixedAssetsPage() {
   const [assets, setAssets] = useState<FixedAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showViewDialog, setShowViewDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showDepreciationDialog, setShowDepreciationDialog] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<FixedAsset | null>(null);
   const [depreciationSchedule, setDepreciationSchedule] = useState<
     DepreciationCalculation[]
   >([]);
+  const [editingAsset, setEditingAsset] = useState<FixedAsset | null>(null);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -307,6 +311,170 @@ export default function FixedAssetsPage() {
     const schedule = calculateDepreciation(asset);
     setDepreciationSchedule(schedule);
     setShowDepreciationDialog(true);
+  };
+
+  const handleViewAsset = (asset: FixedAsset) => {
+    setSelectedAsset(asset);
+    setShowViewDialog(true);
+  };
+
+  const handleEditAsset = (asset: FixedAsset) => {
+    setEditingAsset(asset);
+    setFormData({
+      name: asset.name,
+      description: asset.description || "",
+      category: asset.category,
+      purchaseDate: asset.purchaseDate,
+      purchaseCost: asset.purchaseCost.toString(),
+      salvageValue: asset.salvageValue.toString(),
+      usefulLife: asset.usefulLife.toString(),
+      depreciationMethod: asset.depreciationMethod,
+      location: asset.location || "",
+      serialNumber: asset.serialNumber || "",
+      supplier: asset.supplier || "",
+      warrantyExpiry: asset.warrantyExpiry || "",
+    });
+    setShowEditDialog(true);
+  };
+
+  const handleDeleteAsset = (asset: FixedAsset) => {
+    setSelectedAsset(asset);
+    setShowDeleteDialog(true);
+  };
+
+  const handleUpdateAsset = async () => {
+    if (!editingAsset) return;
+
+    // Validate required fields
+    if (!formData.name.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Asset name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.category) {
+      toast({
+        title: "Validation Error",
+        description: "Category is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.purchaseDate) {
+      toast({
+        title: "Validation Error",
+        description: "Purchase date is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.purchaseCost || Number(formData.purchaseCost) <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Purchase cost must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!formData.usefulLife || Number(formData.usefulLife) <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Useful life must be greater than 0",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/fixed-assets/${editingAsset.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...formData,
+          purchaseCost: Number(formData.purchaseCost),
+          salvageValue: Number(formData.salvageValue || 0),
+          usefulLife: Number(formData.usefulLife),
+        }),
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Fixed asset updated successfully",
+        });
+        setShowEditDialog(false);
+        setEditingAsset(null);
+        setFormData({
+          name: "",
+          description: "",
+          category: "",
+          purchaseDate: "",
+          purchaseCost: "",
+          salvageValue: "",
+          usefulLife: "",
+          depreciationMethod: "straight-line",
+          location: "",
+          serialNumber: "",
+          supplier: "",
+          warrantyExpiry: "",
+        });
+        fetchAssets();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to update asset");
+      }
+    } catch (error) {
+      console.error("Error updating asset:", error);
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to update fixed asset",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!selectedAsset) return;
+
+    try {
+      const response = await fetch(`/api/fixed-assets/${selectedAsset.id}`, {
+        method: "DELETE",
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: "Fixed asset deleted successfully",
+        });
+        setShowDeleteDialog(false);
+        setSelectedAsset(null);
+        fetchAssets();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to delete asset");
+      }
+    } catch (error) {
+      console.error("Error deleting asset:", error);
+      toast({
+        title: "Error",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Failed to delete fixed asset",
+        variant: "destructive",
+      });
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -671,14 +839,33 @@ export default function FixedAssetsPage() {
                           variant="outline"
                           size="sm"
                           onClick={() => handleViewDepreciation(asset)}
+                          title="View Depreciation"
                         >
                           <Calculator className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleViewAsset(asset)}
+                          title="View Details"
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEditAsset(asset)}
+                          title="Edit Asset"
+                        >
                           <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDeleteAsset(asset)}
+                          title="Delete Asset"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>
@@ -746,6 +933,349 @@ export default function FixedAssetsPage() {
                 ))}
               </TableBody>
             </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Asset Dialog */}
+      <Dialog open={showViewDialog} onOpenChange={setShowViewDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Asset Details - {selectedAsset?.name}</DialogTitle>
+            <DialogDescription>
+              Complete details of the selected fixed asset
+            </DialogDescription>
+          </DialogHeader>
+          {selectedAsset && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="font-medium">Asset Name</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedAsset.name}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Category</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedAsset.category}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Purchase Date</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formatDate(selectedAsset.purchaseDate)}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Purchase Cost</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formatCurrency(selectedAsset.purchaseCost)}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Current Value</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formatCurrency(selectedAsset.currentValue)}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">
+                    Accumulated Depreciation
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formatCurrency(selectedAsset.accumulatedDepreciation)}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Useful Life</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedAsset.usefulLife} years
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Depreciation Method</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedAsset.depreciationMethod}
+                  </p>
+                </div>
+                <div>
+                  <Label className="font-medium">Status</Label>
+                  <div className="mt-1">
+                    {getStatusBadge(selectedAsset.status)}
+                  </div>
+                </div>
+                <div>
+                  <Label className="font-medium">Branch</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedAsset.branchName}
+                  </p>
+                </div>
+              </div>
+
+              {selectedAsset.description && (
+                <div>
+                  <Label className="font-medium">Description</Label>
+                  <p className="text-sm text-muted-foreground">
+                    {selectedAsset.description}
+                  </p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                {selectedAsset.location && (
+                  <div>
+                    <Label className="font-medium">Location</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedAsset.location}
+                    </p>
+                  </div>
+                )}
+                {selectedAsset.serialNumber && (
+                  <div>
+                    <Label className="font-medium">Serial Number</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedAsset.serialNumber}
+                    </p>
+                  </div>
+                )}
+                {selectedAsset.supplier && (
+                  <div>
+                    <Label className="font-medium">Supplier</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedAsset.supplier}
+                    </p>
+                  </div>
+                )}
+                {selectedAsset.warrantyExpiry && (
+                  <div>
+                    <Label className="font-medium">Warranty Expiry</Label>
+                    <p className="text-sm text-muted-foreground">
+                      {formatDate(selectedAsset.warrantyExpiry)}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Asset Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Edit Fixed Asset</DialogTitle>
+            <DialogDescription>
+              Update the details of the selected fixed asset.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-name">Asset Name *</Label>
+                <Input
+                  id="edit-name"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  placeholder="e.g., Office Building"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-category">Category *</Label>
+                <Select
+                  value={formData.category}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, category: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {assetCategories.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="edit-description">Description</Label>
+              <Textarea
+                id="edit-description"
+                value={formData.description}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
+                placeholder="Detailed description of the asset"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-purchaseDate">Purchase Date *</Label>
+                <Input
+                  id="edit-purchaseDate"
+                  type="date"
+                  value={formData.purchaseDate}
+                  onChange={(e) =>
+                    setFormData({ ...formData, purchaseDate: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-purchaseCost">Purchase Cost (₵) *</Label>
+                <Input
+                  id="edit-purchaseCost"
+                  type="number"
+                  step="0.01"
+                  value={formData.purchaseCost}
+                  onChange={(e) =>
+                    setFormData({ ...formData, purchaseCost: e.target.value })
+                  }
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="edit-salvageValue">Salvage Value (₵)</Label>
+                <Input
+                  id="edit-salvageValue"
+                  type="number"
+                  step="0.01"
+                  value={formData.salvageValue}
+                  onChange={(e) =>
+                    setFormData({ ...formData, salvageValue: e.target.value })
+                  }
+                  placeholder="0.00"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-usefulLife">Useful Life (Years) *</Label>
+                <Input
+                  id="edit-usefulLife"
+                  type="number"
+                  value={formData.usefulLife}
+                  onChange={(e) =>
+                    setFormData({ ...formData, usefulLife: e.target.value })
+                  }
+                  placeholder="5"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-depreciationMethod">
+                  Depreciation Method
+                </Label>
+                <Select
+                  value={formData.depreciationMethod}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, depreciationMethod: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {depreciationMethods.map((method) => (
+                      <SelectItem key={method.value} value={method.value}>
+                        {method.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-location">Location</Label>
+                <Input
+                  id="edit-location"
+                  value={formData.location}
+                  onChange={(e) =>
+                    setFormData({ ...formData, location: e.target.value })
+                  }
+                  placeholder="e.g., Main Office, Floor 2"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-serialNumber">Serial Number</Label>
+                <Input
+                  id="edit-serialNumber"
+                  value={formData.serialNumber}
+                  onChange={(e) =>
+                    setFormData({ ...formData, serialNumber: e.target.value })
+                  }
+                  placeholder="SN123456789"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="edit-supplier">Supplier</Label>
+                <Input
+                  id="edit-supplier"
+                  value={formData.supplier}
+                  onChange={(e) =>
+                    setFormData({ ...formData, supplier: e.target.value })
+                  }
+                  placeholder="Supplier name"
+                />
+              </div>
+              <div>
+                <Label htmlFor="edit-warrantyExpiry">Warranty Expiry</Label>
+                <Input
+                  id="edit-warrantyExpiry"
+                  type="date"
+                  value={formData.warrantyExpiry}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      warrantyExpiry: e.target.value,
+                    })
+                  }
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateAsset}>Update Asset</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Fixed Asset</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{selectedAsset?.name}"? This
+              action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end space-x-2 pt-4">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+            >
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDelete}>
+              Delete Asset
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

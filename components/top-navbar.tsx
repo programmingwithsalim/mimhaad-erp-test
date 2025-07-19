@@ -13,6 +13,9 @@ import {
   Sun,
   Moon,
   Building,
+  Loader2,
+  Check,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -78,22 +81,39 @@ export function TopNavbar() {
   const [tempRole, setTempRole] = useState(user?.role || "");
   const [tempBranch, setTempBranch] = useState(user?.branchId || "");
 
-  const { notifications, isLoading: notificationsLoading } = useNotifications();
+  const {
+    notifications,
+    isLoading: notificationsLoading,
+    markAsRead,
+    deleteNotification,
+    updating,
+  } = useNotifications();
 
   // Count unread notifications
   const unreadCount = notifications.filter(
-    (notification) => !notification.read
+    (notification) => !notification.is_read
   ).length;
 
   // Format date
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-GB", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date);
+    if (!dateString) return "Unknown date";
+
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return "Invalid date";
+      }
+
+      return new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      }).format(date);
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return "Invalid date";
+    }
   };
 
   // Handle theme toggle
@@ -268,23 +288,73 @@ export function TopNavbar() {
                     {notifications.map((notification) => (
                       <div
                         key={notification.id}
-                        className={`rounded-md p-2 text-sm ${
-                          notification.read ? "" : "bg-muted"
+                        className={`group rounded-md p-2 text-sm cursor-pointer transition-colors hover:bg-muted/50 ${
+                          notification.is_read ? "" : "bg-muted"
                         }`}
+                        onClick={() => {
+                          if (!notification.is_read) {
+                            markAsRead(notification.id);
+                          }
+                        }}
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-medium">
                             {notification.title}
                           </span>
-                          <Badge variant="outline" className="text-[10px]">
-                            {notification.type}
-                          </Badge>
+                          <div className="flex items-center gap-1">
+                            <Badge variant="outline" className="text-[10px]">
+                              {notification.type}
+                            </Badge>
+                            {!notification.is_read && (
+                              <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                            )}
+                          </div>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground">
                           {notification.message}
                         </p>
-                        <div className="mt-1 text-[10px] text-muted-foreground">
-                          {formatDate(notification.timestamp)}
+                        <div className="mt-1 flex items-center justify-between">
+                          <span className="text-[10px] text-muted-foreground">
+                            {formatDate(notification.created_at)}
+                          </span>
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {!notification.is_read && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  markAsRead(notification.id);
+                                }}
+                                disabled={updating === notification.id}
+                                className="h-6 w-6 p-0 hover:bg-green-100"
+                                title="Mark as read"
+                              >
+                                {updating === notification.id ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Check className="h-3 w-3 text-green-600" />
+                                )}
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteNotification(notification.id);
+                              }}
+                              disabled={updating === notification.id}
+                              className="h-6 w-6 p-0 text-red-600 hover:bg-red-100"
+                              title="Delete notification"
+                            >
+                              {updating === notification.id ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <X className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     ))}

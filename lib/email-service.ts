@@ -1,7 +1,15 @@
 /**
- * Mock email service
- * In a real application, this would connect to an actual email provider
+ * Email service using Resend
  */
+
+type EmailTemplate =
+  | "welcome"
+  | "password_reset"
+  | "transactionAlert"
+  | "lowBalanceAlert"
+  | "loginAlert"
+  | "generic";
+
 export class EmailService {
   /**
    * Send an email notification using Resend
@@ -36,26 +44,71 @@ export class EmailService {
     const from = fromName ? `${fromName} <${fromEmail}>` : fromEmail;
 
     // Choose template
-    let subject = template;
-    let html = JSON.stringify(data);
+    let subject = "Notification from Mimhaad Financial Platform";
+    let html = "";
+
     try {
       const { EmailTemplates } = await import("@/lib/email-templates");
+
       if (template === "welcome" && data.userName) {
-        subject = EmailTemplates.welcome(data.userName).subject;
-        html = EmailTemplates.welcome(data.userName).html;
+        const templateData = EmailTemplates.welcome(data.userName);
+        subject = templateData.subject;
+        html = templateData.html;
       } else if (
         template === "password_reset" &&
         data.userName &&
         data.resetLink
       ) {
-        subject = EmailTemplates.passwordReset(
+        const templateData = EmailTemplates.passwordReset(
           data.userName,
           data.resetLink
-        ).subject;
-        html = EmailTemplates.passwordReset(data.userName, data.resetLink).html;
-      } // Add more templates as needed
+        );
+        subject = templateData.subject;
+        html = templateData.html;
+      } else if (
+        template === "transactionAlert" &&
+        data.userName &&
+        data.transactionDetails
+      ) {
+        const templateData = EmailTemplates.transactionAlert(
+          data.userName,
+          data.transactionDetails
+        );
+        subject = templateData.subject;
+        html = templateData.html;
+      } else if (
+        template === "lowBalanceAlert" &&
+        data.userName &&
+        data.accountType
+      ) {
+        const templateData = EmailTemplates.lowBalanceAlert(
+          data.userName,
+          data.accountType,
+          data.currentBalance,
+          data.threshold
+        );
+        subject = templateData.subject;
+        html = templateData.html;
+      } else if (template === "loginAlert" && data.userName && data.loginData) {
+        // Create a login alert template
+        const templateData = this.createLoginAlertTemplate(
+          data.userName,
+          data.loginData
+        );
+        subject = templateData.subject;
+        html = templateData.html;
+      } else {
+        // Fallback to a generic notification template
+        const templateData = this.createGenericNotificationTemplate(data);
+        subject = templateData.subject;
+        html = templateData.html;
+      }
     } catch (e) {
-      // fallback to default
+      console.error("Error loading email template:", e);
+      // Create a fallback template instead of sending JSON
+      const templateData = this.createFallbackTemplate(data);
+      subject = templateData.subject;
+      html = templateData.html;
     }
 
     // Send email via Resend
@@ -79,6 +132,79 @@ export class EmailService {
       return false;
     }
     return true;
+  }
+
+  /**
+   * Create a login alert template
+   */
+  private static createLoginAlertTemplate(userName: string, loginData: any) {
+    return {
+      subject: "Login Alert - Mimhaad Financial ",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Login Alert</h2>
+          <p>Hello ${userName},</p>
+          <p>A new login was detected on your account:</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>IP Address:</strong> ${loginData.ipAddress}</p>
+            <p><strong>Device:</strong> ${loginData.userAgent}</p>
+            <p><strong>Location:</strong> ${loginData.location}</p>
+            <p><strong>Time:</strong> ${new Date(
+              loginData.timestamp
+            ).toLocaleString()}</p>
+          </div>
+          <p>If this wasn't you, please contact our support team immediately.</p>
+          <p>Best regards,<br>The Mimhaad Financial  Team</p>
+        </div>
+      `,
+    };
+  }
+
+  /**
+   * Create a generic notification template
+   */
+  private static createGenericNotificationTemplate(data: any) {
+    return {
+      subject: "Notification - Mimhaad Financial ",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Notification</h2>
+          <p>Hello ${data.userName || "User"},</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Message:</strong> ${
+              data.message || "You have a new notification."
+            }</p>
+            <p><strong>Type:</strong> ${data.type || "System"}</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          <p>Best regards,<br>The Mimhaad Financial  Team</p>
+        </div>
+      `,
+    };
+  }
+
+  /**
+   * Create a fallback template when template loading fails
+   */
+  private static createFallbackTemplate(data: any) {
+    return {
+      subject: "System Notification - Mimhaad Financial ",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">System Notification</h2>
+          <p>Hello,</p>
+          <p>You have received a notification from the Mimhaad Financial :</p>
+          <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0;">
+            <p><strong>Title:</strong> ${data.title || "Notification"}</p>
+            <p><strong>Message:</strong> ${
+              data.message || "You have a new notification."
+            }</p>
+            <p><strong>Time:</strong> ${new Date().toLocaleString()}</p>
+          </div>
+          <p>Best regards,<br>The Mimhaad Financial  Team</p>
+        </div>
+      `,
+    };
   }
 
   /**

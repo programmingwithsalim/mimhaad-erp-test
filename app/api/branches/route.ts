@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       branches = await sql`
         SELECT 
           id, name, code, location, region, manager, phone, email, address,
-          status, created_at, updated_at
+          status, staff_count, created_at, updated_at
         FROM branches
         ORDER BY name ASC
       `;
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
       branches = await sql`
         SELECT 
           id, name, code, location, region, manager, phone, email, address,
-          status, created_at, updated_at
+          status, staff_count, created_at, updated_at
         FROM branches
         WHERE status = 'active'
         ORDER BY name ASC

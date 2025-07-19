@@ -92,7 +92,8 @@ export async function getCurrentUser(
             username: session.user.email,
             email: session.user.email,
             role: session.user.role,
-            branchId: session.user.branchId || "635844ab-029a-43f8-8523-d7882915266a",
+            branchId:
+              session.user.branchId || "635844ab-029a-43f8-8523-d7882915266a",
             branchName: session.user.branchName || "Unknown Branch",
           };
         } else {
@@ -141,11 +142,11 @@ export async function getUserFromSession(
         u.name,
         u.email,
         u.role,
-        u.branch_id,
+        u.primary_branch_id,
         b.name as branch_name
       FROM user_sessions s
       JOIN users u ON s.user_id = u.id
-      LEFT JOIN branches b ON u.branch_id = b.id
+      LEFT JOIN branches b ON u.primary_branch_id = b.id
       WHERE s.id = ${sessionId} 
         AND s.expires_at > NOW()
         AND s.is_active = true
@@ -162,7 +163,7 @@ export async function getUserFromSession(
       username: user.username,
       email: user.email,
       role: user.role,
-      branchId: user.branch_id,
+      branchId: user.primary_branch_id,
       branchName: user.branch_name || "Unknown Branch",
     };
   } catch (error) {
@@ -189,10 +190,10 @@ export async function getUserById(userId: string): Promise<CurrentUser | null> {
         u.name,
         u.email,
         u.role,
-        u.branch_id,
+        u.primary_branch_id,
         b.name as branch_name
       FROM users u
-      LEFT JOIN branches b ON u.branch_id = b.id
+      LEFT JOIN branches b ON u.primary_branch_id = b.id
       WHERE u.id = ${userId}
     `;
 
@@ -207,7 +208,7 @@ export async function getUserById(userId: string): Promise<CurrentUser | null> {
       username: user.username,
       email: user.email,
       role: user.role,
-      branchId: user.branch_id,
+      branchId: user.primary_branch_id,
       branchName: user.branch_name || "Unknown Branch",
     };
   } catch (error) {

@@ -88,6 +88,8 @@ export function BranchManagementDashboard() {
     null
   );
   const [statsLoading, setStatsLoading] = useState(false);
+  const [openStaffCountResults, setOpenStaffCountResults] = useState(false);
+  const [staffCountResults, setStaffCountResults] = useState<any>(null);
 
   // Fetch real statistics
   const fetchRealStatistics = async () => {
@@ -173,6 +175,8 @@ export function BranchManagementDashboard() {
 
       if (response.ok) {
         const result = await response.json();
+        setStaffCountResults(result);
+        setOpenStaffCountResults(true);
         await fetchBranches(); // Refresh branch data
         await fetchRealStatistics(); // Refresh statistics
         toast({
@@ -745,6 +749,169 @@ export function BranchManagementDashboard() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Staff Count Results Dialog */}
+      {openStaffCountResults && staffCountResults && (
+        <Dialog
+          open={openStaffCountResults}
+          onOpenChange={setOpenStaffCountResults}
+        >
+          <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Staff Count Update Results</DialogTitle>
+              <DialogDescription>
+                Summary of the staff count update process.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="mt-4 space-y-4">
+              <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-lg">
+                <div>
+                  <p className="text-sm font-medium">Total Branches</p>
+                  <p className="text-2xl font-bold">
+                    {staffCountResults.summary?.totalBranches || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Updated Branches</p>
+                  <p className="text-2xl font-bold text-green-600">
+                    {staffCountResults.summary?.updatedBranches || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Total Staff</p>
+                  <p className="text-2xl font-bold">
+                    {staffCountResults.summary?.totalStaff || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Users Fixed</p>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {staffCountResults.summary?.usersWithoutAssignments || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Users Without Branch</p>
+                  <p className="text-2xl font-bold text-orange-600">
+                    {staffCountResults.summary?.usersWithNoBranch || 0}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium">Errors</p>
+                  <p className="text-2xl font-bold text-red-600">
+                    {staffCountResults.summary?.errors || 0}
+                  </p>
+                </div>
+              </div>
+
+              {staffCountResults.usersWithNoBranch &&
+                staffCountResults.usersWithNoBranch.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-medium mb-3 text-orange-600">
+                      ⚠️ Users Without Branch Assignment
+                    </h3>
+                    <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                      <p className="text-sm text-orange-700 mb-2">
+                        The following users are active but not assigned to any
+                        branch:
+                      </p>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {staffCountResults.usersWithNoBranch.map(
+                          (user: any, index: number) => (
+                            <div
+                              key={index}
+                              className="text-sm text-orange-700"
+                            >
+                              • {user.first_name} {user.last_name} ({user.email}
+                              ) - {user.role}
+                            </div>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+              {staffCountResults.results?.branchResults &&
+                staffCountResults.results.branchResults.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-medium mb-3">Branch Details</h3>
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                      {staffCountResults.results.branchResults.map(
+                        (branch: any, index: number) => (
+                          <div key={index} className="p-3 border rounded-lg">
+                            <div className="flex justify-between items-center mb-2">
+                              <h4 className="font-medium">{branch.name}</h4>
+                              <div className="text-sm">
+                                <span
+                                  className={`px-2 py-1 rounded ${
+                                    branch.newStaffCount >
+                                    branch.previousStaffCount
+                                      ? "bg-green-100 text-green-800"
+                                      : branch.newStaffCount <
+                                        branch.previousStaffCount
+                                      ? "bg-red-100 text-red-800"
+                                      : "bg-gray-100 text-gray-800"
+                                  }`}
+                                >
+                                  {branch.previousStaffCount} →{" "}
+                                  {branch.newStaffCount} staff
+                                </span>
+                              </div>
+                            </div>
+                            {branch.staffDetails &&
+                              branch.staffDetails.length > 0 && (
+                                <div className="text-sm text-muted-foreground">
+                                  <p className="mb-1">Staff members:</p>
+                                  <ul className="list-disc list-inside space-y-1">
+                                    {branch.staffDetails.map(
+                                      (staff: any, staffIndex: number) => (
+                                        <li key={staffIndex}>
+                                          {staff.firstName} {staff.lastName} (
+                                          {staff.email}) - {staff.role}
+                                          {staff.isPrimary && (
+                                            <span className="text-blue-600 ml-1">
+                                              [Primary]
+                                            </span>
+                                          )}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </div>
+                              )}
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              {staffCountResults.results?.errors &&
+                staffCountResults.results.errors.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-medium mb-2 text-red-600">
+                      Errors
+                    </h3>
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                      <ul className="list-disc list-inside text-sm text-red-700 space-y-1">
+                        {staffCountResults.results.errors.map(
+                          (error: string, index: number) => (
+                            <li key={index}>{error}</li>
+                          )
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <Button onClick={() => setOpenStaffCountResults(false)}>
+                Close
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

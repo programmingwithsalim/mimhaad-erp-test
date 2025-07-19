@@ -6,32 +6,45 @@ const sql = neon(process.env.DATABASE_URL!);
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const userRole = searchParams.get('userRole');
-    const userBranchId = searchParams.get('userBranchId');
+    const userRole = searchParams.get("userRole");
+    const userBranchId = searchParams.get("userBranchId");
+
+    // Determine effective branch filter based on user role
+    const isAdmin = userRole === "Admin";
+    const effectiveBranchId = isAdmin ? null : userBranchId;
+    const branchFilter = effectiveBranchId
+      ? sql`AND branch_id = ${effectiveBranchId}`
+      : sql``;
 
     // Get today's date for filtering
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const today = new Date().toISOString().split("T")[0];
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
 
-    // Total branches
-    const branchRes = await sql`SELECT COUNT(*) AS total FROM branches WHERE status = 'active'`;
+    // Total branches (only for admin)
+    const branchRes = isAdmin
+      ? await sql`SELECT COUNT(*) AS total FROM branches WHERE status = 'active'`
+      : [{ total: 1 }];
     const totalBranches = Number(branchRes[0]?.total || 0);
 
-    // Total users
-    const userRes = await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active'`;
+    // Total users (filtered by branch for non-admin)
+    const userRes =
+      await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active' ${branchFilter}`;
     const totalUsers = Number(userRes[0]?.total || 0);
 
     // Today's MoMo transactions
     const momoTodayRes = await sql`
       SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
       FROM momo_transactions 
-      WHERE status = 'completed' AND DATE(created_at) = ${today}
+      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
     `;
     const todayMomoTransactions = Number(momoTodayRes[0]?.total || 0);
     const todayMomoVolume = Number(momoTodayRes[0]?.volume || 0);
 
     // Total MoMo transactions
-    const momoRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM momo_transactions WHERE status = 'completed'`;
+    const momoRes =
+      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM momo_transactions WHERE status = 'completed' ${branchFilter}`;
     const totalMomoTransactions = Number(momoRes[0]?.total || 0);
     const totalMomoVolume = Number(momoRes[0]?.volume || 0);
 
@@ -39,13 +52,14 @@ export async function GET(request: NextRequest) {
     const agencyTodayRes = await sql`
       SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
       FROM agency_banking_transactions 
-      WHERE status = 'completed' AND DATE(created_at) = ${today}
+      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
     `;
     const todayAgencyTransactions = Number(agencyTodayRes[0]?.total || 0);
     const todayAgencyVolume = Number(agencyTodayRes[0]?.volume || 0);
 
     // Total Agency Banking transactions
-    const agencyRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM agency_banking_transactions WHERE status = 'completed'`;
+    const agencyRes =
+      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter}`;
     const totalAgencyTransactions = Number(agencyRes[0]?.total || 0);
     const totalAgencyVolume = Number(agencyRes[0]?.volume || 0);
 
@@ -53,13 +67,14 @@ export async function GET(request: NextRequest) {
     const ezwichTodayRes = await sql`
       SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
       FROM e_zwich_withdrawals 
-      WHERE status = 'completed' AND DATE(created_at) = ${today}
+      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
     `;
     const todayEzwichTransactions = Number(ezwichTodayRes[0]?.total || 0);
     const todayEzwichVolume = Number(ezwichTodayRes[0]?.volume || 0);
 
     // Total E-Zwich withdrawals
-    const ezwichRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM e_zwich_withdrawals WHERE status = 'completed'`;
+    const ezwichRes =
+      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter}`;
     const totalEzwichTransactions = Number(ezwichRes[0]?.total || 0);
     const totalEzwichVolume = Number(ezwichRes[0]?.volume || 0);
 
@@ -67,13 +82,14 @@ export async function GET(request: NextRequest) {
     const powerTodayRes = await sql`
       SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
       FROM power_transactions 
-      WHERE status = 'completed' AND DATE(created_at) = ${today}
+      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
     `;
     const todayPowerTransactions = Number(powerTodayRes[0]?.total || 0);
     const todayPowerVolume = Number(powerTodayRes[0]?.volume || 0);
 
     // Total Power transactions
-    const powerRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM power_transactions WHERE status = 'completed'`;
+    const powerRes =
+      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM power_transactions WHERE status = 'completed' ${branchFilter}`;
     const totalPowerTransactions = Number(powerRes[0]?.total || 0);
     const totalPowerVolume = Number(powerRes[0]?.volume || 0);
 
@@ -81,13 +97,14 @@ export async function GET(request: NextRequest) {
     const jumiaTodayRes = await sql`
       SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
       FROM jumia_transactions 
-      WHERE status = 'active' AND DATE(created_at) = ${today}
+      WHERE status = 'active' AND DATE(created_at) = ${today} ${branchFilter}
     `;
     const todayJumiaTransactions = Number(jumiaTodayRes[0]?.total || 0);
     const todayJumiaVolume = Number(jumiaTodayRes[0]?.volume || 0);
 
     // Total Jumia transactions
-    const jumiaRes = await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM jumia_transactions WHERE status = 'active'`;
+    const jumiaRes =
+      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM jumia_transactions WHERE status = 'active' ${branchFilter}`;
     const totalJumiaTransactions = Number(jumiaRes[0]?.total || 0);
     const totalJumiaVolume = Number(jumiaRes[0]?.volume || 0);
 
@@ -95,23 +112,26 @@ export async function GET(request: NextRequest) {
     const commissionTodayRes = await sql`
       SELECT COALESCE(SUM(amount),0) AS total 
       FROM commissions 
-      WHERE status = 'approved' AND DATE(created_at) = ${today}
+      WHERE status = 'approved' AND DATE(created_at) = ${today} ${branchFilter}
     `;
     const todayCommissions = Number(commissionTodayRes[0]?.total || 0);
 
     // Total commissions
-    const commissionRes = await sql`SELECT COALESCE(SUM(amount),0) AS total FROM commissions WHERE status = 'approved'`;
+    const commissionRes =
+      await sql`SELECT COALESCE(SUM(amount),0) AS total FROM commissions WHERE status = 'approved' ${branchFilter}`;
     const totalCommissions = Number(commissionRes[0]?.total || 0);
 
-    // Active users
-    const activeUserRes = await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active'`;
+    // Active users (filtered by branch for non-admin)
+    const activeUserRes =
+      await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active' ${branchFilter}`;
     const activeUsers = Number(activeUserRes[0]?.total || 0);
 
     // Pending approvals (commissions)
-    const pendingRes = await sql`SELECT COUNT(*) AS total FROM commissions WHERE status = 'pending'`;
+    const pendingRes =
+      await sql`SELECT COUNT(*) AS total FROM commissions WHERE status = 'pending' ${branchFilter}`;
     const pendingApprovals = Number(pendingRes[0]?.total || 0);
 
-    // Float alerts - accounts below threshold
+    // Float alerts - accounts below threshold (filtered by branch for non-admin)
     const floatAlertsRes = await sql`
       SELECT 
         id,
@@ -124,7 +144,7 @@ export async function GET(request: NextRequest) {
           ELSE 'warning'
         END as severity
       FROM float_accounts 
-      WHERE current_balance <= min_threshold AND is_active = true
+      WHERE current_balance <= min_threshold AND is_active = true ${branchFilter}
     `;
     const floatAlerts = floatAlertsRes.map((row: any) => ({
       id: row.id,
@@ -135,7 +155,7 @@ export async function GET(request: NextRequest) {
       severity: row.severity,
     }));
 
-    // Recent activity with better structure
+    // Recent activity with better structure (filtered by branch for non-admin)
     const activityRes = await sql`
       SELECT 
         id, 
@@ -147,13 +167,14 @@ export async function GET(request: NextRequest) {
         entity_type,
         entity_id
       FROM audit_logs 
+      WHERE 1=1 ${branchFilter}
       ORDER BY created_at DESC 
       LIMIT 10
     `;
     const recentActivity = activityRes.map((row: any) => ({
       id: row.id,
       type: row.action_type,
-      service: row.entity_type || 'system',
+      service: row.entity_type || "system",
       amount: 0, // Will be calculated if needed
       timestamp: row.created_at,
       user: row.username,
@@ -161,26 +182,28 @@ export async function GET(request: NextRequest) {
       status: row.status,
     }));
 
-    // Branch stats
-    const branchStatsRes = await sql`SELECT id, name, code, region, status FROM branches`;
+    // Branch stats (only for admin, or single branch for non-admin)
+    const branchStatsRes = isAdmin
+      ? await sql`SELECT id, name, code, region, status FROM branches`
+      : await sql`SELECT id, name, code, region, status FROM branches WHERE id = ${userBranchId}`;
     const branchStats = branchStatsRes;
 
-    // Daily breakdown for the last 7 days
+    // Daily breakdown for the last 7 days (filtered by branch for non-admin)
     const dailyBreakdownRes = await sql`
       SELECT 
         DATE(created_at) as date,
         COUNT(*) as transactions,
         COALESCE(SUM(amount), 0) as volume
       FROM (
-        SELECT created_at, amount FROM momo_transactions WHERE status = 'completed'
+        SELECT created_at, amount FROM momo_transactions WHERE status = 'completed' ${branchFilter}
         UNION ALL
-        SELECT created_at, amount FROM agency_banking_transactions WHERE status = 'completed'
+        SELECT created_at, amount FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter}
         UNION ALL
-        SELECT created_at, amount FROM e_zwich_withdrawals WHERE status = 'completed'
+        SELECT created_at, amount FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter}
         UNION ALL
-        SELECT created_at, amount FROM power_transactions WHERE status = 'completed'
+        SELECT created_at, amount FROM power_transactions WHERE status = 'completed' ${branchFilter}
         UNION ALL
-        SELECT created_at, amount FROM jumia_transactions WHERE status = 'active'
+        SELECT created_at, amount FROM jumia_transactions WHERE status = 'active' ${branchFilter}
       ) combined_transactions
       WHERE created_at >= NOW() - INTERVAL '7 days'
       GROUP BY DATE(created_at)
@@ -195,115 +218,130 @@ export async function GET(request: NextRequest) {
 
     // Service stats with today's and total metrics
     const serviceStats = [
-      { 
-        service: "MoMo", 
+      {
+        service: "MoMo",
         todayTransactions: todayMomoTransactions,
         todayVolume: todayMomoVolume,
-        totalTransactions: totalMomoTransactions, 
+        todayFees: todayMomoVolume * 0.01, // 1% fee estimate
+        totalTransactions: totalMomoTransactions,
         totalVolume: totalMomoVolume,
-        todayFees: todayMomoVolume * 0.02, // 2% fee estimate
-        totalBalance: 0, // Will be calculated from float accounts
-        weeklyGrowth: 0, // Will be calculated
-        monthlyGrowth: 0 // Will be calculated
+        totalFees: totalMomoVolume * 0.01,
       },
-      { 
-        service: "Agency Banking", 
+      {
+        service: "Agency Banking",
         todayTransactions: todayAgencyTransactions,
         todayVolume: todayAgencyVolume,
-        totalTransactions: totalAgencyTransactions, 
+        todayFees: todayAgencyVolume * 0.005, // 0.5% fee estimate
+        totalTransactions: totalAgencyTransactions,
         totalVolume: totalAgencyVolume,
-        todayFees: todayAgencyVolume * 0.01, // 1% fee estimate
-        totalBalance: 0,
-        weeklyGrowth: 0,
-        monthlyGrowth: 0
+        totalFees: totalAgencyVolume * 0.005,
       },
-      { 
-        service: "E-Zwich", 
+      {
+        service: "E-Zwich",
         todayTransactions: todayEzwichTransactions,
         todayVolume: todayEzwichVolume,
-        totalTransactions: totalEzwichTransactions, 
+        todayFees: todayEzwichVolume * 0.01, // 1% fee estimate
+        totalTransactions: totalEzwichTransactions,
         totalVolume: totalEzwichVolume,
-        todayFees: todayEzwichVolume * 0.015, // 1.5% fee estimate
-        totalBalance: 0,
-        weeklyGrowth: 0,
-        monthlyGrowth: 0
+        totalFees: totalEzwichVolume * 0.01,
       },
-      { 
-        service: "Power", 
+      {
+        service: "Power",
         todayTransactions: todayPowerTransactions,
         todayVolume: todayPowerVolume,
-        totalTransactions: totalPowerTransactions, 
+        todayFees: todayPowerVolume * 0.02, // 2% commission estimate
+        totalTransactions: totalPowerTransactions,
         totalVolume: totalPowerVolume,
-        todayFees: todayPowerVolume * 0.03, // 3% fee estimate
-        totalBalance: 0,
-        weeklyGrowth: 0,
-        monthlyGrowth: 0
+        totalFees: totalPowerVolume * 0.02,
       },
-      { 
-        service: "Jumia", 
+      {
+        service: "Jumia",
         todayTransactions: todayJumiaTransactions,
         todayVolume: todayJumiaVolume,
-        totalTransactions: totalJumiaTransactions, 
+        todayFees: todayJumiaVolume * 0.01, // 1% fee estimate
+        totalTransactions: totalJumiaTransactions,
         totalVolume: totalJumiaVolume,
-        todayFees: todayJumiaVolume * 0.025, // 2.5% fee estimate
-        totalBalance: 0,
-        weeklyGrowth: 0,
-        monthlyGrowth: 0
+        totalFees: totalJumiaVolume * 0.01,
       },
     ];
 
     // Calculate totals
-    const todayTransactions = serviceStats.reduce((sum, service) => sum + service.todayTransactions, 0);
-    const todayVolume = serviceStats.reduce((sum, service) => sum + service.todayVolume, 0);
-    const todayFees = serviceStats.reduce((sum, service) => sum + service.todayFees, 0);
-    const totalTransactions = serviceStats.reduce((sum, service) => sum + service.totalTransactions, 0);
-    const totalVolume = serviceStats.reduce((sum, service) => sum + service.totalVolume, 0);
+    const todayTransactions =
+      todayMomoTransactions +
+      todayAgencyTransactions +
+      todayEzwichTransactions +
+      todayPowerTransactions +
+      todayJumiaTransactions;
+    const todayVolume =
+      todayMomoVolume +
+      todayAgencyVolume +
+      todayEzwichVolume +
+      todayPowerVolume +
+      todayJumiaVolume;
+    const todayCommission = todayCommissions;
+    const totalTransactions =
+      totalMomoTransactions +
+      totalAgencyTransactions +
+      totalEzwichTransactions +
+      totalPowerTransactions +
+      totalJumiaTransactions;
+    const totalVolume =
+      totalMomoVolume +
+      totalAgencyVolume +
+      totalEzwichVolume +
+      totalPowerVolume +
+      totalJumiaVolume;
 
-    // System alerts count
-    const systemAlerts = floatAlerts.length + pendingApprovals;
+    // Financial metrics
+    const financialMetrics = {
+      totalRevenue: totalVolume * 0.01, // 1% average revenue
+      totalExpenses: totalVolume * 0.005, // 0.5% average expenses
+      netIncome: totalVolume * 0.01 - totalVolume * 0.005,
+      profitMargin:
+        totalVolume > 0
+          ? ((totalVolume * 0.01 - totalVolume * 0.005) /
+              (totalVolume * 0.01)) *
+            100
+          : 0,
+    };
+
+    // System alerts (filtered by branch for non-admin)
+    const systemAlerts = floatAlerts.length;
 
     return NextResponse.json({
-      // Basic stats
-      totalBranches,
-      totalUsers,
-      totalCommissions,
-      activeUsers,
-      pendingApprovals,
-      systemAlerts,
-      
-      // Today's metrics
-      todayTransactions,
-      todayVolume,
-      todayCommission: todayFees,
-      
-      // Total metrics
-      totalTransactions,
-      totalVolume,
-      
-      // Detailed data
-      recentActivity,
-      branchStats,
-      serviceStats,
-      floatAlerts,
-      dailyBreakdown,
-      
-      // User stats
-      users: {
-        totalUsers,
+      success: true,
+      data: {
+        totalTransactions,
+        totalVolume,
+        totalCommissions,
         activeUsers,
-      },
-      
-      // Financial metrics
-      financialMetrics: {
-        totalRevenue: totalVolume,
-        totalCommission: totalCommissions,
-        todayRevenue: todayVolume,
-        todayCommission: todayFees,
-        averageTransactionValue: totalTransactions > 0 ? totalVolume / totalTransactions : 0,
+        todayTransactions,
+        todayVolume,
+        todayCommission,
+        serviceStats,
+        recentActivity,
+        floatAlerts,
+        dailyBreakdown,
+        financialMetrics,
+        systemAlerts,
+        pendingApprovals,
+        users: {
+          totalUsers,
+          activeUsers,
+        },
+        branchStats,
+        totalBranches,
       },
     });
   } catch (error) {
-    console.error("Dashboard stats error:", error);
-    return NextResponse.json({ error: "Failed to load dashboard stats" }, { status: 500 });
+    console.error("Error fetching dashboard statistics:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to fetch dashboard statistics",
+        details: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }

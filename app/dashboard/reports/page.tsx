@@ -35,6 +35,8 @@ import {
   AlertTriangle,
   RefreshCw,
   Download,
+  Calculator,
+  DollarSign,
 } from "lucide-react";
 import { format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -73,6 +75,10 @@ interface ReportData {
   lastUpdated: string;
   note?: string;
   hasData: boolean;
+  fixedAssets?: any;
+  expenses?: any;
+  equity?: any;
+  profitLoss?: any;
 }
 
 export default function ReportsPage() {
@@ -127,44 +133,101 @@ export default function ReportsPage() {
   };
 
   const fetchReportData = async () => {
-    if (!canViewReports) return;
+    setLoading(true);
+    setError(null);
 
     try {
-      setLoading(true);
-      setError(null);
+      // Fetch comprehensive report data
+      const response = await fetch(
+        `/api/reports/comprehensive?from=${format(
+          dateRange.from,
+          "yyyy-MM-dd"
+        )}&to=${format(
+          dateRange.to,
+          "yyyy-MM-dd"
+        )}&branch=${selectedBranch}&userRole=${user?.role}&userBranchId=${
+          user?.branchId
+        }`,
+        {
+          credentials: "include",
+        }
+      );
 
-      const params = new URLSearchParams({
-        from: format(dateRange.from, "yyyy-MM-dd"),
-        to: format(dateRange.to, "yyyy-MM-dd"),
-        userRole: user?.role || "",
-        userBranchId: userBranchId || "",
-        branch: canViewAllBranches ? selectedBranch : userBranchId || "all",
-      });
-
-      console.log("Fetching report data with params:", params.toString());
-
-      const response = await fetch(`/api/reports/comprehensive?${params}`, {
-        credentials: "include",
-      });
-
-      console.log("Reports API response status:", response.status);
+      if (!response.ok) {
+        throw new Error("Failed to fetch report data");
+      }
 
       const result = await response.json();
-      console.log("Reports API result:", result);
 
       if (result.success) {
-        setReportData(result.data);
+        // Fetch additional report data
+        const [fixedAssetsData, expensesData, equityData, profitLossData] =
+          await Promise.all([
+            fetch(
+              `/api/reports/fixed-assets?from=${format(
+                dateRange.from,
+                "yyyy-MM-dd"
+              )}&to=${format(
+                dateRange.to,
+                "yyyy-MM-dd"
+              )}&branch=${selectedBranch}`,
+              { credentials: "include" }
+            ),
+            fetch(
+              `/api/reports/expenses?from=${format(
+                dateRange.from,
+                "yyyy-MM-dd"
+              )}&to=${format(
+                dateRange.to,
+                "yyyy-MM-dd"
+              )}&branch=${selectedBranch}`,
+              { credentials: "include" }
+            ),
+            fetch(
+              `/api/reports/equity?from=${format(
+                dateRange.from,
+                "yyyy-MM-dd"
+              )}&to=${format(
+                dateRange.to,
+                "yyyy-MM-dd"
+              )}&branch=${selectedBranch}`,
+              { credentials: "include" }
+            ),
+            fetch(
+              `/api/reports/profit-loss?from=${format(
+                dateRange.from,
+                "yyyy-MM-dd"
+              )}&to=${format(
+                dateRange.to,
+                "yyyy-MM-dd"
+              )}&branch=${selectedBranch}`,
+              { credentials: "include" }
+            ),
+          ]);
+
+        const fixedAssetsResult = await fixedAssetsData.json();
+        const expensesResult = await expensesData.json();
+        const equityResult = await equityData.json();
+        const profitLossResult = await profitLossData.json();
+
+        setReportData({
+          ...result.data,
+          fixedAssets: fixedAssetsResult.success
+            ? fixedAssetsResult.data
+            : null,
+          expenses: expensesResult.success ? expensesResult.data : null,
+          equity: equityResult.success ? equityResult.data : null,
+          profitLoss: profitLossResult.success ? profitLossResult.data : null,
+          hasData: true,
+        });
       } else {
-        throw new Error(result.error || "Failed to fetch report data");
+        setError(result.error || "Failed to fetch report data");
       }
     } catch (error) {
       console.error("Error fetching report data:", error);
-      setError(error instanceof Error ? error.message : "Unknown error");
-      toast({
-        title: "Error",
-        description: "Failed to load report data. Please try again.",
-        variant: "destructive",
-      });
+      setError(
+        error instanceof Error ? error.message : "Failed to fetch report data"
+      );
     } finally {
       setLoading(false);
     }
@@ -440,6 +503,363 @@ export default function ReportsPage() {
     alert("Income Statement PDF export coming soon!");
   };
 
+  const exportProfitLossPDF = async () => {
+    try {
+      const response = await fetch(
+        `/api/reports/profit-loss?from=${format(
+          dateRange.from,
+          "yyyy-MM-dd"
+        )}&to=${format(dateRange.to, "yyyy-MM-dd")}&branch=${selectedBranch}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Generate PDF using pdf-lib
+          const pdfDoc = await PDFDocument.create();
+          const page = pdfDoc.addPage([595, 842]); // A4 size
+          const { width, height } = page.getSize();
+          const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+          const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+          // Title
+          page.drawText("MIMHAAD VENTURES", {
+            x: 50,
+            y: height - 60,
+            size: 24,
+            font: fontBold,
+          });
+          page.drawText("PROFIT & LOSS STATEMENT", {
+            x: 50,
+            y: height - 90,
+            size: 16,
+            font: fontBold,
+          });
+          page.drawText(
+            `For the period ${format(dateRange.from, "dd/MM/yyyy")} to ${format(
+              dateRange.to,
+              "dd/MM/yyyy"
+            )}`,
+            {
+              x: 50,
+              y: height - 110,
+              size: 12,
+              font: font,
+            }
+          );
+
+          // Summary
+          let y = height - 150;
+          page.drawText("SUMMARY", { x: 50, y, size: 14, font: fontBold });
+          y -= 20;
+          page.drawText(
+            `Total Revenue: GHS ${data.data.summary.totalRevenue.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Total Expenses: GHS ${data.data.summary.totalExpenses.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Gross Profit: GHS ${data.data.summary.grossProfit.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Profit Margin: ${data.data.summary.profitMargin.toFixed(1)}%`,
+            { x: 50, y, size: 12, font: font }
+          );
+
+          // Download the PDF
+          const pdfBytes = await pdfDoc.save();
+          const blob = new Blob([pdfBytes], { type: "application/pdf" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "Profit_Loss_Statement.pdf";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }
+    } catch (error) {
+      console.error("Error exporting P&L PDF:", error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export Profit & Loss statement",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const exportFixedAssetsPDF = async () => {
+    try {
+      const response = await fetch(
+        `/api/reports/fixed-assets?from=${format(
+          dateRange.from,
+          "yyyy-MM-dd"
+        )}&to=${format(dateRange.to, "yyyy-MM-dd")}&branch=${selectedBranch}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Generate PDF using pdf-lib
+          const pdfDoc = await PDFDocument.create();
+          const page = pdfDoc.addPage([595, 842]); // A4 size
+          const { width, height } = page.getSize();
+          const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+          const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+          // Title
+          page.drawText("MIMHAAD VENTURES", {
+            x: 50,
+            y: height - 60,
+            size: 24,
+            font: fontBold,
+          });
+          page.drawText("FIXED ASSETS REPORT", {
+            x: 50,
+            y: height - 90,
+            size: 16,
+            font: fontBold,
+          });
+          page.drawText(`As at ${format(new Date(), "dd/MM/yyyy")}`, {
+            x: 50,
+            y: height - 110,
+            size: 12,
+            font: font,
+          });
+
+          // Summary
+          let y = height - 150;
+          page.drawText("SUMMARY", { x: 50, y, size: 14, font: fontBold });
+          y -= 20;
+          page.drawText(`Total Assets: ${data.data.summary.totalAssets}`, {
+            x: 50,
+            y,
+            size: 12,
+            font: font,
+          });
+          y -= 16;
+          page.drawText(
+            `Total Purchase Cost: GHS ${data.data.summary.totalPurchaseCost.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Net Book Value: GHS ${data.data.summary.netBookValue.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Total Depreciation: GHS ${data.data.summary.totalDepreciation.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+
+          // Download the PDF
+          const pdfBytes = await pdfDoc.save();
+          const blob = new Blob([pdfBytes], { type: "application/pdf" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "Fixed_Assets_Report.pdf";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }
+    } catch (error) {
+      console.error("Error exporting Fixed Assets PDF:", error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export Fixed Assets report",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const exportExpensesPDF = async () => {
+    try {
+      const response = await fetch(
+        `/api/reports/expenses?from=${format(
+          dateRange.from,
+          "yyyy-MM-dd"
+        )}&to=${format(dateRange.to, "yyyy-MM-dd")}&branch=${selectedBranch}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Generate PDF using pdf-lib
+          const pdfDoc = await PDFDocument.create();
+          const page = pdfDoc.addPage([595, 842]); // A4 size
+          const { width, height } = page.getSize();
+          const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+          const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+          // Title
+          page.drawText("MIMHAAD VENTURES", {
+            x: 50,
+            y: height - 60,
+            size: 24,
+            font: fontBold,
+          });
+          page.drawText("EXPENSES REPORT", {
+            x: 50,
+            y: height - 90,
+            size: 16,
+            font: fontBold,
+          });
+          page.drawText(
+            `For the period ${format(dateRange.from, "dd/MM/yyyy")} to ${format(
+              dateRange.to,
+              "dd/MM/yyyy"
+            )}`,
+            {
+              x: 50,
+              y: height - 110,
+              size: 12,
+              font: font,
+            }
+          );
+
+          // Summary
+          let y = height - 150;
+          page.drawText("SUMMARY", { x: 50, y, size: 14, font: fontBold });
+          y -= 20;
+          page.drawText(
+            `Total Expenses: GHS ${data.data.summary.totalAmount.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Paid Expenses: GHS ${data.data.summary.paidAmount.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Pending Expenses: GHS ${data.data.summary.pendingAmount.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Payment Rate: ${data.data.summary.paymentRate.toFixed(1)}%`,
+            { x: 50, y, size: 12, font: font }
+          );
+
+          // Download the PDF
+          const pdfBytes = await pdfDoc.save();
+          const blob = new Blob([pdfBytes], { type: "application/pdf" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "Expenses_Report.pdf";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }
+    } catch (error) {
+      console.error("Error exporting Expenses PDF:", error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export Expenses report",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const exportEquityPDF = async () => {
+    try {
+      const response = await fetch(
+        `/api/reports/equity?from=${format(
+          dateRange.from,
+          "yyyy-MM-dd"
+        )}&to=${format(dateRange.to, "yyyy-MM-dd")}&branch=${selectedBranch}`,
+        {
+          credentials: "include",
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          // Generate PDF using pdf-lib
+          const pdfDoc = await PDFDocument.create();
+          const page = pdfDoc.addPage([595, 842]); // A4 size
+          const { width, height } = page.getSize();
+          const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+          const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+          // Title
+          page.drawText("MIMHAAD VENTURES", {
+            x: 50,
+            y: height - 60,
+            size: 24,
+            font: fontBold,
+          });
+          page.drawText("EQUITY REPORT", {
+            x: 50,
+            y: height - 90,
+            size: 16,
+            font: fontBold,
+          });
+          page.drawText(`As at ${format(new Date(), "dd/MM/yyyy")}`, {
+            x: 50,
+            y: height - 110,
+            size: 12,
+            font: font,
+          });
+
+          // Summary
+          let y = height - 150;
+          page.drawText("SUMMARY", { x: 50, y, size: 14, font: fontBold });
+          y -= 20;
+          page.drawText(
+            `Total Equity: GHS ${data.data.summary.totalEquity.toLocaleString()}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Equity Accounts: ${data.data.summary.equityAccounts}`,
+            { x: 50, y, size: 12, font: font }
+          );
+          y -= 16;
+          page.drawText(
+            `Total Transactions: ${data.data.summary.totalTransactions}`,
+            { x: 50, y, size: 12, font: font }
+          );
+
+          // Download the PDF
+          const pdfBytes = await pdfDoc.save();
+          const blob = new Blob([pdfBytes], { type: "application/pdf" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = "Equity_Report.pdf";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }
+    } catch (error) {
+      console.error("Error exporting Equity PDF:", error);
+      toast({
+        title: "Export Failed",
+        description: "Failed to export Equity report",
+        variant: "destructive",
+      });
+    }
+  };
+
   useEffect(() => {
     fetchBranches();
     // Set initial branch selection based on user role
@@ -620,7 +1040,7 @@ export default function ReportsPage() {
       {/* Financial Reports Tabs */}
       {!loading && (
         <Tabs defaultValue="summary" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="summary" className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4" />
               Summary
@@ -641,6 +1061,36 @@ export default function ReportsPage() {
               >
                 <PieChart className="h-4 w-4" />
                 Balance Sheet
+              </TabsTrigger>
+            )}
+            {canViewReports && (
+              <TabsTrigger
+                value="profit-loss"
+                className="flex items-center gap-2"
+              >
+                <Calculator className="h-4 w-4" />
+                Profit & Loss
+              </TabsTrigger>
+            )}
+            {canViewReports && (
+              <TabsTrigger
+                value="fixed-assets"
+                className="flex items-center gap-2"
+              >
+                <Building2 className="h-4 w-4" />
+                Fixed Assets
+              </TabsTrigger>
+            )}
+            {canViewReports && (
+              <TabsTrigger value="expenses" className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4" />
+                Expenses
+              </TabsTrigger>
+            )}
+            {canViewReports && (
+              <TabsTrigger value="equity" className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Equity
               </TabsTrigger>
             )}
             {canViewReports && (
@@ -1300,6 +1750,534 @@ export default function ReportsPage() {
                     <p className="text-muted-foreground">
                       No operational data available
                     </p>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {canViewReports && (
+            <TabsContent value="profit-loss">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Profit & Loss Statement</CardTitle>
+                  <CardDescription>
+                    Detailed revenue, expenses, and profit analysis for the
+                    selected period
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => exportProfitLossPDF()}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export P&L (PDF)
+                    </Button>
+                  </div>
+                  {reportData ? (
+                    reportData.hasData ? (
+                      <div className="space-y-6">
+                        {/* Summary Metrics */}
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Revenue
+                            </p>
+                            <p className="text-2xl font-bold text-green-600">
+                              GHS{" "}
+                              {reportData.summary.totalRevenue.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Expenses
+                            </p>
+                            <p className="text-2xl font-bold text-red-600">
+                              GHS{" "}
+                              {reportData.summary.totalExpenses.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Gross Profit
+                            </p>
+                            <p
+                              className={`text-2xl font-bold ${
+                                reportData.summary.netIncome >= 0
+                                  ? "text-green-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              GHS{" "}
+                              {reportData.summary.netIncome.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Profit Margin
+                            </p>
+                            <p
+                              className={`text-2xl font-bold ${
+                                reportData.summary.netIncome >= 0
+                                  ? "text-green-600"
+                                  : "text-red-600"
+                              }`}
+                            >
+                              {(
+                                (reportData.summary.netIncome /
+                                  reportData.summary.totalRevenue) *
+                                100
+                              ).toFixed(1)}
+                              %
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Revenue Breakdown */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold">
+                            Revenue Breakdown
+                          </h3>
+                          <div className="space-y-2">
+                            {reportData.services &&
+                              reportData.services.map((service, index) => (
+                                <div
+                                  key={index}
+                                  className="flex justify-between items-center py-2 border-b"
+                                >
+                                  <span className="font-medium">
+                                    {service.service}
+                                  </span>
+                                  <span className="text-green-600">
+                                    GHS {service.volume.toLocaleString()}
+                                  </span>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+
+                        {/* Expense Breakdown */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold">
+                            Expense Breakdown
+                          </h3>
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-center py-2 border-b">
+                              <span>Operating Expenses</span>
+                              <span className="text-red-600">
+                                GHS{" "}
+                                {reportData.summary.totalExpenses.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-b">
+                              <span>Depreciation</span>
+                              <span className="text-red-600">GHS 0</span>
+                            </div>
+                            <div className="flex justify-between items-center py-2 border-t-2 font-bold">
+                              <span>Total Expenses</span>
+                              <span className="text-red-600">
+                                GHS{" "}
+                                {reportData.summary.totalExpenses.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No data available</p>
+                    )
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
+                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">
+                        Loading Data
+                      </h3>
+                      <p className="text-muted-foreground">
+                        Fetching profit & loss data...
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {canViewReports && (
+            <TabsContent value="fixed-assets">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Fixed Assets Report</CardTitle>
+                  <CardDescription>
+                    Fixed assets, depreciation, and asset management overview
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => exportFixedAssetsPDF()}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Fixed Assets (PDF)
+                    </Button>
+                  </div>
+                  {reportData ? (
+                    reportData.hasData ? (
+                      <div className="space-y-6">
+                        {/* Asset Summary */}
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Assets
+                            </p>
+                            <p className="text-2xl font-bold">
+                              {reportData.fixedAssets?.summary?.totalAssets ||
+                                0}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Value
+                            </p>
+                            <p className="text-2xl font-bold">
+                              GHS{" "}
+                              {(
+                                reportData.fixedAssets?.summary
+                                  ?.totalPurchaseCost || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Net Book Value
+                            </p>
+                            <p className="text-2xl font-bold">
+                              GHS{" "}
+                              {(
+                                reportData.fixedAssets?.summary?.netBookValue ||
+                                0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Depreciation
+                            </p>
+                            <p className="text-2xl font-bold text-red-600">
+                              GHS{" "}
+                              {(
+                                reportData.fixedAssets?.summary
+                                  ?.totalDepreciation || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Asset Categories */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold">
+                            Assets by Category
+                          </h3>
+                          <div className="space-y-2">
+                            {reportData.fixedAssets?.categoryBreakdown?.map(
+                              (category, index) => (
+                                <div
+                                  key={index}
+                                  className="flex justify-between items-center py-2 border-b"
+                                >
+                                  <span className="font-medium">
+                                    {category.category}
+                                  </span>
+                                  <div className="text-right">
+                                    <div className="font-medium">
+                                      GHS{" "}
+                                      {Number(
+                                        category.total_cost
+                                      ).toLocaleString()}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {category.count} assets
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        No fixed assets data available
+                      </p>
+                    )
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
+                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">
+                        Loading Data
+                      </h3>
+                      <p className="text-muted-foreground">
+                        Fetching fixed assets data...
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {canViewReports && (
+            <TabsContent value="expenses">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Expenses Report</CardTitle>
+                  <CardDescription>
+                    Detailed expense analysis and breakdown by category
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-end mb-4">
+                    <Button
+                      variant="outline"
+                      onClick={() => exportExpensesPDF()}
+                    >
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Expenses (PDF)
+                    </Button>
+                  </div>
+                  {reportData ? (
+                    reportData.hasData ? (
+                      <div className="space-y-6">
+                        {/* Expense Summary */}
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Expenses
+                            </p>
+                            <p className="text-2xl font-bold text-red-600">
+                              GHS{" "}
+                              {reportData.summary.totalExpenses.toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Paid Expenses
+                            </p>
+                            <p className="text-2xl font-bold">
+                              GHS{" "}
+                              {(
+                                reportData.expenses?.summary?.paidAmount || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Pending Expenses
+                            </p>
+                            <p className="text-2xl font-bold text-orange-600">
+                              GHS{" "}
+                              {(
+                                reportData.expenses?.summary?.pendingAmount || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Payment Rate
+                            </p>
+                            <p className="text-2xl font-bold">
+                              {(
+                                reportData.expenses?.summary?.paymentRate || 0
+                              ).toFixed(1)}
+                              %
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Expense Categories */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold">
+                            Expenses by Category
+                          </h3>
+                          <div className="space-y-2">
+                            {reportData.expenses?.categoryBreakdown?.map(
+                              (category, index) => (
+                                <div
+                                  key={index}
+                                  className="flex justify-between items-center py-2 border-b"
+                                >
+                                  <span className="font-medium">
+                                    {category.category}
+                                  </span>
+                                  <div className="text-right">
+                                    <div className="font-medium text-red-600">
+                                      GHS{" "}
+                                      {Number(
+                                        category.total_amount
+                                      ).toLocaleString()}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {category.count} expenses
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        No expenses data available
+                      </p>
+                    )
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
+                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">
+                        Loading Data
+                      </h3>
+                      <p className="text-muted-foreground">
+                        Fetching expenses data...
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {canViewReports && (
+            <TabsContent value="equity">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Equity Report</CardTitle>
+                  <CardDescription>
+                    Owner's equity, retained earnings, and equity changes
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex justify-end mb-4">
+                    <Button variant="outline" onClick={() => exportEquityPDF()}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Export Equity (PDF)
+                    </Button>
+                  </div>
+                  {reportData ? (
+                    reportData.hasData ? (
+                      <div className="space-y-6">
+                        {/* Equity Summary */}
+                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Total Equity
+                            </p>
+                            <p className="text-2xl font-bold text-green-600">
+                              GHS{" "}
+                              {(
+                                reportData.equity?.summary?.totalEquity || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Share Capital
+                            </p>
+                            <p className="text-2xl font-bold">
+                              GHS{" "}
+                              {(
+                                reportData.equity?.equityComponents?.find(
+                                  (c) => c.equity_type === "Share Capital"
+                                )?.net_balance || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Retained Earnings
+                            </p>
+                            <p className="text-2xl font-bold">
+                              GHS{" "}
+                              {(
+                                reportData.equity?.equityComponents?.find(
+                                  (c) => c.equity_type === "Retained Earnings"
+                                )?.net_balance || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                          <div className="space-y-2">
+                            <p className="text-sm font-medium text-muted-foreground">
+                              Current Year Earnings
+                            </p>
+                            <p className="text-2xl font-bold">
+                              GHS{" "}
+                              {(
+                                reportData.equity?.equityComponents?.find(
+                                  (c) =>
+                                    c.equity_type === "Current Year Earnings"
+                                )?.net_balance || 0
+                              ).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Equity Components */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold">
+                            Equity Components
+                          </h3>
+                          <div className="space-y-2">
+                            {reportData.equity?.equityComponents?.map(
+                              (component, index) => (
+                                <div
+                                  key={index}
+                                  className="flex justify-between items-center py-2 border-b"
+                                >
+                                  <span className="font-medium">
+                                    {component.name}
+                                  </span>
+                                  <div className="text-right">
+                                    <div className="font-medium text-green-600">
+                                      GHS{" "}
+                                      {Number(
+                                        component.net_balance
+                                      ).toLocaleString()}
+                                    </div>
+                                    <div className="text-sm text-muted-foreground">
+                                      {component.equity_type}
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        No equity data available
+                      </p>
+                    )
+                  ) : (
+                    <div className="text-center py-12">
+                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
+                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
+                      </div>
+                      <h3 className="text-lg font-semibold mb-2">
+                        Loading Data
+                      </h3>
+                      <p className="text-muted-foreground">
+                        Fetching equity data...
+                      </p>
+                    </div>
                   )}
                 </CardContent>
               </Card>

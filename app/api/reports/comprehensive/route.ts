@@ -16,16 +16,25 @@ export async function GET(request: NextRequest) {
     const userBranchId = searchParams.get("userBranchId");
     const branch = searchParams.get("branch");
 
-    // For now, ignore filters and just get all data
-    // Later, we can add branch/date filters as needed
+    // Determine effective branch filter based on user role
+    const isAdmin = userRole === "Admin";
+    const effectiveBranchId = isAdmin ? branch : userBranchId;
+    const branchFilter =
+      effectiveBranchId && effectiveBranchId !== "all"
+        ? sql`AND branch_id = ${effectiveBranchId}`
+        : sql``;
+
+    // Date filter
+    const dateFilter =
+      from && to ? sql`AND created_at::date BETWEEN ${from} AND ${to}` : sql``;
 
     // 1. Total Revenue (sum of amount from all transaction tables)
     const [agency, momo, ezwich, power, jumia] = await Promise.all([
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM agency_banking_transactions`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM momo_transactions`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM e_zwich_withdrawals`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM power_transactions`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM jumia_transactions`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
     ]);
     const totalRevenue =
       Number(agency[0].total) +
@@ -36,27 +45,27 @@ export async function GET(request: NextRequest) {
 
     // 2. Total Expenses
     const expensesResult =
-      await sql`SELECT COALESCE(SUM(amount),0) as total FROM expenses`;
+      await sql`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}`;
     const totalExpenses = Number(expensesResult[0].total);
 
     // 3. Total Commissions
     const commissionsResult =
-      await sql`SELECT COALESCE(SUM(amount),0) as total FROM commissions`;
+      await sql`SELECT COALESCE(SUM(amount),0) as total FROM commissions WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}`;
     const totalCommissions = Number(commissionsResult[0].total);
 
-    // 4. Cash Position
+    // 4. Cash Position (float accounts)
     const cashResult =
-      await sql`SELECT COALESCE(SUM(current_balance),0) as total FROM float_accounts WHERE is_active = true`;
+      await sql`SELECT COALESCE(SUM(current_balance),0) as total FROM float_accounts WHERE is_active = true ${branchFilter}`;
     const cashPosition = Number(cashResult[0].total);
 
     // 5. Service Breakdown (transactions, volume, fees per table)
     const [agencyStats, momoStats, ezwichStats, powerStats, jumiaStats] =
       await Promise.all([
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM agency_banking_transactions`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM momo_transactions`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM e_zwich_withdrawals`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM power_transactions`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM jumia_transactions`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
       ]);
     const services = [
       {
@@ -97,8 +106,8 @@ export async function GET(request: NextRequest) {
 
     // 7. Summary
     const summary = {
-        totalRevenue,
-        totalExpenses,
+      totalRevenue,
+      totalExpenses,
       netIncome: totalRevenue - totalExpenses,
       cashPosition,
       profitMargin:

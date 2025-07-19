@@ -39,7 +39,7 @@ import {
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, Edit, Trash2, Search, RefreshCw } from "lucide-react";
+import { Plus, Edit, Trash2, Search, RefreshCw, Database } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useBranches } from "@/hooks/use-branches";
 import { BranchSelector } from "@/components/branch/branch-selector";
@@ -96,82 +96,47 @@ export function GLAccountManagement() {
 
   // Determine branchId to use
   const branchIdToUse =
-    user && user.role === "Admin"
+    user && (user.role === "Admin" || user.role === "admin")
       ? selectedBranchId || user?.branchId
-      : user?.branchId || "635844ab-029a-43f8-8523-d7882915266a"; // Fallback to main branch
-
-  const fetchAccounts = useCallback(async () => {
-    try {
-      setLoading(true);
-      let url = `/api/gl/accounts/complete?page=${page}&pageSize=${pageSize}`;
-      if (branchIdToUse) {
-        url += `&branchId=${branchIdToUse}`;
-      }
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.success) {
-        setAccounts(data.accounts || []);
-        setTotalAccounts(data.total_accounts || 0);
-      } else {
-        throw new Error(data.error || "Failed to fetch accounts");
-      }
-    } catch (error) {
-      console.error("Error fetching GL accounts:", error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch GL accounts",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [page, pageSize, toast, branchIdToUse]);
-
-  const fetchAllAccounts = useCallback(async () => {
-    try {
-      setLoading(true);
-      let url = `/api/gl/accounts/complete?all=true`;
-      if (branchIdToUse) {
-        url += `&branchId=${branchIdToUse}`;
-      }
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data.success) {
-        setAccounts(data.accounts || []);
-        setTotalAccounts(data.accounts?.length || 0);
-      } else {
-        throw new Error(data.error || "Failed to fetch accounts");
-      }
-    } catch (error) {
-      console.error("Error fetching all GL accounts:", error);
-      toast({
-        title: "Error",
-        description: "Failed to fetch all GL accounts",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, [toast, branchIdToUse]);
+      : user?.branchId;
 
   // Single useEffect to handle all data fetching
   useEffect(() => {
     const fetchData = async () => {
+      // Don't fetch if user is still loading or no branch ID
+      if (userLoading || !branchIdToUse) {
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
         let url = `/api/gl/accounts/complete?all=true`;
         if (branchIdToUse) {
           url += `&branchId=${branchIdToUse}`;
         }
+
+        console.log("Fetching GL accounts with URL:", url);
+        console.log("User:", user);
+        console.log("Branch ID to use:", branchIdToUse);
+
         const response = await fetch(url);
         const data = await response.json();
+
+        console.log("GL accounts response:", data);
+
         if (data.success) {
           setAccounts(data.accounts || []);
           setTotalAccounts(data.accounts?.length || 0);
         } else {
+          console.error("Failed to fetch GL accounts:", data.error);
           setAccounts([]);
           setTotalAccounts(0);
+          toast({
+            title: "Error",
+            description: data.error || "Failed to fetch GL accounts",
+            variant: "destructive",
+          });
         }
       } catch (error) {
         console.error("Error fetching GL accounts:", error);
@@ -187,10 +152,8 @@ export function GLAccountManagement() {
       }
     };
 
-    if (branchIdToUse) {
-      fetchData();
-    }
-  }, [branchIdToUse, toast]);
+    fetchData();
+  }, [branchIdToUse, userLoading, toast, user]);
 
   // Reset page when search term changes
   useEffect(() => {
@@ -531,7 +494,6 @@ export function GLAccountManagement() {
                         onValueChange={(value) =>
                           setFormData((prev) => ({ ...prev, branch_id: value }))
                         }
-                        disabled={branchesLoading}
                       >
                         <SelectTrigger id="branch_id">
                           <SelectValue
@@ -580,8 +542,24 @@ export function GLAccountManagement() {
             </div>
           </div>
 
-          {loading ? (
-            <div className="text-center py-8">Loading accounts...</div>
+          {userLoading ? (
+            <div className="text-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+              <p>Loading user data...</p>
+            </div>
+          ) : loading ? (
+            <div className="text-center py-8">
+              <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+              <p>Loading accounts...</p>
+            </div>
+          ) : accounts.length === 0 ? (
+            <div className="text-center py-8">
+              <div className="text-muted-foreground mb-4">
+                <Database className="h-12 w-12 mx-auto mb-2" />
+                <p>No GL accounts found for this branch.</p>
+                <p className="text-sm">Branch ID: {branchIdToUse}</p>
+              </div>
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -655,11 +633,14 @@ export function GLAccountManagement() {
             </Table>
           )}
 
-          {filteredAccounts.length === 0 && !loading && (
-            <div className="text-center py-8 text-gray-500">
-              No accounts found matching your search.
-            </div>
-          )}
+          {filteredAccounts.length === 0 &&
+            !loading &&
+            !userLoading &&
+            accounts.length > 0 && (
+              <div className="text-center py-8 text-gray-500">
+                No accounts found matching your search.
+              </div>
+            )}
 
           {/* Pagination Controls */}
           <div className="flex items-center justify-between mt-4">

@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    serverComponentsExternalPackages: ['bcryptjs'],
-  },
+  serverExternalPackages: ["bcryptjs"],
   webpack: (config, { isServer }) => {
     if (!isServer) {
       config.resolve.fallback = {
@@ -11,9 +9,9 @@ const nextConfig = {
         net: false,
         tls: false,
         crypto: false,
-      }
+      };
     }
-    return config
+    return config;
   },
   env: {
     DATABASE_URL: process.env.DATABASE_URL,
@@ -30,6 +28,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-}
+};
 
-export default nextConfig
+export default nextConfig;

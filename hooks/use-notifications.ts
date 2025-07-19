@@ -1,356 +1,202 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { useAuth } from "@/lib/auth-context";
+import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 
-export interface NotificationPreferences {
-  emailNotifications: boolean;
-  emailAddress: string;
-  smsNotifications: boolean;
-  phoneNumber: string;
-  pushNotifications: boolean;
-  transactionAlerts: boolean;
-  floatThresholdAlerts: boolean;
-  systemUpdates: boolean;
-  securityAlerts: boolean;
-  dailyReports: boolean;
-  weeklyReports: boolean;
-  loginAlerts: boolean;
-  marketingEmails: boolean;
-  quietHoursEnabled: boolean;
-  quietHoursStart: string;
-  quietHoursEnd: string;
-  alertFrequency: "immediate" | "hourly" | "daily";
-  reportFrequency: "daily" | "weekly" | "monthly";
-}
-
-export interface NotificationData {
-  userName?: string;
-  transactionDetails?: {
-    amount: number;
-    type: string;
-    reference: string;
-    timestamp: string;
-  };
-  accountType?: string;
-  currentBalance?: number;
-  threshold?: number;
-  resetLink?: string;
-  message?: string;
-}
-
-export interface NotificationRecipient {
-  email?: string;
-  phone?: string;
-  userId?: string;
-}
-
-export interface Notification {
+interface Notification {
   id: string;
-  type: "success" | "error" | "warning" | "info";
   title: string;
   message: string;
-  timestamp: Date;
+  type: "transaction" | "system" | "security";
+  is_read: boolean;
+  created_at: string;
+  read_at?: string;
 }
 
 export function useNotifications() {
-  const [isLoading, setIsLoading] = useState(false);
-  const [preferences, setPreferences] =
-    useState<NotificationPreferences | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const { user } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // Fetch notifications for the current user on mount
-  useEffect(() => {
-    async function fetchNotifications() {
-      setIsLoading(true);
-      try {
-        const response = await fetch("/api/notifications", {
-          credentials: "include",
-        });
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success && Array.isArray(result.data)) {
-            setNotifications(result.data);
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching notifications:", error);
-      } finally {
-        setIsLoading(false);
+  const fetchNotifications = useCallback(async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/notifications");
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications(data.notifications || []);
+      } else {
+        console.error("Failed to fetch notifications");
       }
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+    } finally {
+      setLoading(false);
     }
-    if (user?.id) fetchNotifications();
-  }, [user?.id]);
+  }, []);
 
-  // Load user notification preferences
-  const loadPreferences = useCallback(
-    async (userId?: string) => {
-      if (!userId && !user?.id) return null;
-
+  const markAsRead = useCallback(
+    async (notificationId: string) => {
       try {
-        setIsLoading(true);
-        const response = await fetch(
-          `/api/users/${userId || user?.id}/notification-settings`
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success) {
-            setPreferences(result.data);
-            return result.data;
-          }
-        }
-        return null;
-      } catch (error) {
-        console.error("Error loading notification preferences:", error);
-        return null;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [user?.id]
-  );
-
-  // Save user notification preferences
-  const savePreferences = useCallback(
-    async (
-      newPreferences: Partial<NotificationPreferences>,
-      userId?: string
-    ) => {
-      if (!userId && !user?.id) return false;
-
-      try {
-        setIsLoading(true);
-        const response = await fetch(
-          `/api/users/${userId || user?.id}/notification-settings`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(newPreferences),
-          }
-        );
-
-        if (response.ok) {
-          const result = await response.json();
-          if (result.success) {
-            setPreferences((prev) =>
-              prev ? { ...prev, ...newPreferences } : null
-            );
-            return true;
-          }
-        }
-        return false;
-      } catch (error) {
-        console.error("Error saving notification preferences:", error);
-        return false;
-      } finally {
-        setIsLoading(false);
-      }
-    },
-    [user?.id]
-  );
-
-  // Send notification based on user preferences
-  const sendNotification = useCallback(
-    async (
-      type:
-        | "welcome"
-        | "password-reset"
-        | "transaction-alert"
-        | "low-balance"
-        | "security-alert"
-        | "system-update",
-      recipient: NotificationRecipient,
-      data: NotificationData = {}
-    ) => {
-      try {
-        // Load recipient preferences if userId is provided
-        let recipientPrefs = preferences;
-        if (recipient.userId && recipient.userId !== user?.id) {
-          recipientPrefs = await loadPreferences(recipient.userId);
-        }
-
-        // Check if user wants this type of notification
-        if (recipientPrefs) {
-          const shouldSendEmail =
-            recipientPrefs.emailNotifications &&
-            (type === "transaction-alert"
-              ? recipientPrefs.transactionAlerts
-              : type === "security-alert"
-              ? recipientPrefs.securityAlerts
-              : type === "system-update"
-              ? recipientPrefs.systemUpdates
-              : true);
-
-          const shouldSendSms =
-            recipientPrefs.smsNotifications &&
-            (type === "transaction-alert"
-              ? recipientPrefs.transactionAlerts
-              : type === "security-alert"
-              ? recipientPrefs.securityAlerts
-              : false); // SMS only for critical alerts
-
-          // Override recipient contact info with preferences if available
-          if (!shouldSendEmail) recipient.email = undefined;
-          if (!shouldSendSms) recipient.phone = undefined;
-
-          if (recipientPrefs.emailAddress)
-            recipient.email = recipientPrefs.emailAddress;
-          if (recipientPrefs.phoneNumber)
-            recipient.phone = recipientPrefs.phoneNumber;
-        }
-
-        // Don't send if no contact method is available
-        if (!recipient.email && !recipient.phone) {
-          return {
-            success: false,
-            message: "No contact method available or notifications disabled",
-          };
-        }
-
-        // Check quiet hours
-        if (
-          recipientPrefs?.quietHoursEnabled &&
-          (type === "transaction-alert" || type === "low-balance")
-        ) {
-          const now = new Date();
-          const currentTime = now.getHours() * 100 + now.getMinutes();
-          const quietStart = Number.parseInt(
-            recipientPrefs.quietHoursStart.replace(":", "")
-          );
-          const quietEnd = Number.parseInt(
-            recipientPrefs.quietHoursEnd.replace(":", "")
-          );
-
-          if (quietStart > quietEnd) {
-            // Quiet hours span midnight
-            if (currentTime >= quietStart || currentTime <= quietEnd) {
-              return {
-                success: false,
-                message: "Notification suppressed due to quiet hours",
-              };
-            }
-          } else {
-            // Normal quiet hours
-            if (currentTime >= quietStart && currentTime <= quietEnd) {
-              return {
-                success: false,
-                message: "Notification suppressed due to quiet hours",
-              };
-            }
-          }
-        }
-
-        const response = await fetch("/api/notifications/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type, recipient, data }),
+        setUpdating(notificationId);
+        const response = await fetch(`/api/notifications/${notificationId}`, {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ action: "mark-read" }),
         });
 
         if (response.ok) {
-          const result = await response.json();
-          return result;
+          setNotifications((prev) =>
+            prev.map((notification) =>
+              notification.id === notificationId
+                ? {
+                    ...notification,
+                    is_read: true,
+                    read_at: new Date().toISOString(),
+                  }
+                : notification
+            )
+          );
+          toast({
+            title: "Success",
+            description: "Notification marked as read",
+          });
+          return true;
         } else {
-          throw new Error("Failed to send notification");
+          throw new Error("Failed to mark notification as read");
         }
       } catch (error) {
-        console.error("Error sending notification:", error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-        };
+        toast({
+          title: "Error",
+          description: "Failed to mark notification as read",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setUpdating(null);
       }
     },
-    [preferences, user?.id, loadPreferences]
+    [toast]
   );
 
-  // Convenience methods for common notifications
-  const sendTransactionAlert = useCallback(
-    (
-      recipient: NotificationRecipient,
-      transactionDetails: NotificationData["transactionDetails"]
-    ) => {
-      return sendNotification("transaction-alert", recipient, {
-        userName: recipient.userId ? "User" : "Customer",
-        transactionDetails,
+  const deleteNotification = useCallback(
+    async (notificationId: string) => {
+      try {
+        setUpdating(notificationId);
+        const response = await fetch(`/api/notifications/${notificationId}`, {
+          method: "DELETE",
+        });
+
+        if (response.ok) {
+          setNotifications((prev) =>
+            prev.filter((notification) => notification.id !== notificationId)
+          );
+          toast({
+            title: "Success",
+            description: "Notification deleted",
+          });
+          return true;
+        } else {
+          throw new Error("Failed to delete notification");
+        }
+      } catch (error) {
+        toast({
+          title: "Error",
+          description: "Failed to delete notification",
+          variant: "destructive",
+        });
+        return false;
+      } finally {
+        setUpdating(null);
+      }
+    },
+    [toast]
+  );
+
+  const markAllAsRead = useCallback(async () => {
+    try {
+      setUpdating("all");
+      const response = await fetch("/api/notifications/mark-all-read", {
+        method: "POST",
       });
-    },
-    [sendNotification]
-  );
 
-  const sendLowBalanceAlert = useCallback(
-    (
-      recipient: NotificationRecipient,
-      accountType: string,
-      currentBalance: number,
-      threshold: number
-    ) => {
-      return sendNotification("low-balance", recipient, {
-        userName: recipient.userId ? "User" : "Customer",
-        accountType,
-        currentBalance,
-        threshold,
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications((prev) =>
+          prev.map((notification) => ({
+            ...notification,
+            is_read: true,
+            read_at: new Date().toISOString(),
+          }))
+        );
+        toast({
+          title: "Success",
+          description: data.message,
+        });
+        return true;
+      } else {
+        throw new Error("Failed to mark all notifications as read");
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to mark all notifications as read",
+        variant: "destructive",
       });
-    },
-    [sendNotification]
-  );
+      return false;
+    } finally {
+      setUpdating(null);
+    }
+  }, [toast]);
 
-  const sendSecurityAlert = useCallback(
-    (recipient: NotificationRecipient, message: string) => {
-      return sendNotification("security-alert", recipient, {
-        userName: recipient.userId ? "User" : "Customer",
-        message,
+  const deleteAllNotifications = useCallback(async () => {
+    try {
+      setUpdating("delete-all");
+      const response = await fetch("/api/notifications/delete-all", {
+        method: "DELETE",
       });
-    },
-    [sendNotification]
-  );
 
-  const sendSystemUpdate = useCallback(
-    (recipient: NotificationRecipient, message: string) => {
-      return sendNotification("system-update", recipient, {
-        userName: recipient.userId ? "User" : "Customer",
-        message,
+      if (response.ok) {
+        const data = await response.json();
+        setNotifications([]);
+        toast({
+          title: "Success",
+          description: data.message,
+        });
+        return true;
+      } else {
+        throw new Error("Failed to delete all notifications");
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete all notifications",
+        variant: "destructive",
       });
-    },
-    [sendNotification]
-  );
+      return false;
+    } finally {
+      setUpdating(null);
+    }
+  }, [toast]);
 
-  const addNotification = useCallback(
-    (notification: Omit<Notification, "id" | "timestamp">) => {
-      const newNotification: Notification = {
-        ...notification,
-        id: Math.random().toString(36).substr(2, 9),
-        timestamp: new Date(),
-      };
-      setNotifications((prev) => [newNotification, ...prev]);
-    },
-    []
-  );
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
-  const removeNotification = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  }, []);
-
-  const clearNotifications = useCallback(() => {
-    setNotifications([]);
-  }, []);
+  useEffect(() => {
+    fetchNotifications();
+  }, [fetchNotifications]);
 
   return {
-    preferences,
-    isLoading,
-    loadPreferences,
-    savePreferences,
-    sendNotification,
-    sendTransactionAlert,
-    sendLowBalanceAlert,
-    sendSecurityAlert,
-    sendSystemUpdate,
     notifications,
-    addNotification,
-    removeNotification,
-    clearNotifications,
+    loading,
+    updating,
+    unreadCount,
+    fetchNotifications,
+    markAsRead,
+    deleteNotification,
+    markAllAsRead,
+    deleteAllNotifications,
   };
 }

@@ -6,9 +6,6 @@
  * GL accounts and provides utility functions for working with these mappings.
  */
 
-// Import the Agency Banking mappings
-import { agencyBankingGLMappings } from "./gl-mapping-agency-banking"
-
 // Types of transaction sources in the system
 export type TransactionSource =
   | "momo" // Mobile Money
@@ -20,67 +17,74 @@ export type TransactionSource =
   | "commissions" // Commission Management
   | "float" // Float Management
   | "cash-till" // Cash Till Operations
-  | "manual" // Manual Journal Entries
+  | "manual"; // Manual Journal Entries
 
 // GL Account Mapping interface
 export interface GLAccountMapping {
-  id: string
-  serviceModule: string
-  transactionType: string
-  debitAccountId: string
-  creditAccountId: string
-  description: string
-  isActive: boolean
-  conditions?: MappingCondition[]
+  id: string;
+  serviceModule: string;
+  transactionType: string;
+  debitAccountId: string;
+  creditAccountId: string;
+  description: string;
+  isActive: boolean;
+  conditions?: MappingCondition[];
 }
 
 // Conditions for more complex mapping rules
 export interface MappingCondition {
-  field: string
-  operator: "equals" | "not-equals" | "greater-than" | "less-than" | "contains" | "starts-with" | "ends-with"
-  value: string | number | boolean
+  field: string;
+  operator:
+    | "equals"
+    | "not-equals"
+    | "greater-than"
+    | "less-than"
+    | "contains"
+    | "starts-with"
+    | "ends-with";
+  value: string | number | boolean;
 }
 
 // Transaction data interface - generic structure that all transaction types should conform to
 export interface TransactionData {
-  id: string
-  type: string
-  amount: number
-  date: string
-  source: TransactionSource
-  branchId?: string
-  userId?: string
-  reference?: string
-  metadata?: Record<string, any>
-  [key: string]: any // Allow for additional properties specific to each transaction type
+  id: string;
+  type: string;
+  amount: number;
+  date: string;
+  source: TransactionSource;
+  branchId?: string;
+  userId?: string;
+  reference?: string;
+  metadata?: Record<string, any>;
+  [key: string]: any; // Allow for additional properties specific to each transaction type
 }
 
 // Journal Entry Line interface
 export interface JournalEntryLine {
-  accountId: string
-  debit?: number
-  credit?: number
-  description: string
-  metadata?: Record<string, any>
+  accountId: string;
+  debit?: number;
+  credit?: number;
+  description: string;
+  metadata?: Record<string, any>;
 }
 
 // Journal Entry interface
 export interface JournalEntry {
-  id: string
-  transactionId: string
-  transactionSource: TransactionSource
-  transactionType: string
-  date: string
-  entries: JournalEntryLine[]
-  description: string
-  status: "pending" | "posted" | "reversed"
-  createdBy: string
-  createdAt: string
-  postedBy?: string
-  postedAt?: string
-  reversedBy?: string
-  reversedAt?: string
-  metadata?: Record<string, any>
+  id: string;
+  transactionId: string;
+  transactionSource: TransactionSource;
+  transactionType: string;
+  date: string;
+  entries: JournalEntryLine[];
+  description: string;
+  status: "pending" | "posted" | "reversed";
+  createdBy: string;
+  createdAt: string;
+  postedBy?: string;
+  postedAt?: string;
+  reversedBy?: string;
+  reversedAt?: string;
+  metadata?: Record<string, any>;
 }
 
 // Default GL mappings for common transaction types
@@ -260,8 +264,7 @@ export const defaultGLMappings: GLAccountMapping[] = [
     description: "Float Return from Agent/Branch",
     isActive: true,
   },
-  ...agencyBankingGLMappings,
-]
+];
 
 /**
  * Find the appropriate GL mapping for a transaction
@@ -273,63 +276,73 @@ export const defaultGLMappings: GLAccountMapping[] = [
 export function findGLMapping(
   source: TransactionSource,
   type: string,
-  data?: Record<string, any>,
+  data?: Record<string, any>
 ): GLAccountMapping | null {
   // Filter active mappings that match the source and type
   const matchingMappings = defaultGLMappings.filter(
-    (mapping) => mapping.isActive && mapping.serviceModule === source && mapping.transactionType === type,
-  )
+    (mapping) =>
+      mapping.isActive &&
+      mapping.serviceModule === source &&
+      mapping.transactionType === type
+  );
 
   if (matchingMappings.length === 0) {
-    return null
+    return null;
   }
 
   // If there are no additional conditions or no data provided, return the first match
-  if (!data || matchingMappings.every((mapping) => !mapping.conditions || mapping.conditions.length === 0)) {
-    return matchingMappings[0]
+  if (
+    !data ||
+    matchingMappings.every(
+      (mapping) => !mapping.conditions || mapping.conditions.length === 0
+    )
+  ) {
+    return matchingMappings[0];
   }
 
   // Find mappings that match all conditions
   for (const mapping of matchingMappings) {
     if (!mapping.conditions || mapping.conditions.length === 0) {
-      continue
+      continue;
     }
 
     const allConditionsMatch = mapping.conditions.every((condition) => {
-      const fieldValue = data[condition.field]
+      const fieldValue = data[condition.field];
 
       if (fieldValue === undefined) {
-        return false
+        return false;
       }
 
       switch (condition.operator) {
         case "equals":
-          return fieldValue === condition.value
+          return fieldValue === condition.value;
         case "not-equals":
-          return fieldValue !== condition.value
+          return fieldValue !== condition.value;
         case "greater-than":
-          return fieldValue > condition.value
+          return fieldValue > condition.value;
         case "less-than":
-          return fieldValue < condition.value
+          return fieldValue < condition.value;
         case "contains":
-          return String(fieldValue).includes(String(condition.value))
+          return String(fieldValue).includes(String(condition.value));
         case "starts-with":
-          return String(fieldValue).startsWith(String(condition.value))
+          return String(fieldValue).startsWith(String(condition.value));
         case "ends-with":
-          return String(fieldValue).endsWith(String(condition.value))
+          return String(fieldValue).endsWith(String(condition.value));
         default:
-          return false
+          return false;
       }
-    })
+    });
 
     if (allConditionsMatch) {
-      return mapping
+      return mapping;
     }
   }
 
   // If no mapping with matching conditions is found, return the first mapping without conditions
-  const defaultMapping = matchingMappings.find((mapping) => !mapping.conditions || mapping.conditions.length === 0)
-  return defaultMapping || matchingMappings[0]
+  const defaultMapping = matchingMappings.find(
+    (mapping) => !mapping.conditions || mapping.conditions.length === 0
+  );
+  return defaultMapping || matchingMappings[0];
 }
 
 /**
@@ -338,24 +351,31 @@ export function findGLMapping(
  * @param mapping GL account mapping
  * @returns Array of journal entry lines
  */
-export function generateJournalEntryLines(transaction: TransactionData, mapping: GLAccountMapping): JournalEntryLine[] {
-  const { amount } = transaction
+export function generateJournalEntryLines(
+  transaction: TransactionData,
+  mapping: GLAccountMapping
+): JournalEntryLine[] {
+  const { amount } = transaction;
 
   // Create the journal entry lines
   const lines: JournalEntryLine[] = [
     {
       accountId: mapping.debitAccountId,
       debit: amount,
-      description: `${mapping.description} - ${transaction.reference || transaction.id}`,
+      description: `${mapping.description} - ${
+        transaction.reference || transaction.id
+      }`,
     },
     {
       accountId: mapping.creditAccountId,
       credit: amount,
-      description: `${mapping.description} - ${transaction.reference || transaction.id}`,
+      description: `${mapping.description} - ${
+        transaction.reference || transaction.id
+      }`,
     },
-  ]
+  ];
 
-  return lines
+  return lines;
 }
 
 /**
@@ -364,16 +384,23 @@ export function generateJournalEntryLines(transaction: TransactionData, mapping:
  * @param userId ID of the user creating the journal entry
  * @returns Journal entry object or null if no mapping found
  */
-export function generateJournalEntry(transaction: TransactionData, userId: string): JournalEntry | null {
+export function generateJournalEntry(
+  transaction: TransactionData,
+  userId: string
+): JournalEntry | null {
   // Find the appropriate mapping
-  const mapping = findGLMapping(transaction.source, transaction.type, transaction)
+  const mapping = findGLMapping(
+    transaction.source,
+    transaction.type,
+    transaction
+  );
 
   if (!mapping) {
-    return null
+    return null;
   }
 
   // Generate journal entry lines
-  const entryLines = generateJournalEntryLines(transaction, mapping)
+  const entryLines = generateJournalEntryLines(transaction, mapping);
 
   // Create the journal entry
   const journalEntry: JournalEntry = {
@@ -383,16 +410,18 @@ export function generateJournalEntry(transaction: TransactionData, userId: strin
     transactionType: transaction.type,
     date: transaction.date,
     entries: entryLines,
-    description: `${mapping.description} - ${transaction.reference || transaction.id}`,
+    description: `${mapping.description} - ${
+      transaction.reference || transaction.id
+    }`,
     status: "pending",
     createdBy: userId,
     createdAt: new Date().toISOString(),
     metadata: {
       originalTransaction: transaction,
     },
-  }
+  };
 
-  return journalEntry
+  return journalEntry;
 }
 
 /**
@@ -401,20 +430,20 @@ export function generateJournalEntry(transaction: TransactionData, userId: strin
  * @returns True if the journal entry is balanced, false otherwise
  */
 export function validateJournalEntry(journalEntry: JournalEntry): boolean {
-  let totalDebits = 0
-  let totalCredits = 0
+  let totalDebits = 0;
+  let totalCredits = 0;
 
   for (const line of journalEntry.entries) {
     if (line.debit) {
-      totalDebits += line.debit
+      totalDebits += line.debit;
     }
     if (line.credit) {
-      totalCredits += line.credit
+      totalCredits += line.credit;
     }
   }
 
   // Check if debits equal credits (allowing for small floating point differences)
-  return Math.abs(totalDebits - totalCredits) < 0.001
+  return Math.abs(totalDebits - totalCredits) < 0.001;
 }
 
 /**
@@ -422,15 +451,19 @@ export function validateJournalEntry(journalEntry: JournalEntry): boolean {
  * @param mapping GL account mapping to create
  * @returns The created mapping with a generated ID
  */
-export function createGLMapping(mapping: Omit<GLAccountMapping, "id">): GLAccountMapping {
+export function createGLMapping(
+  mapping: Omit<GLAccountMapping, "id">
+): GLAccountMapping {
   const newMapping: GLAccountMapping = {
-    id: `mapping-${mapping.serviceModule}-${mapping.transactionType}-${Date.now()}`,
+    id: `mapping-${mapping.serviceModule}-${
+      mapping.transactionType
+    }-${Date.now()}`,
     ...mapping,
-  }
+  };
 
   // In a real application, this would save to a database
   // For now, we'll just return the new mapping
-  return newMapping
+  return newMapping;
 }
 
 /**
@@ -439,10 +472,13 @@ export function createGLMapping(mapping: Omit<GLAccountMapping, "id">): GLAccoun
  * @param updates Updates to apply to the mapping
  * @returns True if the mapping was updated, false if not found
  */
-export function updateGLMapping(id: string, updates: Partial<Omit<GLAccountMapping, "id">>): boolean {
+export function updateGLMapping(
+  id: string,
+  updates: Partial<Omit<GLAccountMapping, "id">>
+): boolean {
   // In a real application, this would update a database record
   // For now, we'll just return true to simulate success
-  return true
+  return true;
 }
 
 /**
@@ -453,7 +489,7 @@ export function updateGLMapping(id: string, updates: Partial<Omit<GLAccountMappi
 export function deleteGLMapping(id: string): boolean {
   // In a real application, this would delete from a database
   // For now, we'll just return true to simulate success
-  return true
+  return true;
 }
 
 /**
@@ -461,8 +497,12 @@ export function deleteGLMapping(id: string): boolean {
  * @param serviceModule Service module to filter by
  * @returns Array of GL mappings for the specified service module
  */
-export function getGLMappingsByModule(serviceModule: string): GLAccountMapping[] {
-  return defaultGLMappings.filter((mapping) => mapping.serviceModule === serviceModule)
+export function getGLMappingsByModule(
+  serviceModule: string
+): GLAccountMapping[] {
+  return defaultGLMappings.filter(
+    (mapping) => mapping.serviceModule === serviceModule
+  );
 }
 
 /**
@@ -470,5 +510,5 @@ export function getGLMappingsByModule(serviceModule: string): GLAccountMapping[]
  * @returns Array of all active GL mappings
  */
 export function getActiveGLMappings(): GLAccountMapping[] {
-  return defaultGLMappings.filter((mapping) => mapping.isActive)
+  return defaultGLMappings.filter((mapping) => mapping.isActive);
 }

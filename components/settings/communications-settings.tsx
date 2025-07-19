@@ -368,30 +368,55 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
 
     try {
       const values = emailForm.getValues();
-      const response = await fetch("/api/notifications/test", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type: "email",
-          config: values,
-          testEmail: "programmingwithsalim@gmail.com",
-        }),
-        credentials: "include", // Ensure session token is sent
-      });
 
-      const result = await response.json();
+      // Test different email templates
+      const templates = [
+        "welcome",
+        "transactionAlert",
+        "lowBalanceAlert",
+        "loginAlert",
+      ];
+      const results = [];
 
-      if (response.ok && result.success) {
+      for (const template of templates) {
+        try {
+          const response = await fetch("/api/test-email", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              template,
+              testEmail: "programmingwithsalim@gmail.com",
+            }),
+          });
+
+          const result = await response.json();
+          results.push({
+            template,
+            success: response.ok,
+            message: result.message || result.error,
+          });
+        } catch (error) {
+          results.push({
+            template,
+            success: false,
+            message: error instanceof Error ? error.message : "Request failed",
+          });
+        }
+      }
+
+      const successfulTests = results.filter((r) => r.success);
+
+      if (successfulTests.length > 0) {
         setEmailTestResult({
           success: true,
-          message: result.message || "Email test sent successfully!",
+          message: `Successfully sent ${successfulTests.length}/${templates.length} test emails. Check your inbox.`,
         });
         toast({
           title: "Email Test Successful",
-          description: "Test email sent successfully. Check your inbox.",
+          description: `Sent ${successfulTests.length} test emails successfully.`,
         });
       } else {
-        throw new Error(result.error || "Email test failed");
+        throw new Error("All email tests failed");
       }
     } catch (error) {
       const errorMessage =
@@ -564,7 +589,7 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                                 <FormLabel>From Name</FormLabel>
                                 <FormControl>
                                   <Input
-                                    placeholder="FinTech Platform"
+                                    placeholder="Mimhaad Finance Platform"
                                     {...field}
                                   />
                                 </FormControl>
@@ -713,7 +738,7 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                                 <FormLabel>From Name</FormLabel>
                                 <FormControl>
                                   <Input
-                                    placeholder="FinTech Platform"
+                                    placeholder="Mimhaad Finance Platform"
                                     {...field}
                                   />
                                 </FormControl>
@@ -846,7 +871,7 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                             <FormItem>
                               <FormLabel>Sender ID</FormLabel>
                               <FormControl>
-                                <Input placeholder="FinTech" {...field} />
+                                <Input placeholder="Mimhaad Finance" {...field} />
                               </FormControl>
                               <FormDescription>
                                 SMS sender ID (alphanumeric, max 11 chars)

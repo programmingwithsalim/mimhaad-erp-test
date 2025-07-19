@@ -6,7 +6,7 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST() {
   try {
-    console.log("Updating staff counts for all branches...");
+    console.log("🔄 Starting staff count update for all branches...");
 
     // First, check if user_branch_assignments table exists
     const tableExists = await sql`
@@ -19,7 +19,7 @@ export async function POST() {
 
     if (!tableExists[0]?.exists) {
       console.log(
-        "user_branch_assignments table does not exist, creating it..."
+        "📋 user_branch_assignments table does not exist, creating it..."
       );
 
       // Create the user_branch_assignments table
@@ -40,43 +40,85 @@ export async function POST() {
       await sql`CREATE INDEX IF NOT EXISTS idx_user_branch_assignments_branch_id ON user_branch_assignments(branch_id)`;
       await sql`CREATE INDEX IF NOT EXISTS idx_user_branch_assignments_primary ON user_branch_assignments(is_primary)`;
 
-      console.log("user_branch_assignments table created successfully");
+      console.log("✅ user_branch_assignments table created successfully");
+    }
 
-      // Populate the table with existing user-branch relationships
-      const usersWithBranches = await sql`
-        SELECT id, primary_branch_id, branch_id 
-        FROM users 
-        WHERE status = 'active' 
-        AND (primary_branch_id IS NOT NULL OR branch_id IS NOT NULL)
-      `;
+    // Ensure all active users are properly assigned to branches
+    console.log("🔍 Checking for users without branch assignments...");
 
-      for (const user of usersWithBranches) {
-        const branchId = user.primary_branch_id || user.branch_id;
-        if (branchId) {
-          try {
-            await sql`
-              INSERT INTO user_branch_assignments (user_id, branch_id, is_primary)
-              VALUES (${user.id}, ${branchId}, ${!!user.primary_branch_id})
-              ON CONFLICT (user_id, branch_id) DO NOTHING
-            `;
-          } catch (error) {
-            console.warn(
-              `Failed to assign user ${user.id} to branch ${branchId}:`,
-              error
-            );
-          }
+    const usersWithoutAssignments = await sql`
+      SELECT 
+        u.id,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.primary_branch_id,
+        u.status
+      FROM users u
+      LEFT JOIN user_branch_assignments uba ON u.id = uba.user_id
+      WHERE u.status = 'active'
+      AND uba.user_id IS NULL
+      AND u.primary_branch_id IS NOT NULL
+    `;
+
+    console.log(
+      `📊 Found ${usersWithoutAssignments.length} users without branch assignments`
+    );
+
+    // Check for users with no branch assignment at all
+    const usersWithNoBranch = await sql`
+      SELECT 
+        u.id,
+        u.first_name,
+        u.last_name,
+        u.email,
+        u.role,
+        u.status
+      FROM users u
+      WHERE u.status = 'active'
+      AND u.primary_branch_id IS NULL
+      AND u.role != 'admin'
+    `;
+
+    console.log(
+      `⚠️ Found ${usersWithNoBranch.length} active users with no branch assignment at all`
+    );
+
+    if (usersWithNoBranch.length > 0) {
+      console.log("👥 Users with no branch assignment:");
+      usersWithNoBranch.forEach((user) => {
+        console.log(
+          `   - ${user.first_name} ${user.last_name} (${user.email}) - ${user.role}`
+        );
+      });
+    }
+
+    // Assign users to branches if they're missing from user_branch_assignments
+    for (const user of usersWithoutAssignments) {
+      const branchId = user.primary_branch_id;
+      if (branchId) {
+        try {
+          await sql`
+            INSERT INTO user_branch_assignments (user_id, branch_id, is_primary)
+            VALUES (${user.id}, ${branchId}, true)
+            ON CONFLICT (user_id, branch_id) DO NOTHING
+          `;
+          console.log(`✅ Assigned user ${user.email} to branch ${branchId}`);
+        } catch (error) {
+          console.warn(
+            `⚠️ Failed to assign user ${user.email} to branch ${branchId}:`,
+            error
+          );
         }
       }
-
-      console.log(
-        `Populated user_branch_assignments with ${usersWithBranches.length} users`
-      );
     }
 
     // Get all active branches
     const branches = await sql`
-      SELECT id, name FROM branches WHERE status = 'active'
+      SELECT id, name, staff_count FROM branches WHERE status = 'active'
     `;
+
+    console.log(`🏢 Found ${branches.length} active branches to update`);
 
     const results = {
       totalBranches: branches.length,
@@ -85,43 +127,113 @@ export async function POST() {
       branchResults: [] as Array<{
         id: string;
         name: string;
-        staffCount: number;
+        previousStaffCount: number;
+        newStaffCount: number;
+        staffDetails: Array<{
+          id: string;
+          firstName: string;
+          lastName: string;
+          email: string;
+          role: string;
+          isPrimary: boolean;
+        }>;
       }>,
     };
 
     // Update staff count for each branch
     for (const branch of branches) {
       try {
-        const staffCount = await BranchStaffService.updateBranchStaffCount(
-          branch.id
-        );
+        console.log(`🔄 Updating staff count for branch: ${branch.name}`);
+
+        // Get current staff count
+        const previousStaffCount = branch.staff_count || 0;
+
+        // Get detailed staff information
+        const staffDetails = await sql`
+          SELECT 
+            u.id,
+            u.first_name as "firstName",
+            u.last_name as "lastName",
+            u.email,
+            u.role,
+            uba.is_primary as "isPrimary"
+          FROM users u
+          INNER JOIN user_branch_assignments uba ON u.id = uba.user_id
+          WHERE uba.branch_id = ${branch.id}
+          AND u.status = 'active'
+          ORDER BY uba.is_primary DESC, u.first_name, u.last_name
+        `;
+
+        const newStaffCount = staffDetails.length;
+
+        // Update the branch's staff count
+        await sql`
+          UPDATE branches 
+          SET staff_count = ${newStaffCount},
+              updated_at = NOW()
+          WHERE id = ${branch.id}
+        `;
+
         results.updatedBranches++;
         results.branchResults.push({
           id: branch.id,
           name: branch.name,
-          staffCount,
+          previousStaffCount,
+          newStaffCount,
+          staffDetails,
         });
-        console.log(`✅ Updated ${branch.name}: ${staffCount} staff`);
+
+        console.log(
+          `✅ Updated ${branch.name}: ${previousStaffCount} → ${newStaffCount} staff`
+        );
+
+        // Log staff details for debugging
+        if (newStaffCount > 0) {
+          console.log(`👥 Staff in ${branch.name}:`);
+          staffDetails.forEach((staff) => {
+            console.log(
+              `   - ${staff.firstName} ${staff.lastName} (${staff.email}) - ${
+                staff.role
+              }${staff.isPrimary ? " [Primary]" : ""}`
+            );
+          });
+        }
       } catch (error) {
         const errorMessage = `Failed to update ${branch.name}: ${
           error instanceof Error ? error.message : "Unknown error"
         }`;
         results.errors.push(errorMessage);
-        console.error(errorMessage);
+        console.error(`❌ ${errorMessage}`);
       }
     }
 
     console.log(
-      `Staff count update completed: ${results.updatedBranches}/${results.totalBranches} branches updated`
+      `🎉 Staff count update completed: ${results.updatedBranches}/${results.totalBranches} branches updated`
     );
+
+    // Log summary
+    const totalStaff = results.branchResults.reduce(
+      (sum, branch) => sum + branch.newStaffCount,
+      0
+    );
+    console.log(`📊 Total staff across all branches: ${totalStaff}`);
 
     return NextResponse.json({
       success: true,
-      message: `Updated staff count for ${results.updatedBranches} out of ${results.totalBranches} branches`,
+      message: `Updated staff count for ${results.updatedBranches} out of ${results.totalBranches} branches. Total staff: ${totalStaff}`,
       results,
+      summary: {
+        totalBranches: results.totalBranches,
+        updatedBranches: results.updatedBranches,
+        totalStaff,
+        usersWithoutAssignments: usersWithoutAssignments.length,
+        usersWithNoBranch: usersWithNoBranch.length,
+        errors: results.errors.length,
+      },
+      usersWithNoBranch: usersWithNoBranch.length > 0 ? usersWithNoBranch : [],
     });
   } catch (error) {
-    console.error("Error updating staff counts:", error);
+    console.error("❌ Error updating staff counts:", error);
     return NextResponse.json(
       {
         success: false,
