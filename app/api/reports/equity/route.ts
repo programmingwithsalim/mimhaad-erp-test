@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     }
 
     // Determine effective branch filter
-    const effectiveBranchId = user.role === "admin" ? branch : user.branchId;
+    const effectiveBranchId = user.role === "Admin" ? branch : user.branchId;
     const branchFilter =
       effectiveBranchId && effectiveBranchId !== "all"
         ? sql`AND branch_id = ${effectiveBranchId}`
@@ -34,155 +34,113 @@ export async function GET(request: Request) {
     const dateFilter =
       from && to ? sql`AND created_at::date BETWEEN ${from} AND ${to}` : sql``;
 
-    // Get GL account balances for equity accounts
-    const equityAccounts = await sql`
-      SELECT 
-        id,
-        code,
-        name,
-        type,
-        balance,
-        is_active
-      FROM gl_accounts
-      WHERE type = 'Equity' AND is_active = true
-      ORDER BY code
-    `;
+    // EQUITY COMPONENTS
 
-    // Get equity transactions from GL
-    const equityTransactions = await sql`
-      SELECT 
-        gt.id,
-        gt.date,
-        gt.source_module,
-        gt.description,
-        gt.amount,
-        gt.status,
-        je.account_id,
-        je.debit,
-        je.credit,
-        a.code as account_code,
-        a.name as account_name,
-        b.name as branch_name
-      FROM gl_transactions gt
-      JOIN gl_journal_entries je ON gt.id = je.transaction_id
-      JOIN gl_accounts a ON je.account_id = a.id
-      LEFT JOIN branches b ON gt.branch_id = b.id
-      WHERE a.type = 'Equity' 
-        AND gt.status = 'posted'
-        ${branchFilter}
-        ${dateFilter}
-      ORDER BY gt.date DESC
+    // 1. Share Capital (Initial investment - represented by float accounts)
+    const shareCapitalResult = await sql`
+      SELECT COALESCE(SUM(current_balance), 0) as total_float
+      FROM float_accounts 
+      WHERE is_active = true ${branchFilter}
     `;
+    const shareCapital = Number(shareCapitalResult[0].total_float) || 0;
 
-    // Calculate equity components
-    const equityComponents = await sql`
-      WITH account_balances AS (
-        SELECT 
-          a.id, 
-          a.code, 
-          a.name, 
-          a.type,
-          CASE 
-            WHEN a.type = 'Equity' THEN COALESCE(SUM(je.credit), 0) - COALESCE(SUM(je.debit), 0)
-            ELSE 0
-          END as net_balance
-        FROM gl_accounts a
-        LEFT JOIN gl_journal_entries je ON a.id = je.account_id
-        LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
-        WHERE a.type = 'Equity' AND a.is_active = true
-        ${branchFilter}
-        GROUP BY a.id, a.code, a.name, a.type
-      )
-      SELECT
-        code,
-        name,
-        net_balance,
-        CASE 
-          WHEN code LIKE '3001%' THEN 'Share Capital'
-          WHEN code LIKE '3002%' THEN 'Retained Earnings'
-          WHEN code LIKE '3003%' THEN 'Current Year Earnings'
-          ELSE 'Other Equity'
-        END as equity_type
-      FROM account_balances
-      ORDER BY code
+    // 2. Retained Earnings (Net income from operations)
+    const revenueResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_revenue
+      FROM (
+        SELECT amount FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+      ) completed_transactions
     `;
+    const totalRevenue = Number(revenueResult[0].total_revenue) || 0;
 
-    // Get retained earnings breakdown
-    const retainedEarningsBreakdown = await sql`
-      SELECT 
-        DATE_TRUNC('month', gt.date) as month,
-        COALESCE(SUM(CASE WHEN je.credit > 0 THEN je.credit ELSE 0 END), 0) as credits,
-        COALESCE(SUM(CASE WHEN je.debit > 0 THEN je.debit ELSE 0 END), 0) as debits,
-        COALESCE(SUM(je.credit - je.debit), 0) as net_change
-      FROM gl_transactions gt
-      JOIN gl_journal_entries je ON gt.id = je.transaction_id
-      JOIN gl_accounts a ON je.account_id = a.id
-      WHERE a.type = 'Equity' 
-        AND gt.status = 'posted'
-        ${branchFilter}
-        ${dateFilter}
-      GROUP BY DATE_TRUNC('month', gt.date)
-      ORDER BY month DESC
-      LIMIT 12
+    const expensesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_expenses
+      FROM expenses 
+      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
     `;
+    const totalExpenses = Number(expensesResult[0].total_expenses) || 0;
+
+    const retainedEarnings = totalRevenue - totalExpenses;
+
+    // 3. Other Reserves (Commissions and other income)
+    const commissionsResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_commissions
+      FROM commissions 
+      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+    `;
+    const otherReserves = Number(commissionsResult[0].total_commissions) || 0;
+
+    // 4. Fixed Assets (Net book value)
+    const fixedAssetsResult = await sql`
+      SELECT COALESCE(SUM(current_value), 0) as net_book_value
+      FROM fixed_assets 
+      WHERE status = 'active' ${branchFilter}
+    `;
+    const fixedAssetsEquity = Number(fixedAssetsResult[0].net_book_value) || 0;
 
     // Calculate total equity
-    const totalEquityResult = await sql`
-      SELECT COALESCE(SUM(
-        CASE 
-          WHEN a.type = 'Equity' THEN COALESCE(SUM(je.credit), 0) - COALESCE(SUM(je.debit), 0)
-          ELSE 0
-        END
-      ), 0) as total_equity
-      FROM gl_accounts a
-      LEFT JOIN gl_journal_entries je ON a.id = je.account_id
-      LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
-      WHERE a.type = 'Equity' AND a.is_active = true
-      ${branchFilter}
-      GROUP BY a.id, a.code, a.name, a.type
-    `;
+    const totalEquity =
+      shareCapital + retainedEarnings + otherReserves + fixedAssetsEquity;
 
-    const totalEquity = totalEquityResult.reduce(
-      (sum, row) => sum + Number(row.total_equity || 0),
-      0
-    );
-
-    // Get equity changes over time
-    const equityChanges = await sql`
+    // Get equity transactions (commissions)
+    const equityTransactions = await sql`
       SELECT 
-        gt.date,
-        gt.source_module,
-        gt.description,
-        COALESCE(SUM(je.credit), 0) as total_credits,
-        COALESCE(SUM(je.debit), 0) as total_debits,
-        COALESCE(SUM(je.credit - je.debit), 0) as net_change
-      FROM gl_transactions gt
-      JOIN gl_journal_entries je ON gt.id = je.transaction_id
-      JOIN gl_accounts a ON je.account_id = a.id
-      WHERE a.type = 'Equity' 
-        AND gt.status = 'posted'
-        ${branchFilter}
-        ${dateFilter}
-      GROUP BY gt.id, gt.date, gt.source_module, gt.description
-      ORDER BY gt.date DESC
-      LIMIT 50
+        source,
+        source_name,
+        amount,
+        month,
+        status,
+        created_at
+      FROM commissions 
+      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+      ORDER BY created_at DESC
     `;
 
     return NextResponse.json({
       success: true,
       data: {
+        period: { from, to },
         summary: {
           totalEquity,
-          equityAccounts: equityAccounts.length,
+          shareCapital,
+          retainedEarnings,
+          otherReserves,
+          fixedAssetsEquity,
+          equityAccounts: 4, // Share Capital, Retained Earnings, Other Reserves, Fixed Assets
           totalTransactions: equityTransactions.length,
-          reportPeriod: { from, to },
         },
-        equityAccounts,
-        equityComponents,
-        equityTransactions,
-        retainedEarningsBreakdown,
-        equityChanges,
-        reportDate: new Date().toISOString(),
+        components: [
+          {
+            name: "Share Capital",
+            amount: shareCapital,
+            description: "Initial investment in float accounts",
+          },
+          {
+            name: "Retained Earnings",
+            amount: retainedEarnings,
+            description: "Net income from operations",
+          },
+          {
+            name: "Other Reserves",
+            amount: otherReserves,
+            description: "Commissions and other income",
+          },
+          {
+            name: "Fixed Assets",
+            amount: fixedAssetsEquity,
+            description: "Net book value of fixed assets",
+          },
+        ],
+        transactions: equityTransactions,
+        branchFilter: effectiveBranchId,
         generatedBy: user.name || user.email,
       },
     });

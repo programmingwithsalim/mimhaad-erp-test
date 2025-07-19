@@ -7,7 +7,8 @@ const sql = neon(process.env.DATABASE_URL!);
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const date = searchParams.get("date");
+    const from = searchParams.get("from");
+    const to = searchParams.get("to");
     const branch = searchParams.get("branch");
 
     // Get user context for authorization
@@ -23,286 +24,144 @@ export async function GET(request: Request) {
     }
 
     // Determine effective branch filter
-    const effectiveBranchId = user.role === "admin" ? branch : user.branchId;
+    const effectiveBranchId = user.role === "Admin" ? branch : user.branchId;
     const branchFilter =
       effectiveBranchId && effectiveBranchId !== "all"
         ? sql`AND branch_id = ${effectiveBranchId}`
         : sql``;
 
-    // Date filter (as of specific date)
-    const dateFilter = date ? sql`AND created_at::date <= ${date}` : sql``;
+    // Date filter for transactions
+    const dateFilter =
+      from && to ? sql`AND created_at::date BETWEEN ${from} AND ${to}` : sql``;
 
-    // Get assets from GL accounts
-    const assetsResult = await sql`
-      WITH account_balances AS (
-        SELECT 
-          a.id, 
-          a.code, 
-          a.name, 
-          a.type,
-          CASE 
-            WHEN a.type = 'Asset' THEN COALESCE(SUM(je.debit), 0) - COALESCE(SUM(je.credit), 0)
-            ELSE 0
-          END as net_balance
-        FROM gl_accounts a
-        LEFT JOIN gl_journal_entries je ON a.id = je.account_id
-        LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
-        WHERE a.type = 'Asset' AND a.is_active = true
-        ${branchFilter}
-        ${dateFilter}
-        GROUP BY a.id, a.code, a.name, a.type
-      )
-      SELECT 
-        code,
-        name,
-        net_balance,
-        CASE 
-          WHEN code LIKE '100%' THEN 'Current Assets'
-          WHEN code LIKE '150%' THEN 'Fixed Assets'
-          ELSE 'Other Assets'
-        END as asset_category
-      FROM account_balances
-      WHERE net_balance > 0
-      ORDER BY code
+    // ASSETS SECTION
+    // 1. Current Assets
+    // Cash and Cash Equivalents (Float Accounts)
+    const cashResult = await sql`
+      SELECT COALESCE(SUM(current_balance), 0) as total_cash
+      FROM float_accounts 
+      WHERE is_active = true ${branchFilter}
     `;
+    const totalCash = Number(cashResult[0].total_cash) || 0;
 
-    // Get liabilities from GL accounts
-    const liabilitiesResult = await sql`
-      WITH account_balances AS (
-        SELECT 
-          a.id, 
-          a.code, 
-          a.name, 
-          a.type,
-          CASE 
-            WHEN a.type = 'Liability' THEN COALESCE(SUM(je.credit), 0) - COALESCE(SUM(je.debit), 0)
-            ELSE 0
-          END as net_balance
-        FROM gl_accounts a
-        LEFT JOIN gl_journal_entries je ON a.id = je.account_id
-        LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
-        WHERE a.type = 'Liability' AND a.is_active = true
-        ${branchFilter}
-        ${dateFilter}
-        GROUP BY a.id, a.code, a.name, a.type
-      )
-      SELECT 
-        code,
-        name,
-        net_balance,
-        CASE 
-          WHEN code LIKE '200%' THEN 'Current Liabilities'
-          WHEN code LIKE '250%' THEN 'Long-term Liabilities'
-          ELSE 'Other Liabilities'
-        END as liability_category
-      FROM account_balances
-      WHERE net_balance > 0
-      ORDER BY code
+    // Accounts Receivable (Pending transactions)
+    const receivablesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_receivables
+      FROM (
+        SELECT amount FROM agency_banking_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM momo_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM power_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM jumia_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+      ) pending_transactions
     `;
+    const totalReceivables =
+      Number(receivablesResult[0].total_receivables) || 0;
 
-    // Get equity from GL accounts
-    const equityResult = await sql`
-      WITH account_balances AS (
-        SELECT 
-          a.id, 
-          a.code, 
-          a.name, 
-          a.type,
-          CASE 
-            WHEN a.type = 'Equity' THEN COALESCE(SUM(je.credit), 0) - COALESCE(SUM(je.debit), 0)
-            ELSE 0
-          END as net_balance
-        FROM gl_accounts a
-        LEFT JOIN gl_journal_entries je ON a.id = je.account_id
-        LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
-        WHERE a.type = 'Equity' AND a.is_active = true
-        ${branchFilter}
-        ${dateFilter}
-        GROUP BY a.id, a.code, a.name, a.type
-      )
-      SELECT 
-        code,
-        name,
-        net_balance,
-        CASE 
-          WHEN code LIKE '3001%' THEN 'Share Capital'
-          WHEN code LIKE '3002%' THEN 'Retained Earnings'
-          WHEN code LIKE '3003%' THEN 'Current Year Earnings'
-          ELSE 'Other Equity'
-        END as equity_category
-      FROM account_balances
-      WHERE net_balance > 0
-      ORDER BY code
-    `;
-
-    // Get fixed assets from fixed_assets table
+    // 2. Fixed Assets
     const fixedAssetsResult = await sql`
       SELECT 
-        COUNT(*) as total_assets,
-        COALESCE(SUM(purchase_cost), 0) as total_cost,
-        COALESCE(SUM(current_value), 0) as total_value,
-        COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation
-      FROM fixed_assets
+        COALESCE(SUM(current_value), 0) as total_fixed_assets,
+        COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation,
+        COUNT(*) as asset_count
+      FROM fixed_assets 
       WHERE status = 'active' ${branchFilter}
     `;
+    const totalFixedAssets =
+      Number(fixedAssetsResult[0].total_fixed_assets) || 0;
+    const totalDepreciation =
+      Number(fixedAssetsResult[0].total_depreciation) || 0;
+    const netFixedAssets = totalFixedAssets - totalDepreciation;
+
+    // LIABILITIES SECTION
+    // Accounts Payable (Pending expenses)
+    const payablesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_payables
+      FROM expenses 
+      WHERE status IN ('pending', 'approved') ${branchFilter} ${dateFilter}
+    `;
+    const totalPayables = Number(payablesResult[0].total_payables) || 0;
+
+    // EQUITY SECTION
+    // Retained Earnings (Net income from transactions)
+    const revenueResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_revenue
+      FROM (
+        SELECT amount FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+      ) completed_transactions
+    `;
+    const totalRevenue = Number(revenueResult[0].total_revenue) || 0;
+
+    const expensesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_expenses
+      FROM expenses 
+      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+    `;
+    const totalExpenses = Number(expensesResult[0].total_expenses) || 0;
+
+    const retainedEarnings = totalRevenue - totalExpenses;
 
     // Calculate totals
-    const totalAssets = assetsResult.reduce(
-      (sum, item) => sum + Number(item.net_balance || 0),
-      0
-    );
-    const totalLiabilities = liabilitiesResult.reduce(
-      (sum, item) => sum + Number(item.net_balance || 0),
-      0
-    );
-    const totalEquity = equityResult.reduce(
-      (sum, item) => sum + Number(item.net_balance || 0),
-      0
-    );
-    const fixedAssets = fixedAssetsResult[0];
-
-    // Group assets by category
-    const currentAssets = assetsResult.filter(
-      (item) => item.asset_category === "Current Assets"
-    );
-    const fixedAssetsList = assetsResult.filter(
-      (item) => item.asset_category === "Fixed Assets"
-    );
-    const otherAssets = assetsResult.filter(
-      (item) => item.asset_category === "Other Assets"
-    );
-
-    // Group liabilities by category
-    const currentLiabilities = liabilitiesResult.filter(
-      (item) => item.liability_category === "Current Liabilities"
-    );
-    const longTermLiabilities = liabilitiesResult.filter(
-      (item) => item.liability_category === "Long-term Liabilities"
-    );
-    const otherLiabilities = liabilitiesResult.filter(
-      (item) => item.liability_category === "Other Liabilities"
-    );
-
-    // Group equity by category
-    const shareCapital = equityResult.filter(
-      (item) => item.equity_category === "Share Capital"
-    );
-    const retainedEarnings = equityResult.filter(
-      (item) => item.equity_category === "Retained Earnings"
-    );
-    const currentYearEarnings = equityResult.filter(
-      (item) => item.equity_category === "Current Year Earnings"
-    );
-    const otherEquity = equityResult.filter(
-      (item) => item.equity_category === "Other Equity"
-    );
+    const totalAssets = totalCash + totalReceivables + netFixedAssets;
+    const totalLiabilities = totalPayables;
+    const totalEquity = retainedEarnings;
 
     return NextResponse.json({
       success: true,
       data: {
+        asOf: new Date().toISOString(),
         assets: {
           current: {
-            items: currentAssets,
-            total: currentAssets.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
+            cashAndCashEquivalents: totalCash,
+            accountsReceivable: totalReceivables,
+            totalCurrent: totalCash + totalReceivables,
           },
           fixed: {
-            items: fixedAssetsList,
-            total: fixedAssetsList.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-            fixedAssetsData: {
-              totalAssets: Number(fixedAssets.total_assets) || 0,
-              totalCost: Number(fixedAssets.total_cost) || 0,
-              totalValue: Number(fixedAssets.total_value) || 0,
-              totalDepreciation: Number(fixedAssets.total_depreciation) || 0,
-            },
-          },
-          other: {
-            items: otherAssets,
-            total: otherAssets.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
+            grossFixedAssets: totalFixedAssets,
+            accumulatedDepreciation: totalDepreciation,
+            netFixedAssets: netFixedAssets,
           },
           total: totalAssets,
         },
         liabilities: {
           current: {
-            items: currentLiabilities,
-            total: currentLiabilities.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-          },
-          longTerm: {
-            items: longTermLiabilities,
-            total: longTermLiabilities.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-          },
-          other: {
-            items: otherLiabilities,
-            total: otherLiabilities.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
+            accountsPayable: totalPayables,
+            totalCurrent: totalPayables,
           },
           total: totalLiabilities,
         },
         equity: {
-          shareCapital: {
-            items: shareCapital,
-            total: shareCapital.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-          },
-          retainedEarnings: {
-            items: retainedEarnings,
-            total: retainedEarnings.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-          },
-          currentYearEarnings: {
-            items: currentYearEarnings,
-            total: currentYearEarnings.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-          },
-          other: {
-            items: otherEquity,
-            total: otherEquity.reduce(
-              (sum, item) => sum + Number(item.net_balance || 0),
-              0
-            ),
-          },
-          total: totalEquity,
+          retainedEarnings: retainedEarnings,
+          totalEquity: totalEquity,
         },
         summary: {
           totalAssets,
           totalLiabilities,
           totalEquity,
-          netWorth: totalAssets - totalLiabilities,
-          balanceCheck:
-            Math.abs(totalAssets - (totalLiabilities + totalEquity)) < 0.01,
+          balanceCheck: totalAssets === totalLiabilities + totalEquity,
         },
-        reportDate: date || new Date().toISOString().split("T")[0],
+        branchFilter: effectiveBranchId,
         generatedBy: user.name || user.email,
       },
     });
   } catch (error) {
-    console.error("Error generating balance sheet report:", error);
+    console.error("Error generating balance sheet:", error);
     return NextResponse.json(
       {
         success: false,
-        error: "Failed to generate balance sheet report",
+        error: "Failed to generate balance sheet",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }

@@ -133,13 +133,13 @@ const fullSchema = bioSchema
       switch (id_type) {
         case "ghana_card":
           // GHA-000000000-0 format
-          return /^GHA-\d{9}-\d$/.test(id_number);
+        return /^GHA-\d{9}-\d$/.test(id_number);
         case "passport":
           // P8888888 (First character is a letter)
           return /^[A-Za-z]\d{7}$/.test(id_number);
         case "voters_id":
           // 0000000000 (10 digits)
-          return /^\d{10}$/.test(id_number);
+        return /^\d{10}$/.test(id_number);
         case "nhis":
           // 00000000 (8 digits)
           return /^\d{8}$/.test(id_number);
@@ -960,14 +960,14 @@ export default function EnhancedCardIssuanceForm({
                         };
 
                         return (
-                          <FormItem>
-                            <FormLabel>ID Number *</FormLabel>
-                            <FormControl>
-                              <Input
-                                {...field}
+                        <FormItem>
+                          <FormLabel>ID Number *</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
                                 placeholder={getPlaceholder()}
                                 maxLength={getMaxLength()}
-                                required
+                              required
                                 onBlur={async () => {
                                   await trigger("id_number");
                                 }}
@@ -977,10 +977,10 @@ export default function EnhancedCardIssuanceForm({
                                   );
                                   field.onChange(formattedValue);
                                 }}
-                              />
-                            </FormControl>
-                            <FormMessage />
-                          </FormItem>
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
                         );
                       }}
                     />
@@ -1059,25 +1059,25 @@ export default function EnhancedCardIssuanceForm({
                                   </SelectItem>
                                 ) : (
                                   availableBatches.map((batch) => (
-                                    <SelectItem key={batch.id} value={batch.id}>
-                                      <div className="flex flex-col w-full">
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-medium">
-                                            {batch.batch_code}
-                                          </span>
-                                          <Badge variant="secondary">
-                                            {batch.quantity_available} available
-                                          </Badge>
-                                        </div>
-                                        <div className="text-xs text-muted-foreground mt-1">
-                                          {batch.partner_bank_name &&
-                                            `Bank: ${batch.partner_bank_name} • `}
-                                          Type: {batch.card_type} • Received:{" "}
-                                          {batch.quantity_received} • Issued:{" "}
-                                          {batch.quantity_issued}
-                                        </div>
+                                  <SelectItem key={batch.id} value={batch.id}>
+                                    <div className="flex flex-col w-full">
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">
+                                          {batch.batch_code}
+                                        </span>
+                                        <Badge variant="secondary">
+                                          {batch.quantity_available} available
+                                        </Badge>
                                       </div>
-                                    </SelectItem>
+                                      <div className="text-xs text-muted-foreground mt-1">
+                                        {batch.partner_bank_name &&
+                                          `Bank: ${batch.partner_bank_name} • `}
+                                        Type: {batch.card_type} • Received:{" "}
+                                        {batch.quantity_received} • Issued:{" "}
+                                        {batch.quantity_issued}
+                                      </div>
+                                    </div>
+                                  </SelectItem>
                                   ))
                                 )}
                               </SelectContent>

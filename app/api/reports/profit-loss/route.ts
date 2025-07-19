@@ -6,17 +6,26 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: Request) {
   try {
+    console.log("🔍 Profit-Loss API called");
     const { searchParams } = new URL(request.url);
     const from = searchParams.get("from");
     const to = searchParams.get("to");
     const branch = searchParams.get("branch");
 
+    console.log("📅 Date range:", { from, to });
+    console.log("🏢 Branch:", branch);
+
     // Get user context for authorization
     let user;
     try {
       user = await getCurrentUser(request);
+      console.log("👤 User authenticated:", {
+        name: user.name,
+        role: user.role,
+        branchId: user.branchId,
+      });
     } catch (error) {
-      console.warn("Authentication failed:", error);
+      console.error("❌ Authentication failed:", error);
       return NextResponse.json(
         { success: false, error: "Authentication required" },
         { status: 401 }
@@ -24,246 +33,185 @@ export async function GET(request: Request) {
     }
 
     // Determine effective branch filter
-    const effectiveBranchId = user.role === "admin" ? branch : user.branchId;
+    const effectiveBranchId = user.role === "Admin" ? branch : user.branchId;
     const branchFilter =
       effectiveBranchId && effectiveBranchId !== "all"
         ? sql`AND branch_id = ${effectiveBranchId}`
         : sql``;
 
+    console.log("🎯 Effective branch filter:", effectiveBranchId);
+
     // Date filter
     const dateFilter =
       from && to ? sql`AND created_at::date BETWEEN ${from} AND ${to}` : sql``;
 
-    // Get revenue breakdown by service
-    const revenueBreakdown = await sql`
-      WITH revenue_data AS (
-        -- MoMo Revenue
-        SELECT 
-          'MoMo' as service,
-          COALESCE(SUM(fee), 0) as revenue,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM momo_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
-        UNION ALL
-        
-        -- Agency Banking Revenue
-        SELECT 
-          'Agency Banking' as service,
-          COALESCE(SUM(fee), 0) as revenue,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM agency_banking_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
-        UNION ALL
-        
-        -- E-Zwich Revenue
-        SELECT 
-          'E-Zwich' as service,
-          COALESCE(SUM(fee), 0) as revenue,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM e_zwich_withdrawals
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
-        UNION ALL
-        
-        -- Power Revenue
-        SELECT 
-          'Power' as service,
-          COALESCE(SUM(commission), 0) as revenue,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM power_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
-        UNION ALL
-        
-        -- Jumia Revenue
-        SELECT 
-          'Jumia' as service,
-          COALESCE(SUM(fee), 0) as revenue,
-          COUNT(*) as transactions,
-          COALESCE(SUM(amount), 0) as volume
-        FROM jumia_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
-        UNION ALL
-        
-        -- Commission Revenue
-        SELECT 
-          'Commissions' as service,
-          COALESCE(SUM(amount), 0) as revenue,
-          COUNT(*) as transactions,
-          0 as volume
-        FROM commissions
-        WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
-      )
-      SELECT 
-        service,
-        revenue,
-        transactions,
-        volume,
-        CASE 
-          WHEN volume > 0 THEN (revenue / volume) * 100
-          ELSE 0
-        END as margin_percentage
-      FROM revenue_data
-      ORDER BY revenue DESC
-    `;
+    console.log("📅 Date filter applied:", !!dateFilter);
 
-    // Get expense breakdown by category
-    const expenseBreakdown = await sql`
+    // REVENUE SECTION
+    console.log("💰 Starting revenue queries...");
+
+    // Declare variables outside try-catch so they're accessible
+    let agencyRevenue, momoRevenue, ezwichRevenue, powerRevenue, jumiaRevenue;
+
+    try {
+      // Get revenue by service type
+      [agencyRevenue, momoRevenue, ezwichRevenue, powerRevenue, jumiaRevenue] =
+        await Promise.all([
+          sql`SELECT COALESCE(SUM(amount), 0) as revenue, COALESCE(SUM(fee), 0) as fees FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${
+            from && to
+              ? sql`AND agency_banking_transactions.created_at::date BETWEEN ${from} AND ${to}`
+              : sql``
+          }`,
+          sql`SELECT COALESCE(SUM(amount), 0) as revenue, COALESCE(SUM(fee), 0) as fees FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${
+            from && to
+              ? sql`AND momo_transactions.created_at::date BETWEEN ${from} AND ${to}`
+              : sql``
+          }`,
+          sql`SELECT COALESCE(SUM(amount), 0) as revenue, COALESCE(SUM(fee), 0) as fees FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${
+            from && to
+              ? sql`AND e_zwich_withdrawals.created_at::date BETWEEN ${from} AND ${to}`
+              : sql``
+          }`,
+          sql`SELECT COALESCE(SUM(amount), 0) as revenue, COALESCE(SUM(fee), 0) as fees FROM power_transactions WHERE status = 'completed' ${branchFilter} ${
+            from && to
+              ? sql`AND power_transactions.created_at::date BETWEEN ${from} AND ${to}`
+              : sql``
+          }`,
+          sql`SELECT COALESCE(SUM(amount), 0) as revenue, COALESCE(SUM(fee), 0) as fees FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${
+            from && to
+              ? sql`AND jumia_transactions.created_at::date BETWEEN ${from} AND ${to}`
+              : sql``
+          }`,
+        ]);
+
+      console.log("📊 Revenue results:", {
+        agency: agencyRevenue[0],
+        momo: momoRevenue[0],
+        ezwich: ezwichRevenue[0],
+        power: powerRevenue[0],
+        jumia: jumiaRevenue[0],
+      });
+    } catch (dbError) {
+      console.error("❌ Database error in revenue queries:", dbError);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database connection error",
+          details:
+            dbError instanceof Error
+              ? dbError.message
+              : "Unknown database error",
+        },
+        { status: 500 }
+      );
+    }
+
+    const revenueBreakdown = [
+      {
+        service: "Agency Banking",
+        revenue: Number(agencyRevenue[0].revenue) || 0,
+        fees: Number(agencyRevenue[0].fees) || 0,
+      },
+      {
+        service: "MOMO",
+        revenue: Number(momoRevenue[0].revenue) || 0,
+        fees: Number(momoRevenue[0].fees) || 0,
+      },
+      {
+        service: "E-ZWICH",
+        revenue: Number(ezwichRevenue[0].revenue) || 0,
+        fees: Number(ezwichRevenue[0].fees) || 0,
+      },
+      {
+        service: "Power",
+        revenue: Number(powerRevenue[0].revenue) || 0,
+        fees: Number(powerRevenue[0].fees) || 0,
+      },
+      {
+        service: "Jumia",
+        revenue: Number(jumiaRevenue[0].revenue) || 0,
+        fees: Number(jumiaRevenue[0].fees) || 0,
+      },
+    ];
+
+    const totalRevenue = revenueBreakdown.reduce(
+      (sum, item) => sum + item.revenue,
+      0
+    );
+    const totalFees = revenueBreakdown.reduce(
+      (sum, item) => sum + item.fees,
+      0
+    );
+
+    // EXPENSES SECTION
+    // Get expenses by category
+    const expensesByCategory = await sql`
       SELECT 
         eh.category,
-        COUNT(*) as count,
         COALESCE(SUM(e.amount), 0) as total_amount,
-        COALESCE(AVG(e.amount), 0) as avg_amount
+        COUNT(*) as count
       FROM expenses e
       LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
-      WHERE e.status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+      WHERE e.status IN ('approved', 'paid') ${branchFilter} ${
+      from && to ? sql`AND e.created_at::date BETWEEN ${from} AND ${to}` : sql``
+    }
       GROUP BY eh.category
       ORDER BY total_amount DESC
     `;
 
-    // Get expense breakdown by expense head
-    const expenseHeadBreakdown = await sql`
-      SELECT 
-        eh.name as expense_head,
-        eh.category,
-        COUNT(*) as count,
-        COALESCE(SUM(e.amount), 0) as total_amount
-      FROM expenses e
-      LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
-      WHERE e.status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
-      GROUP BY eh.id, eh.name, eh.category
-      ORDER BY total_amount DESC
-    `;
+    const totalExpenses = expensesByCategory.reduce(
+      (sum, item) => sum + Number(item.total_amount),
+      0
+    );
 
-    // Calculate totals
-    const totalRevenue = revenueBreakdown.reduce(
-      (sum, item) => sum + Number(item.revenue || 0),
-      0
-    );
-    const totalExpenses = expenseBreakdown.reduce(
-      (sum, item) => sum + Number(item.total_amount || 0),
-      0
-    );
+    // COMMISSIONS
+    const commissionsResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_commissions
+      FROM commissions 
+      WHERE status IN ('approved', 'paid') ${branchFilter} ${
+      from && to
+        ? sql`AND commissions.created_at::date BETWEEN ${from} AND ${to}`
+        : sql``
+    }
+    `;
+    const totalCommissions =
+      Number(commissionsResult[0].total_commissions) || 0;
+
+    // Calculate profit/loss
     const grossProfit = totalRevenue - totalExpenses;
+    const netIncome = grossProfit + totalCommissions;
     const profitMargin =
-      totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-
-    // Get monthly trend
-    const monthlyTrend = await sql`
-      WITH monthly_revenue AS (
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COALESCE(SUM(fee), 0) as revenue
-        FROM momo_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', created_at)
-        
-        UNION ALL
-        
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COALESCE(SUM(fee), 0) as revenue
-        FROM agency_banking_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', created_at)
-        
-        UNION ALL
-        
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COALESCE(SUM(fee), 0) as revenue
-        FROM e_zwich_withdrawals
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', created_at)
-        
-        UNION ALL
-        
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COALESCE(SUM(commission), 0) as revenue
-        FROM power_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', created_at)
-        
-        UNION ALL
-        
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COALESCE(SUM(fee), 0) as revenue
-        FROM jumia_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', created_at)
-        
-        UNION ALL
-        
-        SELECT 
-          DATE_TRUNC('month', created_at) as month,
-          COALESCE(SUM(amount), 0) as revenue
-        FROM commissions
-        WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', created_at)
-      ),
-      monthly_expenses AS (
-        SELECT 
-          DATE_TRUNC('month', expense_date) as month,
-          COALESCE(SUM(amount), 0) as expenses
-        FROM expenses
-        WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
-        GROUP BY DATE_TRUNC('month', expense_date)
-      )
-      SELECT 
-        mr.month,
-        COALESCE(SUM(mr.revenue), 0) as revenue,
-        COALESCE(me.expenses, 0) as expenses,
-        COALESCE(SUM(mr.revenue), 0) - COALESCE(me.expenses, 0) as profit
-      FROM monthly_revenue mr
-      LEFT JOIN monthly_expenses me ON mr.month = me.month
-      GROUP BY mr.month, me.expenses
-      ORDER BY mr.month DESC
-      LIMIT 12
-    `;
-
-    // Get top performing services
-    const topServices = revenueBreakdown
-      .sort((a, b) => Number(b.revenue) - Number(a.revenue))
-      .slice(0, 5);
-
-    // Get top expense categories
-    const topExpenses = expenseBreakdown
-      .sort((a, b) => Number(b.total_amount) - Number(a.total_amount))
-      .slice(0, 5);
+      totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0;
 
     return NextResponse.json({
       success: true,
       data: {
+        period: { from, to },
+        revenue: {
+          breakdown: revenueBreakdown,
+          total: totalRevenue,
+          fees: totalFees,
+        },
+        expenses: {
+          breakdown: expensesByCategory,
+          total: totalExpenses,
+        },
+        commissions: {
+          total: totalCommissions,
+        },
+        profitLoss: {
+          grossProfit,
+          netIncome,
+          profitMargin,
+        },
         summary: {
           totalRevenue,
           totalExpenses,
-          grossProfit,
+          totalCommissions,
+          netIncome,
           profitMargin,
-          totalTransactions: revenueBreakdown.reduce(
-            (sum, item) => sum + Number(item.transactions || 0),
-            0
-          ),
-          totalVolume: revenueBreakdown.reduce(
-            (sum, item) => sum + Number(item.volume || 0),
-            0
-          ),
         },
-        revenueBreakdown,
-        expenseBreakdown,
-        expenseHeadBreakdown,
-        monthlyTrend,
-        topServices,
-        topExpenses,
-        reportDate: new Date().toISOString(),
+        branchFilter: effectiveBranchId,
         generatedBy: user.name || user.email,
       },
     });

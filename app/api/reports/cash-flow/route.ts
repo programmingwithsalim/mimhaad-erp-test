@@ -24,7 +24,7 @@ export async function GET(request: Request) {
     }
 
     // Determine effective branch filter
-    const effectiveBranchId = user.role === "admin" ? branch : user.branchId;
+    const effectiveBranchId = user.role === "Admin" ? branch : user.branchId;
     const branchFilter =
       effectiveBranchId && effectiveBranchId !== "all"
         ? sql`AND branch_id = ${effectiveBranchId}`
@@ -34,219 +34,130 @@ export async function GET(request: Request) {
     const dateFilter =
       from && to ? sql`AND created_at::date BETWEEN ${from} AND ${to}` : sql``;
 
-    // Operating Activities
-    const operatingActivities = await sql`
-      WITH revenue_data AS (
-        -- MoMo Revenue
-        SELECT 
-          'MoMo Fees' as item,
-          COALESCE(SUM(fee), 0) as amount,
-          'inflow' as type
-        FROM momo_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
+    // OPERATING ACTIVITIES
+    // Net Income
+    const revenueResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_revenue
+      FROM (
+        SELECT amount FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
         UNION ALL
-        
-        -- Agency Banking Revenue
-        SELECT 
-          'Agency Banking Fees' as item,
-          COALESCE(SUM(fee), 0) as amount,
-          'inflow' as type
-        FROM agency_banking_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
+        SELECT amount FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
         UNION ALL
-        
-        -- E-Zwich Revenue
-        SELECT 
-          'E-Zwich Fees' as item,
-          COALESCE(SUM(fee), 0) as amount,
-          'inflow' as type
-        FROM e_zwich_withdrawals
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}
         UNION ALL
-        
-        -- Power Revenue
-        SELECT 
-          'Power Commission' as item,
-          COALESCE(SUM(commission), 0) as amount,
-          'inflow' as type
-        FROM power_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
+        SELECT amount FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
         UNION ALL
-        
-        -- Jumia Revenue
-        SELECT 
-          'Jumia Fees' as item,
-          COALESCE(SUM(fee), 0) as amount,
-          'inflow' as type
-        FROM jumia_transactions
-        WHERE status = 'completed' ${branchFilter} ${dateFilter}
-        
-        UNION ALL
-        
-        -- Commission Revenue
-        SELECT 
-          'Commission Revenue' as item,
-          COALESCE(SUM(amount), 0) as amount,
-          'inflow' as type
-        FROM commissions
-        WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
-      ),
-      expense_data AS (
-        SELECT 
-          'Operating Expenses' as item,
-          COALESCE(SUM(amount), 0) as amount,
-          'outflow' as type
-        FROM expenses
-        WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
-      )
-      SELECT * FROM revenue_data
-      UNION ALL
-      SELECT * FROM expense_data
-      ORDER BY type DESC, amount DESC
+        SELECT amount FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+      ) completed_transactions
     `;
+    const totalRevenue = Number(revenueResult[0].total_revenue) || 0;
 
-    // Investing Activities
-    const investingActivities = await sql`
-      SELECT 
-        'Fixed Assets Purchase' as item,
-        COALESCE(SUM(purchase_cost), 0) as amount,
-        'outflow' as type
-      FROM fixed_assets
+    const expensesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_expenses
+      FROM expenses 
+      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+    `;
+    const totalExpenses = Number(expensesResult[0].total_expenses) || 0;
+
+    const netIncome = totalRevenue - totalExpenses;
+
+    // Depreciation (from fixed assets)
+    const depreciationResult = await sql`
+      SELECT COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation
+      FROM fixed_assets 
+      WHERE status = 'active' ${branchFilter}
+    `;
+    const depreciation = Number(depreciationResult[0].total_depreciation) || 0;
+
+    // Changes in Working Capital
+    // Accounts Receivable (pending transactions)
+    const receivablesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_receivables
+      FROM (
+        SELECT amount FROM agency_banking_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM momo_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM power_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        UNION ALL
+        SELECT amount FROM jumia_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+      ) pending_transactions
+    `;
+    const accountsReceivable =
+      Number(receivablesResult[0].total_receivables) || 0;
+
+    // Accounts Payable (pending expenses)
+    const payablesResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_payables
+      FROM expenses 
+      WHERE status IN ('pending', 'approved') ${branchFilter} ${dateFilter}
+    `;
+    const accountsPayable = Number(payablesResult[0].total_payables) || 0;
+
+    const netCashFromOperations =
+      netIncome + depreciation - accountsReceivable + accountsPayable;
+
+    // INVESTING ACTIVITIES
+    // Purchase of Fixed Assets
+    const fixedAssetsPurchaseResult = await sql`
+      SELECT COALESCE(SUM(purchase_cost), 0) as total_purchase
+      FROM fixed_assets 
       WHERE purchase_date BETWEEN ${from} AND ${to} ${branchFilter}
-      
-      UNION ALL
-      
-      SELECT 
-        'Float Account Investments' as item,
-        COALESCE(SUM(current_balance), 0) as amount,
-        'outflow' as type
-      FROM float_accounts
+    `;
+    const purchaseOfFixedAssets =
+      Number(fixedAssetsPurchaseResult[0].total_purchase) || 0;
+
+    const netCashFromInvesting = -purchaseOfFixedAssets;
+
+    // FINANCING ACTIVITIES
+    // Dividends (represented by commissions paid)
+    const dividendsResult = await sql`
+      SELECT COALESCE(SUM(amount), 0) as total_commissions
+      FROM commissions 
+      WHERE status = 'paid' ${branchFilter} ${dateFilter}
+    `;
+    const dividendsPaid = Number(dividendsResult[0].total_commissions) || 0;
+
+    const netCashFromFinancing = -dividendsPaid;
+
+    // Net Change in Cash
+    const netChangeInCash =
+      netCashFromOperations + netCashFromInvesting + netCashFromFinancing;
+
+    // Ending Cash Balance
+    const endingCashResult = await sql`
+      SELECT COALESCE(SUM(current_balance), 0) as total_cash
+      FROM float_accounts 
       WHERE is_active = true ${branchFilter}
     `;
-
-    // Financing Activities
-    const financingActivities = await sql`
-      SELECT 
-        'Owner Investment' as item,
-        COALESCE(SUM(credit), 0) as amount,
-        'inflow' as type
-      FROM gl_journal_entries je
-      JOIN gl_transactions gt ON je.transaction_id = gt.id
-      JOIN gl_accounts a ON je.account_id = a.id
-      WHERE a.type = 'Equity' 
-        AND gt.status = 'posted'
-        AND gt.date BETWEEN ${from} AND ${to}
-        ${branchFilter}
-      
-      UNION ALL
-      
-      SELECT 
-        'Dividends Paid' as item,
-        COALESCE(SUM(debit), 0) as amount,
-        'outflow' as type
-      FROM gl_journal_entries je
-      JOIN gl_transactions gt ON je.transaction_id = gt.id
-      JOIN gl_accounts a ON je.account_id = a.id
-      WHERE a.type = 'Equity' 
-        AND gt.status = 'posted'
-        AND gt.date BETWEEN ${from} AND ${to}
-        ${branchFilter}
-    `;
-
-    // Calculate totals
-    const operatingInflows = operatingActivities
-      .filter((item) => item.type === "inflow")
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-    const operatingOutflows = operatingActivities
-      .filter((item) => item.type === "outflow")
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-    const netOperatingCash = operatingInflows - operatingOutflows;
-
-    const investingOutflows = investingActivities
-      .filter((item) => item.type === "outflow")
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-    const investingInflows = investingActivities
-      .filter((item) => item.type === "inflow")
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-    const netInvestingCash = investingInflows - investingOutflows;
-
-    const financingInflows = financingActivities
-      .filter((item) => item.type === "inflow")
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-    const financingOutflows = financingActivities
-      .filter((item) => item.type === "outflow")
-      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
-
-    const netFinancingCash = financingInflows - financingOutflows;
-
-    const netCashChange =
-      netOperatingCash + netInvestingCash + netFinancingCash;
-
-    // Get beginning and ending cash balances
-    const cashBalances = await sql`
-      WITH float_balances AS (
-        SELECT COALESCE(SUM(current_balance), 0) as total_balance
-        FROM float_accounts
-        WHERE is_active = true ${branchFilter}
-      ),
-      gl_cash_balances AS (
-        SELECT 
-          COALESCE(SUM(CASE WHEN a.type = 'Asset' THEN je.debit - je.credit ELSE 0 END), 0) as cash_balance
-        FROM gl_accounts a
-        LEFT JOIN gl_journal_entries je ON a.id = je.account_id
-        LEFT JOIN gl_transactions gt ON je.transaction_id = gt.id AND gt.status = 'posted'
-        WHERE a.code LIKE '100%' AND a.is_active = true
-        ${branchFilter}
-        ${dateFilter}
-      )
-      SELECT 
-        fb.total_balance as float_balance,
-        gl.cash_balance as gl_cash_balance
-      FROM float_balances fb, gl_cash_balances gl
-    `;
-
-    const currentCashBalance =
-      Number(cashBalances[0]?.float_balance || 0) +
-      Number(cashBalances[0]?.gl_cash_balance || 0);
-    const beginningCashBalance = currentCashBalance - netCashChange;
+    const endingCashBalance = Number(endingCashResult[0].total_cash) || 0;
 
     return NextResponse.json({
       success: true,
       data: {
-        operating: {
-          activities: operatingActivities,
-          inflows: operatingInflows,
-          outflows: operatingOutflows,
-          netCash: netOperatingCash,
+        period: { from, to },
+        operatingActivities: {
+          netIncome,
+          depreciation,
+          accountsReceivable: -accountsReceivable,
+          accountsPayable: accountsPayable,
+          netCashFromOperations,
         },
-        investing: {
-          activities: investingActivities,
-          inflows: investingInflows,
-          outflows: investingOutflows,
-          netCash: netInvestingCash,
+        investingActivities: {
+          purchaseOfFixedAssets: -purchaseOfFixedAssets,
+          netCashFromInvesting,
         },
-        financing: {
-          activities: financingActivities,
-          inflows: financingInflows,
-          outflows: financingOutflows,
-          netCash: netFinancingCash,
+        financingActivities: {
+          dividendsPaid: -dividendsPaid,
+          netCashFromFinancing,
         },
         summary: {
-          beginningCashBalance,
-          netCashChange,
-          endingCashBalance: beginningCashBalance + netCashChange,
-          currentCashBalance,
+          netChangeInCash,
+          endingCashBalance,
         },
-        reportDate: new Date().toISOString(),
+        branchFilter: effectiveBranchId,
         generatedBy: user.name || user.email,
       },
     });

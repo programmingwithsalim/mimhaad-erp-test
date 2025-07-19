@@ -67,7 +67,7 @@ export async function GET(request: Request) {
         COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_expenses,
         COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_expenses,
         COALESCE(SUM(amount), 0) as total_amount,
-        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount,
+        COALESCE(SUM(CASE WHEN status IN ('approved', 'paid') THEN amount ELSE 0 END), 0) as paid_amount,
         COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
         COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount
       FROM expenses e
