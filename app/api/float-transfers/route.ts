@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FloatTransferService } from "@/lib/services/float-transfer-service";
-import { getCurrentUser } from "@/lib/auth-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function POST(request: NextRequest) {
   try {

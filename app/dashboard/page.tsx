@@ -2,40 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useRBAC } from "@/components/rbac/rbac-provider";
 import { useServiceStatistics } from "@/hooks/use-service-statistics";
-import { RoleAccessSummary } from "@/components/dashboard/role-access-summary";
-import {
-  TrendingUp,
-  DollarSign,
-  Users,
-  Activity,
-  RefreshCw,
-  AlertTriangle,
-  Smartphone,
-  Zap,
-  CreditCard,
-  Building2,
-  Package,
-  BarChart3,
-  LineChart,
-  PieChart,
-  Target,
-  CheckCircle,
-} from "lucide-react";
-import { format } from "date-fns";
+import { RefreshCw } from "lucide-react";
 import { EnhancedAdminDashboard } from "@/components/dashboard/enhanced-admin-dashboard";
 import { EnhancedFinanceDashboard } from "@/components/dashboard/enhanced-finance-dashboard";
 import { EnhancedManagerDashboard } from "@/components/dashboard/enhanced-manager-dashboard";
@@ -91,8 +62,6 @@ interface DashboardStats {
   float: any;
 }
 
-const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
-
 const defaultStats: DashboardStats = {
   totalTransactions: 0,
   totalVolume: 0,
@@ -136,6 +105,58 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats>(defaultStats);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Debug logging for role loading
+  useEffect(() => {
+    console.log("Dashboard - Role loading state:", {
+      user: !!user,
+      userRole,
+      isAdmin,
+      isManager,
+      isFinance,
+      isOperations,
+      isSupervisor,
+      isCashier,
+      userRoleFromUser: user?.role,
+    });
+  }, [
+    user,
+    userRole,
+    isAdmin,
+    isManager,
+    isFinance,
+    isOperations,
+    isSupervisor,
+    isCashier,
+  ]);
+
+  // Timeout mechanism to prevent getting stuck in loading state
+  useEffect(() => {
+    if (!userRole && user) {
+      const timer = setTimeout(() => {
+        console.log(
+          "Dashboard - Role loading timeout, proceeding with user role"
+        );
+        setLoading(false);
+      }, 1500); // Reduced from 3 seconds to 1.5 seconds
+
+      return () => clearTimeout(timer);
+    }
+  }, [userRole, user]);
+
+  // Additional timeout to prevent infinite loading
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (loading) {
+        console.log(
+          "Dashboard - General loading timeout, forcing dashboard render"
+        );
+        setLoading(false);
+      }
+    }, 2500); // Reduced from 5 seconds to 2.5 seconds
+
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   // Get statistics for different services
   const {
@@ -270,31 +291,27 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (user?.branchId) {
+    console.log("Dashboard useEffect - User data:", {
+      user: !!user,
+      branchId: user?.branchId,
+      role: user?.role,
+      isLoading: loading,
+    });
+
+    // Load data when user is available (even without branchId for admin users)
+    if (user) {
       loadDashboardData();
     } else {
-      setLoading(false);
-    }
-  }, [user?.branchId]);
+      // If no user, set loading to false after a short delay to allow auth to complete
+      const timer = setTimeout(() => {
+        if (!user) {
+          setLoading(false);
+        }
+      }, 1000);
 
-  const getServiceIcon = (service: string) => {
-    switch (service.toLowerCase()) {
-      case "momo":
-        return <Smartphone className="h-4 w-4" />;
-      case "power":
-        return <Zap className="h-4 w-4" />;
-      case "e-zwich":
-      case "ezwich":
-        return <CreditCard className="h-4 w-4" />;
-      case "agency-banking":
-      case "agency banking":
-        return <Building2 className="h-4 w-4" />;
-      case "jumia":
-        return <Package className="h-4 w-4" />;
-      default:
-        return <Activity className="h-4 w-4" />;
+      return () => clearTimeout(timer);
     }
-  };
+  }, [user, user?.branchId, user?.role]);
 
   // Helper to map serviceBreakdown to ServiceStats[]
   const mappedServiceStats = Array.isArray(stats.serviceBreakdown)
@@ -323,10 +340,29 @@ export default function DashboardPage() {
         <div className="text-center py-8">
           <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
           <p>Loading dashboard data...</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            User: {user?.firstName} {user?.lastName} | Role: {user?.role}
+          </p>
         </div>
       </div>
     );
   }
+
+  // Show loading state until user role is properly loaded (only if we have no role at all)
+  if (!userRole && user && !user.role) {
+    return null; // Show nothing instead of fallback content
+  }
+
+  // Fallback: If RBAC role is not loaded but user has a role, use it directly
+
+  console.log("Dashboard - Using effective role:", {
+    userRole,
+    userRoleFromUser: user?.role,
+    isAdmin: isAdmin,
+    isManager: isManager,
+    isFinance: isFinance,
+    isOperations: isOperations,
+  });
 
   // Role-based dashboard rendering with proper case-sensitive role detection
   if (isAdmin) {
@@ -364,787 +400,6 @@ export default function DashboardPage() {
     );
   }
 
-  // Operations Dashboard
-  if (isOperations) {
-    return (
-      <div className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Operations Dashboard</h1>
-            <p className="text-muted-foreground">
-              Welcome back, {user?.firstName} {user?.lastName}! Here's your
-              operations overview.
-            </p>
-          </div>
-          <Button variant="outline" onClick={loadDashboardData}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <Alert className="border-yellow-200 bg-yellow-50">
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-yellow-700">
-              {error} - Showing available data with fallback values.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Key Metrics */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Transactions
-              </CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatNumber(stats.todayTransactions)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatNumber(stats.totalTransactions)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Volume
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(stats.todayVolume)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatCurrency(stats.totalVolume)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Commission
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(stats.todayCommission)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatCurrency(stats.totalCommission)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Active Users
-              </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.activeUsers}</div>
-              <p className="text-xs text-muted-foreground">Currently online</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Service Performance */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Service Performance
-              </CardTitle>
-              <CardDescription>
-                Today's performance across all services
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {stats.serviceBreakdown?.map((service) => (
-                  <div
-                    key={service.service}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      {getServiceIcon(service.service)}
-                      <span className="font-medium">{service.service}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">
-                        {formatCurrency(service.volume)}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {service.transactions} transactions
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Quick Actions
-              </CardTitle>
-              <CardDescription>Common operational tasks</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/momo")}
-              >
-                <Smartphone className="mr-2 h-4 w-4" />
-                Process MoMo
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/agency-banking")}
-              >
-                <Building2 className="mr-2 h-4 w-4" />
-                Agency Banking
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/e-zwich")}
-              >
-                <CreditCard className="mr-2 h-4 w-4" />
-                E-Zwich Services
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/power")}
-              >
-                <Zap className="mr-2 h-4 w-4" />
-                Power Services
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  // Supervisor Dashboard
-  if (isSupervisor) {
-    return (
-      <div className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Supervisor Dashboard</h1>
-            <p className="text-muted-foreground">
-              Welcome back, {user?.firstName} {user?.lastName}! Here's your
-              supervision overview.
-            </p>
-          </div>
-          <Button variant="outline" onClick={loadDashboardData}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <Alert className="border-yellow-200 bg-yellow-50">
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-yellow-700">
-              {error} - Showing available data with fallback values.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Key Metrics */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Transactions
-              </CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatNumber(stats.todayTransactions)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatNumber(stats.totalTransactions)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Volume
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(stats.todayVolume)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatCurrency(stats.totalVolume)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Pending Approvals
-              </CardTitle>
-              <AlertTriangle className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {stats.pendingApprovals || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">Awaiting review</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Active Users
-              </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.activeUsers}</div>
-              <p className="text-xs text-muted-foreground">Currently online</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Service Performance */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Service Performance
-              </CardTitle>
-              <CardDescription>
-                Today's performance across all services
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {stats.serviceBreakdown?.map((service) => (
-                  <div
-                    key={service.service}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      {getServiceIcon(service.service)}
-                      <span className="font-medium">{service.service}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">
-                        {formatCurrency(service.volume)}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {service.transactions} transactions
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Quick Actions
-              </CardTitle>
-              <CardDescription>Common supervision tasks</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/transactions")}
-              >
-                <Activity className="mr-2 h-4 w-4" />
-                Review Transactions
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/audit-trail")}
-              >
-                <CheckCircle className="mr-2 h-4 w-4" />
-                Approve Requests
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/momo")}
-              >
-                <Smartphone className="mr-2 h-4 w-4" />
-                Process MoMo
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/agency-banking")}
-              >
-                <Building2 className="mr-2 h-4 w-4" />
-                Agency Banking
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  // Cashier Dashboard
-  if (isCashier) {
-    return (
-      <div className="container mx-auto p-6 space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Cashier Dashboard</h1>
-            <p className="text-muted-foreground">
-              Welcome back, {user?.firstName} {user?.lastName}! Here's your
-              transaction overview.
-            </p>
-          </div>
-          <Button variant="outline" onClick={loadDashboardData}>
-            <RefreshCw className="h-4 w-4 mr-2" />
-            Refresh
-          </Button>
-        </div>
-
-        {/* Error Alert */}
-        {error && (
-          <Alert className="border-yellow-200 bg-yellow-50">
-            <AlertTriangle className="h-4 w-4 text-yellow-600" />
-            <AlertDescription className="text-yellow-700">
-              {error} - Showing available data with fallback values.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Key Metrics */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Transactions
-              </CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatNumber(stats.todayTransactions)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatNumber(stats.totalTransactions)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Volume
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(stats.todayVolume)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatCurrency(stats.totalVolume)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Today's Commission
-              </CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {formatCurrency(stats.todayCommission)}
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Total: {formatCurrency(stats.totalCommission)}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">
-                Active Users
-              </CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.activeUsers}</div>
-              <p className="text-xs text-muted-foreground">Currently online</p>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Service Performance */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <Card className="md:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Service Performance
-              </CardTitle>
-              <CardDescription>
-                Today's performance across all services
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {stats.serviceBreakdown?.map((service) => (
-                  <div
-                    key={service.service}
-                    className="flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      {getServiceIcon(service.service)}
-                      <span className="font-medium">{service.service}</span>
-                    </div>
-                    <div className="text-right">
-                      <div className="font-medium">
-                        {formatCurrency(service.volume)}
-                      </div>
-                      <div className="text-sm text-muted-foreground">
-                        {service.transactions} transactions
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                Quick Actions
-              </CardTitle>
-              <CardDescription>Common transaction tasks</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/momo")}
-              >
-                <Smartphone className="mr-2 h-4 w-4" />
-                Process MoMo
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/agency-banking")}
-              >
-                <Building2 className="mr-2 h-4 w-4" />
-                Agency Banking
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/e-zwich")}
-              >
-                <CreditCard className="mr-2 h-4 w-4" />
-                E-Zwich Services
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push("/dashboard/power")}
-              >
-                <Zap className="mr-2 h-4 w-4" />
-                Power Services
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
-    );
-  }
-
-  // Default dashboard for unknown roles
-  return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Welcome back, {user?.firstName} {user?.lastName}! Overview of{" "}
-            {user?.branchName || "your branch"} operations
-          </p>
-        </div>
-        <Button variant="outline" onClick={loadDashboardData}>
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Role Access Summary */}
-      <RoleAccessSummary />
-
-      {/* Error Alert */}
-      {error && (
-        <Alert className="border-yellow-200 bg-yellow-50">
-          <AlertTriangle className="h-4 w-4 text-yellow-600" />
-          <AlertDescription className="text-yellow-700">
-            {error} - Showing available data with fallback values.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Float Alerts */}
-      {stats.floatAlerts && stats.floatAlerts.length > 0 && (
-        <div className="space-y-2">
-          {stats.floatAlerts.map((alert) => (
-            <Alert
-              key={alert.id}
-              className={`border-l-4 ${
-                alert.severity === "critical"
-                  ? "border-l-red-500 bg-red-50"
-                  : "border-l-yellow-500 bg-yellow-50"
-              }`}
-            >
-              <AlertTriangle
-                className={`h-4 w-4 ${
-                  alert.severity === "critical"
-                    ? "text-red-600"
-                    : "text-yellow-600"
-                }`}
-              />
-              <AlertDescription>
-                <span className="font-medium">
-                  {alert.service} - {alert.provider}
-                </span>{" "}
-                float balance is {alert.severity}:{" "}
-                {formatCurrency(alert.current_balance)}
-              </AlertDescription>
-            </Alert>
-          ))}
-        </div>
-      )}
-
-      {/* Key Metrics */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Transactions
-            </CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatNumber(stats.todayTransactions)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {formatNumber(stats.totalTransactions)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Volume
-            </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(stats.todayVolume)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(stats.totalVolume)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Today's Commission
-            </CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(stats.todayCommission)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(stats.totalCommission)}
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Users</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.activeUsers}</div>
-            <p className="text-xs text-muted-foreground">Currently online</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Service Performance */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Service Performance
-            </CardTitle>
-            <CardDescription>
-              Today's performance across all services
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {stats.serviceBreakdown?.map((service) => (
-                <div
-                  key={service.service}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    {getServiceIcon(service.service)}
-                    <span className="font-medium">{service.service}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-medium">
-                      {formatCurrency(service.volume)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {service.transactions} transactions
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <PieChart className="h-5 w-5" />
-              Service Distribution
-            </CardTitle>
-            <CardDescription>Revenue by service type</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {stats.serviceBreakdown?.map((service) => (
-                <div
-                  key={service.service}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    {getServiceIcon(service.service)}
-                    <span className="font-medium">{service.service}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-medium">
-                      {formatCurrency(service.volume)}
-                    </div>
-                    <div className="text-sm text-muted-foreground">
-                      {service.transactions} transactions
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Quick Actions */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="h-5 w-5" />
-            Quick Actions
-          </CardTitle>
-          <CardDescription>Common tasks and shortcuts</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => router.push("/dashboard/momo")}
-            >
-              <Smartphone className="h-6 w-6 mb-2" />
-              <span>MoMo Services</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => router.push("/dashboard/agency-banking")}
-            >
-              <Building2 className="h-6 w-6 mb-2" />
-              <span>Agency Banking</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => router.push("/dashboard/e-zwich")}
-            >
-              <CreditCard className="h-6 w-6 mb-2" />
-              <span>E-Zwich</span>
-            </Button>
-            <Button
-              variant="outline"
-              className="h-20 flex-col"
-              onClick={() => router.push("/dashboard/power")}
-            >
-              <Zap className="h-6 w-6 mb-2" />
-              <span>Power Services</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  // If no specific role is detected, show nothing
+  return null;
 }

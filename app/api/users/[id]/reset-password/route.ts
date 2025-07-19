@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { resetUserPassword, getUserById } from "@/lib/user-service"
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const { id } = params
     const body = await request.json()

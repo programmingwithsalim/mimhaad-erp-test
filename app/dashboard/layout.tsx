@@ -18,7 +18,12 @@ export default function DashboardLayout({
   const { user, isLoading } = useAuth();
 
   useEffect(() => {
-    console.log("Dashboard layout - Auth check:", { user: !!user, isLoading });
+    console.log("Dashboard layout - Auth check:", {
+      user: !!user,
+      isLoading,
+      userRole: user?.role,
+      userBranchId: user?.branchId,
+    });
 
     // If not loading and no user, redirect to login
     if (!isLoading && !user) {
@@ -58,6 +63,13 @@ export default function DashboardLayout({
       </div>
     );
   }
+
+  console.log("Dashboard layout - Rendering with user:", {
+    id: user.id,
+    role: user.role,
+    branchId: user.branchId,
+    name: user.name,
+  });
 
   return (
     <>

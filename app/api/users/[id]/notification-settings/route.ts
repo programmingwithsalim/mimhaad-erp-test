@@ -3,9 +3,9 @@ import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const userId = params.id
+    const { id: userId } = await params
 
     // Get user notification settings
     const settings = await sql`
@@ -104,9 +104,9 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const userId = params.id
+    const { id: userId } = await params
     const data = await request.json()
 
     // Update user notification settings

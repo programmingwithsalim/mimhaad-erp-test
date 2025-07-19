@@ -172,26 +172,40 @@ export const TRANSACTION_LIMITS: Record<
   Cashier: { maxAmount: 5000, dailyLimit: 25000 },
 };
 
-// Normalize role to handle case sensitivity
+// Normalize role to handle case sensitivity and variations
 export function normalizeRole(role: string | undefined | null): Role | null {
-  if (!role) return null;
+  if (!role) {
+    console.log("normalizeRole: No role provided");
+    return null;
+  }
 
-  const normalized = role.toLowerCase();
+  console.log("normalizeRole: Input role:", role);
+
+  const normalized = role.toLowerCase().trim();
+
+  console.log("normalizeRole: Normalized role:", normalized);
 
   switch (normalized) {
     case "admin":
+    case "administrator":
       return "Admin";
     case "manager":
+    case "management":
       return "Manager";
     case "finance":
+    case "financial":
       return "Finance";
     case "operations":
+    case "operation":
       return "Operations";
     case "supervisor":
+    case "supervisory":
       return "Supervisor";
     case "cashier":
+    case "cash":
       return "Cashier";
     default:
+      console.log("normalizeRole: Unknown role:", role, "-> returning null");
       return null;
   }
 }

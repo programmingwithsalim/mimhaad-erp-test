@@ -1,9 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { reverseJournalEntry } from "@/lib/gl-journal-service"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const id = params.id
+    const { id: id } = await params
     const body = await request.json()
     const { userId, reason } = body
 
@@ -21,7 +21,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
 
     return NextResponse.json({ journalEntry })
   } catch (error) {
-    console.error(`Error in POST /api/gl/journal-entries/${params.id}/reverse:`, error)
+    console.error(`Error in POST /api/gl/journal-entries/${(await params).id}/reverse:`, error)
     return NextResponse.json({ error: "Failed to reverse journal entry" }, { status: 500 })
   }
 }

@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { changeUserPassword } from "@/lib/user-service"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const body = await request.json()
     const { currentPassword, newPassword } = body
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "New password must be at least 8 characters long" }, { status: 400 })
     }
 
-    const success = await changeUserPassword(params.id, currentPassword, newPassword)
+    const success = await changeUserPassword((await params).id, currentPassword, newPassword)
 
     if (success) {
       return NextResponse.json({ message: "Password changed successfully" })

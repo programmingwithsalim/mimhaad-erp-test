@@ -3,19 +3,19 @@ import { markCommissionPaid } from "@/lib/commission-database-service"
 import { AuditLoggerService } from "@/lib/services/audit-logger-service"
 import { GLPostingService } from "@/lib/services/gl-posting-service"
 
-export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    if (!uuidRegex.test(params.id)) {
+    if (!uuidRegex.test((await params).id)) {
       return NextResponse.json({ error: "Invalid commission ID format" }, { status: 400 })
     }
 
     const body = await request.json()
     const { paymentInfo = {}, userId = "system", userName = "System User" } = body
 
-    console.log("Marking commission as paid:", params.id)
+    console.log("Marking commission as paid:", (await params).id)
 
-    const updatedCommission = await markCommissionPaid(params.id, userId, userName, paymentInfo)
+    const updatedCommission = await markCommissionPaid((await params).id, userId, userName, paymentInfo)
 
     if (!updatedCommission) {
       return NextResponse.json({ error: "Commission not found or already paid" }, { status: 404 })
@@ -28,7 +28,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       username: userName,
       action: "complete",
       transactionType: "commission_payment",
-      transactionId: params.id,
+      transactionId: (await params).id,
       amount: updatedCommission.amount,
       details: {
         source: updatedCommission.source,

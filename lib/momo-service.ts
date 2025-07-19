@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { getCurrentUser } from "@/lib/auth-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -14,10 +14,10 @@ export interface MoMoTransactionData {
   branchId?: string;
 }
 
-export async function createMoMoTransaction(data: MoMoTransactionData) {
+export async function createMoMoTransaction(data: MoMoTransactionData, request: Request) {
   try {
-    const user = await getCurrentUser();
-
+    const user = await getCurrentUser(request as any);
+    
     const result = await sql`
       INSERT INTO momo_transactions (
         amount,
@@ -38,8 +38,8 @@ export async function createMoMoTransaction(data: MoMoTransactionData) {
         ${data.reference},
         ${data.description || null},
         ${data.transactionType},
-        ${data.provider || "momo"},
-        ${data.status || "pending"},
+        ${data.provider || 'momo'},
+        ${data.status || 'pending'},
         ${data.branchId || user.branchId},
         ${user.id},
         NOW(),

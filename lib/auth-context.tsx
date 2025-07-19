@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Login successful");
+        console.log("Login successful, user data:", data.user);
 
         // Ensure all user fields are properly mapped
         const userData = {
@@ -109,8 +109,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim(),
         };
 
+        console.log("Setting user data:", userData);
         setUser(userData);
+
+        // Add a small delay to ensure state is updated before redirect
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        console.log("Redirecting to dashboard...");
         router.push("/dashboard");
+
+        // Force a page refresh after a short delay to ensure all components load with correct role
+        setTimeout(() => {
+          console.log("Force refreshing page to ensure proper role loading...");
+          window.location.reload();
+        }, 500);
+
         return true;
       } else {
         const errorData = await response.json();

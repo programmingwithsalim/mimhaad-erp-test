@@ -6,10 +6,10 @@ const sql = neon(process.env.DATABASE_URL!);
 // Upload receipt
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const commissionId = params.id;
+    const { id: commissionId } = await params;
 
     // Check if commission exists
     const commission = await sql`
@@ -103,10 +103,10 @@ export async function POST(
 // Download receipt
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const commissionId = params.id;
+    const { id: commissionId } = await params;
 
     // Get commission with receipt data
     const commission = await sql`

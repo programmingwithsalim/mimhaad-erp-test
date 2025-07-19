@@ -202,7 +202,7 @@ const menuItems = [
 
 export function SidebarNavigation() {
   const pathname = usePathname();
-  const { user, logout } = useAuth();
+  const { user, logout, isLoading: authLoading } = useAuth();
   const { userRole } = useRBAC();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -215,7 +215,8 @@ export function SidebarNavigation() {
   useEffect(() => {
     console.log("[Sidebar] user:", user);
     console.log("[Sidebar] userRole:", userRole);
-  }, [user, userRole]);
+    console.log("[Sidebar] authLoading:", authLoading);
+  }, [user, userRole, authLoading]);
 
   // Check if mobile on initial load
   useEffect(() => {
@@ -248,8 +249,44 @@ export function SidebarNavigation() {
   }, [pathname, userRole]);
 
   const hasPermission = (roles: Role[]) => {
-    return userRole ? roles.includes(userRole) : false;
+    // Use RBAC role if available, otherwise fall back to user role from auth
+    const effectiveRole =
+      userRole || (user?.role ? normalizeRole(user.role) : null);
+
+    const hasAccess = effectiveRole ? roles.includes(effectiveRole) : false;
+    console.log(
+      `[Sidebar] Checking permission for roles:`,
+      roles,
+      `userRole:`,
+      userRole,
+      `userRoleFromAuth:`,
+      user?.role,
+      `effectiveRole:`,
+      effectiveRole,
+      `hasAccess:`,
+      hasAccess
+    );
+    return hasAccess;
   };
+
+  // Fallback menu items for when role is not recognized
+  const getFallbackMenuItems = () => [
+    {
+      title: "Dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    },
+    {
+      title: "Transactions",
+      href: "/dashboard/transactions/all",
+      icon: Receipt,
+    },
+    {
+      title: "Settings",
+      href: "/dashboard/settings",
+      icon: Settings,
+    },
+  ];
 
   const toggleSidebar = () => {
     setIsCollapsed(!isCollapsed);
@@ -320,81 +357,47 @@ export function SidebarNavigation() {
 
       {/* Navigation */}
       <nav className="flex-1 min-h-0 overflow-y-auto space-y-1 p-2">
-        {menuItems.map((section) => {
-          const visibleItems = section.items.filter((item) =>
-            hasPermission(item.roles as Role[])
-          );
+        {authLoading ? (
+          // Show loading state while auth is loading
+          <div className="space-y-2 p-4">
+            <div className="h-4 bg-muted animate-pulse rounded"></div>
+            <div className="h-4 bg-muted animate-pulse rounded w-3/4"></div>
+            <div className="h-4 bg-muted animate-pulse rounded w-1/2"></div>
+          </div>
+        ) : (
+          (() => {
+            // Get visible items from menu structure
+            const visibleItems = menuItems
+              .map((section) => {
+                const sectionVisibleItems = section.items.filter((item) =>
+                  hasPermission(item.roles as Role[])
+                );
+                return { ...section, items: sectionVisibleItems };
+              })
+              .filter((section) => section.items.length > 0);
 
-          if (visibleItems.length === 0) return null;
+            console.log("[Sidebar] Menu filtering:", {
+              userRole,
+              totalSections: menuItems.length,
+              visibleSections: visibleItems.length,
+              totalItems: menuItems.reduce(
+                (sum, section) => sum + section.items.length,
+                0
+              ),
+              visibleItems: visibleItems.reduce(
+                (sum, section) => sum + section.items.length,
+                0
+              ),
+            });
 
-          const isExpanded = expandedSections.has(section.title);
-          const hasActiveItem = visibleItems.some(
-            (item) => pathname === item.href
-          );
-
-          // In collapsed mode, show all items as icons only
-          if (isCollapsed) {
-            return (
-              <div key={section.title} className="space-y-1">
-                {visibleItems.map((item) => {
-                  const isActive = pathname === item.href;
-                  const Icon = item.icon;
-
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      title={item.title}
-                      className={cn(
-                        "flex items-center justify-center px-2 py-2 text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-[1.02] min-w-0",
-                        isActive
-                          ? "bg-primary text-primary-foreground shadow-md"
-                          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm"
-                      )}
-                    >
-                      <Icon className="h-5 w-5 flex-shrink-0" />
-                    </Link>
-                  );
-                })}
-              </div>
-            );
-          }
-
-          // Expanded mode - show sections with expand/collapse
-          return (
-            <div key={section.title} className="space-y-1">
-              {/* Section Header - Clickable to expand/collapse */}
-              <button
-                onClick={() => toggleSection(section.title)}
-                title={isCollapsed ? section.title : undefined}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-2 text-sm font-semibold uppercase tracking-wider transition-all duration-200 ease-in-out hover:bg-accent/50 min-w-0",
-                  hasActiveItem
-                    ? "bg-primary text-primary-foreground shadow-md"
-                    : "bg-muted/40 text-muted-foreground hover:bg-muted/60",
-                  isCollapsed && "justify-center px-2"
-                )}
-              >
-                <span className="truncate whitespace-nowrap overflow-hidden">
-                  {section.title}
-                </span>
-                <ChevronDown
-                  className={cn(
-                    "h-4 w-4 transition-transform duration-300 ease-in-out flex-shrink-0",
-                    isExpanded && "rotate-180"
-                  )}
-                />
-              </button>
-
-              {/* Section Items - Smooth expand/collapse animation */}
-              <div
-                className={cn(
-                  "overflow-hidden transition-all duration-300 ease-in-out",
-                  isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
-                )}
-              >
-                <div className="space-y-1 ml-4 pl-4 border-l-2 border-muted/30">
-                  {visibleItems.map((item) => {
+            // If no role-based items are visible, show fallback items
+            if (visibleItems.length === 0) {
+              console.log(
+                "[Sidebar] No role-based items visible, showing fallback menu"
+              );
+              return (
+                <div className="space-y-1">
+                  {getFallbackMenuItems().map((item) => {
                     const isActive = pathname === item.href;
                     const Icon = item.icon;
 
@@ -402,7 +405,7 @@ export function SidebarNavigation() {
                       <Link
                         key={item.href}
                         href={item.href}
-                        title={isCollapsed ? item.title : undefined}
+                        title={item.title}
                         className={cn(
                           "flex items-center gap-3 px-4 py-2 text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-[1.02] min-w-0",
                           isActive
@@ -418,10 +421,108 @@ export function SidebarNavigation() {
                     );
                   })}
                 </div>
-              </div>
-            </div>
-          );
-        })}
+              );
+            }
+
+            // Render normal role-based menu
+            return visibleItems.map((section) => {
+              const isExpanded = expandedSections.has(section.title);
+              const hasActiveItem = section.items.some(
+                (item) => pathname === item.href
+              );
+
+              // In collapsed mode, show all items as icons only
+              if (isCollapsed) {
+                return (
+                  <div key={section.title} className="space-y-1">
+                    {section.items.map((item) => {
+                      const isActive = pathname === item.href;
+                      const Icon = item.icon;
+
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          title={item.title}
+                          className={cn(
+                            "flex items-center justify-center px-2 py-2 text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-[1.02] min-w-0",
+                            isActive
+                              ? "bg-primary text-primary-foreground shadow-md"
+                              : "text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm"
+                          )}
+                        >
+                          <Icon className="h-5 w-5 flex-shrink-0" />
+                        </Link>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              // Expanded mode - show sections with expand/collapse
+              return (
+                <div key={section.title} className="space-y-1">
+                  {/* Section Header - Clickable to expand/collapse */}
+                  <button
+                    onClick={() => toggleSection(section.title)}
+                    title={isCollapsed ? section.title : undefined}
+                    className={cn(
+                      "w-full flex items-center justify-between px-3 py-2 text-sm font-semibold uppercase tracking-wider transition-all duration-200 ease-in-out hover:bg-accent/50 min-w-0",
+                      hasActiveItem
+                        ? "bg-primary text-primary-foreground shadow-md"
+                        : "bg-muted/40 text-muted-foreground hover:bg-muted/60",
+                      isCollapsed && "justify-center px-2"
+                    )}
+                  >
+                    <span className="truncate whitespace-nowrap overflow-hidden">
+                      {section.title}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-4 w-4 transition-transform duration-300 ease-in-out flex-shrink-0",
+                        isExpanded && "rotate-180"
+                      )}
+                    />
+                  </button>
+
+                  {/* Section Items - Smooth expand/collapse animation */}
+                  <div
+                    className={cn(
+                      "overflow-hidden transition-all duration-300 ease-in-out",
+                      isExpanded ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+                    )}
+                  >
+                    <div className="space-y-1 ml-4 pl-4 border-l-2 border-muted/30">
+                      {section.items.map((item) => {
+                        const isActive = pathname === item.href;
+                        const Icon = item.icon;
+
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            title={isCollapsed ? item.title : undefined}
+                            className={cn(
+                              "flex items-center gap-3 px-4 py-2 text-sm font-medium transition-all duration-200 ease-in-out transform hover:scale-[1.02] min-w-0",
+                              isActive
+                                ? "bg-primary text-primary-foreground shadow-md"
+                                : "text-muted-foreground hover:bg-accent hover:text-accent-foreground hover:shadow-sm"
+                            )}
+                          >
+                            <Icon className="h-5 w-5 flex-shrink-0" />
+                            <span className="truncate whitespace-nowrap overflow-hidden">
+                              {item.title}
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              );
+            });
+          })()
+        )}
       </nav>
 
       {/* User Info & Logout - fixed at bottom */}

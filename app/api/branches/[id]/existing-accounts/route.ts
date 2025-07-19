@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { getExistingAccountTypesForBranch } from "@/lib/float-account-service"
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const branchId = params.id
+    const { id: branchId } = await params
 
     if (!branchId) {
       return NextResponse.json({ error: "Branch ID is required" }, { status: 400 })

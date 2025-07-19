@@ -76,12 +76,12 @@ function getGLCategoryFromExpenseHead(headCategory: string): string {
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     console.log(
       "GET /api/expenses/[id] - Fetching expense with ID:",
-      params.id
+      (await params).id
     );
 
     const { id } = params;
@@ -131,12 +131,12 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     console.log(
       "PATCH /api/expenses/[id] - Updating expense with ID:",
-      params.id
+      (await params).id
     );
 
     const { id } = params;
@@ -290,12 +290,12 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     console.log(
       "DELETE /api/expenses/[id] - Deleting expense with ID:",
-      params.id
+      (await params).id
     );
 
     const { id } = params;

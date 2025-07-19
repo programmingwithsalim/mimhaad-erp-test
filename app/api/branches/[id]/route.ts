@@ -3,10 +3,10 @@ import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const result = await sql`
-      SELECT * FROM branches WHERE id = ${params.id}
+      SELECT * FROM branches WHERE id = ${(await params).id}
     `
 
     if (result.length === 0) {
@@ -15,7 +15,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
 
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error(`Error fetching branch with ID ${params.id}:`, error)
+    console.error(`Error fetching branch with ID ${(await params).id}:`, error)
     return NextResponse.json(
       {
         error: "Failed to fetch branch",
@@ -26,10 +26,10 @@ export async function GET(request: Request, { params }: { params: { id: string }
   }
 }
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const data = await request.json()
-    console.log(`Updating branch ${params.id} with data:`, data)
+    console.log(`Updating branch ${(await params).id} with data:`, data)
 
     // Build dynamic update query
     const updateFields: string[] = []
@@ -98,7 +98,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     updateFields.push(`updated_at = NOW()`)
 
     // Add ID parameter
-    values.push(params.id)
+    values.push((await params).id)
 
     const query = `
       UPDATE branches 
@@ -119,7 +119,7 @@ export async function PATCH(request: Request, { params }: { params: { id: string
     console.log("Updated branch:", result[0])
     return NextResponse.json(result[0])
   } catch (error) {
-    console.error(`Error updating branch with ID ${params.id}:`, error)
+    console.error(`Error updating branch with ID ${(await params).id}:`, error)
     return NextResponse.json(
       {
         error: "Failed to update branch",
@@ -130,12 +130,12 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    console.log(`Deleting branch with ID: ${params.id}`)
+    console.log(`Deleting branch with ID: ${(await params).id}`)
 
     const result = await sql`
-      DELETE FROM branches WHERE id = ${params.id} RETURNING *
+      DELETE FROM branches WHERE id = ${(await params).id} RETURNING *
     `
 
     if (result.length === 0) {
@@ -149,7 +149,7 @@ export async function DELETE(request: Request, { params }: { params: { id: strin
       deletedBranch: result[0],
     })
   } catch (error) {
-    console.error(`Error deleting branch with ID ${params.id}:`, error)
+    console.error(`Error deleting branch with ID ${(await params).id}:`, error)
     return NextResponse.json(
       {
         error: "Failed to delete branch",

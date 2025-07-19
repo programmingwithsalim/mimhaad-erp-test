@@ -94,7 +94,8 @@ export async function getDatabaseSession(
     if (request) {
       sessionToken = request.cookies.get("session_token")?.value;
     } else {
-      sessionToken = cookies().get("session_token")?.value;
+      const cookieStore = await cookies();
+      sessionToken = cookieStore.get("session_token")?.value;
     }
 
     console.log(

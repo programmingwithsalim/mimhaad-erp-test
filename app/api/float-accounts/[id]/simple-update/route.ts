@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { neon } from "@neondatabase/serverless"
 
-export async function POST(request: Request, { params }: { params: { id: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const accountId = params.id
+    const { id: accountId } = await params
     const { amount, description } = await request.json()
 
     // Get database connection

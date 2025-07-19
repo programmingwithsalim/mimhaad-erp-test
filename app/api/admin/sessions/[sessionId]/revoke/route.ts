@@ -5,7 +5,7 @@ import { neon } from "@neondatabase/serverless"
 const sql = neon(process.env.DATABASE_URL!)
 
 // POST - Revoke a specific session (admin only)
-export async function POST(request: Request, { params }: { params: { sessionId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ sessionId: string  }> }) {
   try {
     const session = await getSession()
 

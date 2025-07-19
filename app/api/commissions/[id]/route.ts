@@ -9,16 +9,16 @@ import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-servi
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    console.log("PUT request for commission ID:", params.id);
+    console.log("PUT request for commission ID:", (await params).id);
 
     // Validate UUID format
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(params.id)) {
-      console.log("Invalid commission ID format:", params.id);
+    if (!uuidRegex.test((await params).id)) {
+      console.log("Invalid commission ID format:", (await params).id);
       return NextResponse.json(
         { error: "Invalid commission ID format" },
         { status: 400 }
@@ -63,9 +63,9 @@ export async function PUT(
     }
 
     // Check if commission exists and get current state
-    const existingCommission = await getCommissionById(params.id);
+    const existingCommission = await getCommissionById((await params).id);
     if (!existingCommission) {
-      console.log("Commission not found for update:", params.id);
+      console.log("Commission not found for update:", (await params).id);
       return NextResponse.json(
         { error: "Commission not found" },
         { status: 404 }
@@ -76,7 +76,7 @@ export async function PUT(
 
     // Update the commission
     const updatedCommission = await updateCommission(
-      params.id,
+      (await params).id,
       body,
       user.id,
       user.name
@@ -358,16 +358,16 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    console.log("DELETE request for commission ID:", params.id);
+    console.log("DELETE request for commission ID:", (await params).id);
 
     // Validate UUID format
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(params.id)) {
-      console.log("Invalid commission ID format:", params.id);
+    if (!uuidRegex.test((await params).id)) {
+      console.log("Invalid commission ID format:", (await params).id);
       return NextResponse.json(
         { error: "Invalid commission ID format" },
         { status: 400 }
@@ -391,9 +391,9 @@ export async function DELETE(
     }
 
     // Check if commission exists
-    const existingCommission = await getCommissionById(params.id);
+    const existingCommission = await getCommissionById((await params).id);
     if (!existingCommission) {
-      console.log("Commission not found for delete:", params.id);
+      console.log("Commission not found for delete:", (await params).id);
       return NextResponse.json(
         { error: "Commission not found" },
         { status: 404 }
@@ -403,7 +403,7 @@ export async function DELETE(
     console.log("Found commission for delete:", existingCommission.reference);
 
     // Delete the commission
-    const success = await deleteCommission(params.id);
+    const success = await deleteCommission((await params).id);
 
     if (!success) {
       console.log("Commission delete failed");

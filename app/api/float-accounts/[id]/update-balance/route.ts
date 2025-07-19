@@ -101,7 +101,7 @@ async function logTransaction(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   const session = await getSession();
   if (!session?.user || session.user.role?.toLowerCase() !== "super-admin") {
@@ -114,7 +114,7 @@ export async function POST(
     );
   }
   try {
-    const accountId = params.id;
+    const { id: accountId } = await params;
 
     // Validate account ID
     if (!accountId || accountId === "undefined" || accountId === "null") {

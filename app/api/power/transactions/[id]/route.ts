@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function PUT(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const currentUser = getCurrentUser(request as any);
@@ -54,7 +54,7 @@ export async function PUT(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const currentUser = getCurrentUser(request as any);

@@ -6,10 +6,10 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const branchId = params.id;
+    const { id: branchId } = await params;
 
     if (!branchId) {
       return NextResponse.json(

@@ -1,35 +1,48 @@
-"use client"
+"use client";
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { useAuth } from "@/lib/auth-context"
-import { 
-  hasPermission, 
-  hasAnyPermission, 
-  hasAllPermissions, 
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import { useAuth } from "@/lib/auth-context";
+import {
+  hasPermission,
+  hasAnyPermission,
+  hasAllPermissions,
   canPerformTransaction,
   canPerformDailyTransaction,
   normalizeRole,
-  type Role, 
+  type Role,
   type Permission,
   TRANSACTION_LIMITS,
-  ROLE_DISPLAY_INFO
-} from "@/lib/rbac/unified-rbac"
+  ROLE_DISPLAY_INFO,
+} from "@/lib/rbac/unified-rbac";
 
 interface RBACContextType {
-  userRole: Role | null
-  hasPermission: (permission: Permission) => boolean
-  hasAnyPermission: (permissions: Permission[]) => boolean
-  hasAllPermissions: (permissions: Permission[]) => boolean
-  canPerformTransaction: (amount: number) => boolean
-  canPerformDailyTransaction: (dailyTotal: number, newAmount: number) => boolean
-  getTransactionLimits: () => { maxAmount: number; dailyLimit: number } | null
-  getRoleInfo: () => { label: string; description: string; color: string } | null
-  isAdmin: boolean
-  isManager: boolean
-  isFinance: boolean
-  isOperations: boolean
-  isSupervisor: boolean
-  isCashier: boolean
+  userRole: Role | null;
+  hasPermission: (permission: Permission) => boolean;
+  hasAnyPermission: (permissions: Permission[]) => boolean;
+  hasAllPermissions: (permissions: Permission[]) => boolean;
+  canPerformTransaction: (amount: number) => boolean;
+  canPerformDailyTransaction: (
+    dailyTotal: number,
+    newAmount: number
+  ) => boolean;
+  getTransactionLimits: () => { maxAmount: number; dailyLimit: number } | null;
+  getRoleInfo: () => {
+    label: string;
+    description: string;
+    color: string;
+  } | null;
+  isAdmin: boolean;
+  isManager: boolean;
+  isFinance: boolean;
+  isOperations: boolean;
+  isSupervisor: boolean;
+  isCashier: boolean;
 }
 
 const RBACContext = createContext<RBACContextType>({
@@ -47,52 +60,73 @@ const RBACContext = createContext<RBACContextType>({
   isOperations: false,
   isSupervisor: false,
   isCashier: false,
-})
+});
 
-export const useRBAC = () => useContext(RBACContext)
+export const useRBAC = () => useContext(RBACContext);
 
 export function RBACProvider({ children }: { children: ReactNode }) {
-  const { user } = useAuth()
-  const [userRole, setUserRole] = useState<Role | null>(null)
+  const { user, isLoading: authLoading } = useAuth();
+  const [userRole, setUserRole] = useState<Role | null>(null);
 
   useEffect(() => {
-    if (user?.role) {
-      const normalizedRole = normalizeRole(user.role)
-      setUserRole(normalizedRole)
-    } else {
-      setUserRole(null)
+    console.log("RBAC Provider - Auth loading:", authLoading);
+    console.log("RBAC Provider - User data:", user);
+    console.log("RBAC Provider - User role from auth:", user?.role);
+
+    if (!authLoading) {
+      if (user?.role) {
+        const normalizedRole = normalizeRole(user.role);
+        console.log("RBAC Provider - Normalized role:", normalizedRole);
+
+        if (normalizedRole) {
+          console.log("RBAC Provider - Setting role to:", normalizedRole);
+          setUserRole(normalizedRole);
+        } else {
+          console.log(
+            "RBAC Provider - Role normalization failed, using original role"
+          );
+          // Use the original role if normalization fails
+          setUserRole(user.role as Role);
+        }
+      } else if (user) {
+        console.log("RBAC Provider - User exists but no role, setting default");
+        setUserRole("Operations");
+      } else {
+        console.log("RBAC Provider - No user, setting role to null");
+        setUserRole(null);
+      }
     }
-  }, [user?.role])
+  }, [user?.role, authLoading, user]);
 
   const contextValue: RBACContextType = {
     userRole,
     hasPermission: (permission: Permission) => {
-      if (!userRole) return false
-      return hasPermission(userRole, permission)
+      if (!userRole) return false;
+      return hasPermission(userRole, permission);
     },
     hasAnyPermission: (permissions: Permission[]) => {
-      if (!userRole) return false
-      return hasAnyPermission(userRole, permissions)
+      if (!userRole) return false;
+      return hasAnyPermission(userRole, permissions);
     },
     hasAllPermissions: (permissions: Permission[]) => {
-      if (!userRole) return false
-      return hasAllPermissions(userRole, permissions)
+      if (!userRole) return false;
+      return hasAllPermissions(userRole, permissions);
     },
     canPerformTransaction: (amount: number) => {
-      if (!userRole) return false
-      return canPerformTransaction(userRole, amount)
+      if (!userRole) return false;
+      return canPerformTransaction(userRole, amount);
     },
     canPerformDailyTransaction: (dailyTotal: number, newAmount: number) => {
-      if (!userRole) return false
-      return canPerformDailyTransaction(userRole, dailyTotal, newAmount)
+      if (!userRole) return false;
+      return canPerformDailyTransaction(userRole, dailyTotal, newAmount);
     },
     getTransactionLimits: () => {
-      if (!userRole) return null
-      return TRANSACTION_LIMITS[userRole]
+      if (!userRole) return null;
+      return TRANSACTION_LIMITS[userRole];
     },
     getRoleInfo: () => {
-      if (!userRole) return null
-      return ROLE_DISPLAY_INFO[userRole]
+      if (!userRole) return null;
+      return ROLE_DISPLAY_INFO[userRole];
     },
     isAdmin: userRole === "Admin",
     isManager: userRole === "Manager",
@@ -100,11 +134,9 @@ export function RBACProvider({ children }: { children: ReactNode }) {
     isOperations: userRole === "Operations",
     isSupervisor: userRole === "Supervisor",
     isCashier: userRole === "Cashier",
-  }
+  };
 
   return (
-    <RBACContext.Provider value={contextValue}>
-      {children}
-    </RBACContext.Provider>
-  )
-} 
+    <RBACContext.Provider value={contextValue}>{children}</RBACContext.Provider>
+  );
+}

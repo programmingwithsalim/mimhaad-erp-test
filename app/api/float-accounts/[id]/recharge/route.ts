@@ -5,7 +5,7 @@ import { getDatabaseSession } from "@/lib/database-session-service";
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     // Convert to NextRequest for cookie access
@@ -38,7 +38,7 @@ export async function POST(
     }
 
     // 3. Get target account
-    const accountId = params.id;
+    const { id: accountId } = await params;
     const [targetAccount] =
       await sql`SELECT * FROM float_accounts WHERE id = ${accountId}`;
     if (!targetAccount) {

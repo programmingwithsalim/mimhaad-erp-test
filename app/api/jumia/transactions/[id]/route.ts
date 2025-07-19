@@ -9,10 +9,10 @@ import { getCurrentUser } from "@/lib/auth-utils";
 // GET - Get specific transaction
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const transactionId = params.id;
+    const { id: transactionId } = await params;
     console.log("GET request for transaction ID:", transactionId);
 
     const transaction = await getJumiaTransactionById(transactionId);
@@ -46,10 +46,10 @@ export async function GET(
 // PUT - Update transaction
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const transactionId = params.id;
+    const { id: transactionId } = await params;
     const body = await request.json();
     const currentUser = getCurrentUser(request as any);
 
@@ -127,10 +127,10 @@ export async function PUT(
 // DELETE - Delete transaction
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const transactionId = params.id;
+    const { id: transactionId } = await params;
     const body = await request.json();
     const currentUser = getCurrentUser(request as any);
     const reason = body?.reason || "User requested deletion";
@@ -155,7 +155,7 @@ export async function DELETE(
   } catch (error) {
     console.error("Error deleting Jumia transaction:", error);
 
-    const transactionId = params.id;
+    const { id: transactionId } = await params;
     if (error instanceof Error && error.message.includes("not found")) {
       return NextResponse.json(
         {

@@ -3,7 +3,7 @@ import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
-export async function POST(request: NextRequest, { params }: { params: { accountId: string } }) {
+export async function POST(request: NextRequest, { params }: { params: Promise<{ accountId: string  }> }) {
   try {
     const { accountId } = params
     const body = await request.json()

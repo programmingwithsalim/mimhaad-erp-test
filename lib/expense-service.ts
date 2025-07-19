@@ -1,5 +1,5 @@
 import { neon } from "@neondatabase/serverless";
-import { getCurrentUser } from "@/lib/auth-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -47,7 +47,7 @@ export class ExpenseService {
           ${expenseData.reference || null},
           ${expenseData.receiptNumber || null},
           ${expenseData.branchId || user.branchId},
-          ${expenseData.date || new Date().toISOString().split('T')[0]},
+          ${expenseData.date || new Date().toISOString().split("T")[0]},
           ${user.id},
           NOW(),
           NOW()
@@ -57,13 +57,13 @@ export class ExpenseService {
 
       return {
         success: true,
-        expenseId: result[0].id
+        expenseId: result[0].id,
       };
     } catch (error) {
       console.error("Error creating expense:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -87,7 +87,7 @@ export class ExpenseService {
         endDate,
         searchTerm,
         page = 1,
-        limit = 50
+        limit = 50,
       } = filters;
 
       let whereConditions: string[] = [];
@@ -119,12 +119,17 @@ export class ExpenseService {
       }
 
       if (searchTerm) {
-        whereConditions.push(`(e.description ILIKE $${paramIndex} OR e.reference ILIKE $${paramIndex})`);
+        whereConditions.push(
+          `(e.description ILIKE $${paramIndex} OR e.reference ILIKE $${paramIndex})`
+        );
         params.push(`%${searchTerm}%`);
         paramIndex++;
       }
 
-      const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(" AND ")}` : "";
+      const whereClause =
+        whereConditions.length > 0
+          ? `WHERE ${whereConditions.join(" AND ")}`
+          : "";
 
       // Get total count
       const countQuery = `
@@ -157,7 +162,7 @@ export class ExpenseService {
         ORDER BY e.created_at DESC
         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
       `;
-      
+
       const expensesParams = [...params, limit, offset];
       const expensesResult = await sql.unsafe(expensesQuery, expensesParams);
 
@@ -167,12 +172,12 @@ export class ExpenseService {
         total,
         pages: Math.ceil(total / limit),
         hasNext: page * limit < total,
-        hasPrev: page > 1
+        hasPrev: page > 1,
       };
 
       return {
         expenses: expensesResult,
-        pagination
+        pagination,
       };
     } catch (error) {
       console.error("Error getting expenses:", error);
@@ -184,8 +189,8 @@ export class ExpenseService {
           total: 0,
           pages: 0,
           hasNext: false,
-          hasPrev: false
-        }
+          hasPrev: false,
+        },
       };
     }
   }
@@ -241,7 +246,7 @@ export class ExpenseService {
         totalExpenses,
         totalAmount,
         expensesByHead: expensesByHeadResult,
-        monthlyExpenses: monthlyExpensesResult
+        monthlyExpenses: monthlyExpensesResult,
       };
     } catch (error) {
       console.error("Error getting expense statistics:", error);
@@ -249,7 +254,7 @@ export class ExpenseService {
         totalExpenses: 0,
         totalAmount: 0,
         expensesByHead: [],
-        monthlyExpenses: []
+        monthlyExpenses: [],
       };
     }
   }
@@ -317,19 +322,19 @@ export class ExpenseService {
       if (result.length === 0) {
         return {
           success: false,
-          error: "Expense not found"
+          error: "Expense not found",
         };
       }
 
       return {
         success: true,
-        expenseId: result[0].id
+        expenseId: result[0].id,
       };
     } catch (error) {
       console.error("Error updating expense:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
@@ -350,20 +355,20 @@ export class ExpenseService {
       if (result.length === 0) {
         return {
           success: false,
-          error: "Expense not found"
+          error: "Expense not found",
         };
       }
 
       return {
         success: true,
-        expenseId: result[0].id
+        expenseId: result[0].id,
       };
     } catch (error) {
       console.error("Error deleting expense:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: error instanceof Error ? error.message : "Unknown error",
       };
     }
   }
-} 
+}

@@ -6,7 +6,7 @@ import { GLPostingService } from "@/lib/services/gl-posting-service-corrected"
 const sql = neon(process.env.DATABASE_URL!)
 
 // PUT - Update batch
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   let body
   try {
     const { id } = params
@@ -238,7 +238,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
 }
 
 // DELETE - Delete batch
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const { id } = params
     const { searchParams } = new URL(request.url)
@@ -394,7 +394,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 }
 
 // GET - Get single batch
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const { id } = params
     const { searchParams } = new URL(request.url)

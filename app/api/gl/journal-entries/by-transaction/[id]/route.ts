@@ -2,9 +2,9 @@ import { NextResponse } from "next/server"
 import { getJournalEntriesByTransactionId } from "@/lib/gl-journal-service"
 import { getGLAccountById } from "@/lib/gl-account-service"
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const transactionId = params.id
+    const { id: transactionId } = await params
 
     if (!transactionId) {
       return NextResponse.json({ error: "Transaction ID is required" }, { status: 400 })

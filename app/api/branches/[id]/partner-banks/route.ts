@@ -70,9 +70,9 @@ const mockPartnerBanks = [
   },
 ]
 
-export async function GET(request: Request, { params }: { params: { id: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const branchId = params.id
+    const { id: branchId } = await params
 
     if (!branchId) {
       return NextResponse.json({ error: "Branch ID is required" }, { status: 400 })
@@ -146,7 +146,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
     // Return mock data if no database results or on error
     return NextResponse.json(mockPartnerBanks)
   } catch (error) {
-    console.error(`Error fetching partner banks for branch ${params.id}:`, error)
+    console.error(`Error fetching partner banks for branch ${(await params).id}:`, error)
     // Return mock data on any error
     return NextResponse.json(mockPartnerBanks)
   }

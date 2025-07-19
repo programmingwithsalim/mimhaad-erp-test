@@ -1,11 +1,11 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { sql } from "@/lib/db"
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const body = await request.json()
     const { name, description, permissions, userId } = body
-    const roleId = params.id
+    const { id: roleId } = await params
 
     // Check if role is system role
     const roleCheck = await sql.query(`SELECT is_system FROM roles WHERE id = $1`, [roleId])
@@ -45,9 +45,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const roleId = params.id
+    const { id: roleId } = await params
 
     // Check if role is system role or has users assigned
     const roleCheck = await sql.query(

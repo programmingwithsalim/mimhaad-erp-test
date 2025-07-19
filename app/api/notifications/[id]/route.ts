@@ -7,7 +7,7 @@ const sql = neon(process.env.DATABASE_URL!);
 // Mark notification as read
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const user = await getCurrentUser(request);
@@ -22,7 +22,7 @@ export async function PATCH(
       const result = await sql`
         UPDATE notifications 
         SET read_at = NOW()
-        WHERE id = ${params.id} AND user_id = ${user.id}
+        WHERE id = ${(await params).id} AND user_id = ${user.id}
         RETURNING id, read_at
       `;
 
@@ -56,7 +56,7 @@ export async function PATCH(
 // Delete notification
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const user = await getCurrentUser(request);
@@ -67,7 +67,7 @@ export async function DELETE(
     // Delete the notification (only if it belongs to the user)
     const result = await sql`
       DELETE FROM notifications 
-      WHERE id = ${params.id} AND user_id = ${user.id}
+      WHERE id = ${(await params).id} AND user_id = ${user.id}
       RETURNING id
     `;
 

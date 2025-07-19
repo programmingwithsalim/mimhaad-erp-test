@@ -1,9 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getExpenseHeadById, updateExpenseHead, deleteExpenseHead } from "@/lib/expense-head-service"
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const id = params.id
+    const { id: id } = await params
     const expenseHead = await getExpenseHeadById(id)
 
     if (!expenseHead) {
@@ -15,7 +15,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       expense_head: expenseHead,
     })
   } catch (error) {
-    console.error(`Error in GET /api/expense-heads/${params.id}:`, error)
+    console.error(`Error in GET /api/expense-heads/${(await params).id}:`, error)
     return NextResponse.json(
       {
         success: false,
@@ -26,9 +26,9 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const id = params.id
+    const { id: id } = await params
     const data = await request.json()
 
     console.log(`Updating expense head ${id} with data:`, data)
@@ -64,7 +64,7 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
       message: "Expense head updated successfully",
     })
   } catch (error) {
-    console.error(`Error in PUT /api/expense-heads/${params.id}:`, error)
+    console.error(`Error in PUT /api/expense-heads/${(await params).id}:`, error)
     return NextResponse.json(
       {
         success: false,
@@ -75,9 +75,9 @@ export async function PUT(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const id = params.id
+    const { id: id } = await params
 
     console.log(`Deleting expense head ${id}`)
 
@@ -101,7 +101,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
       message: "Expense head deleted successfully",
     })
   } catch (error) {
-    console.error(`Error in DELETE /api/expense-heads/${params.id}:`, error)
+    console.error(`Error in DELETE /api/expense-heads/${(await params).id}:`, error)
     return NextResponse.json(
       {
         success: false,

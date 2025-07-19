@@ -5,10 +5,10 @@ import { UnifiedTransactionService } from "@/lib/services/unified-transaction-se
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const transactionId = params.id;
+    const { id: transactionId } = await params;
     const body = await request.json();
     const { sourceModule, reason } = body;
 

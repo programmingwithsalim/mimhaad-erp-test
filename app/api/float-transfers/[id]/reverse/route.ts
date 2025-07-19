@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { FloatTransferService } from "@/lib/services/float-transfer-service";
-import { getCurrentUser } from "@/lib/auth-service";
+import { getCurrentUser } from "@/lib/auth-utils";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const session = await getCurrentUser();
@@ -24,7 +24,7 @@ export async function POST(
 
     // Reverse the float transfer
     const success = await FloatTransferService.reverseFloatTransfer(
-      params.id,
+      (await params).id,
       reason,
       session.user.id,
       session.user.branchId

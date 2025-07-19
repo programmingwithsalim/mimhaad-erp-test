@@ -65,7 +65,7 @@ export function ReportsFilterBar({
   };
 
   return (
-    <div className="sticky top-0 z-20 bg-background/95 border-b border-muted shadow-sm sm:px-3 py-3 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 w-full">
+    <div className="bg-background border-b border-muted shadow-sm sm:px-3 py-3 flex flex-col sm:flex-row items-center gap-3 sm:gap-4 w-full">
       {/* Filter Icon (mobile) */}
       <span className="sm:hidden flex items-center text-muted-foreground">
         <Filter className="h-5 w-5 mr-1" /> Filters

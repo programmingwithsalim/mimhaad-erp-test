@@ -156,7 +156,8 @@ export function EnhancedAdminDashboard({
   };
 
   const getServiceIcon = (service: string | undefined | null) => {
-    if (!service || typeof service !== "string") return <Activity className="h-4 w-4" />;
+    if (!service || typeof service !== "string")
+      return <Activity className="h-4 w-4" />;
     switch (service.toLowerCase()) {
       case "momo":
         return <Smartphone className="h-4 w-4" />;
@@ -185,33 +186,23 @@ export function EnhancedAdminDashboard({
   };
 
   // Use real chart data from API instead of mock data
-  const chartData = totalStats.chartData && totalStats.chartData.length > 0 
-    ? totalStats.chartData.slice(-7).map((day: any) => ({
-        date: new Date(day.date).toLocaleDateString('en-US', { weekday: 'short' }),
-        transactions: day.transactions,
-        volume: day.volume,
-        commission: day.commission,
-      }))
-    : [
-        { date: "Mon", transactions: 0, volume: 0, commission: 0 },
-        { date: "Tue", transactions: 0, volume: 0, commission: 0 },
-        { date: "Wed", transactions: 0, volume: 0, commission: 0 },
-        { date: "Thu", transactions: 0, volume: 0, commission: 0 },
-        { date: "Fri", transactions: 0, volume: 0, commission: 0 },
-        { date: "Sat", transactions: 0, volume: 0, commission: 0 },
-        { date: "Sun", transactions: 0, volume: 0, commission: 0 },
-      ];
+  const chartData =
+    totalStats.chartData && totalStats.chartData.length > 0
+      ? totalStats.chartData.slice(-7).map((day: any) => ({
+          date: new Date(day.date).toLocaleDateString("en-US", {
+            weekday: "short",
+          }),
+          transactions: day.transactions,
+          volume: day.volume,
+          commission: day.commission,
+        }))
+      : []; // Return empty array instead of mock data
 
   // Use real service breakdown from API
-  const serviceBreakdown = totalStats.serviceBreakdown && totalStats.serviceBreakdown.length > 0
-    ? totalStats.serviceBreakdown
-    : [
-        { service: "MoMo", transactions: 0, volume: 0, commission: 0 },
-        { service: "Agency Banking", transactions: 0, volume: 0, commission: 0 },
-        { service: "E-Zwich", transactions: 0, volume: 0, commission: 0 },
-        { service: "Power", transactions: 0, volume: 0, commission: 0 },
-        { service: "Jumia", transactions: 0, volume: 0, commission: 0 },
-      ];
+  const serviceBreakdown =
+    totalStats.serviceBreakdown && totalStats.serviceBreakdown.length > 0
+      ? totalStats.serviceBreakdown
+      : []; // Return empty array instead of mock data
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -423,32 +414,32 @@ export function EnhancedAdminDashboard({
                 <CardDescription>Common administrative tasks</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push("/dashboard/user-management")}
                 >
                   <Users className="mr-2 h-4 w-4" />
                   Manage Users
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push("/dashboard/branch-management")}
                 >
                   <Building2 className="mr-2 h-4 w-4" />
                   Manage Branches
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push("/dashboard/settings")}
                 >
                   <Shield className="mr-2 h-4 w-4" />
                   System Settings
                 </Button>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   className="w-full justify-start"
                   onClick={() => router.push("/dashboard/reports")}
                 >

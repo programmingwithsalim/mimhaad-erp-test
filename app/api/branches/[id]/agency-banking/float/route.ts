@@ -60,10 +60,10 @@ async function initializeAgencyBankingFloatAccount(
 
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const branchId = params.id;
+    const { id: branchId } = await params;
     const { searchParams } = new URL(request.url);
     const provider = searchParams.get("provider") || undefined;
 
@@ -93,10 +93,10 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const branchId = params.id;
+    const { id: branchId } = await params;
     const body = await request.json();
     const createdBy = body.created_by || "system";
 

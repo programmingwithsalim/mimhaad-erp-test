@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
     const accountType = searchParams.get("accountType");
     const provider = searchParams.get("provider");
     const isActiveParam = searchParams.get("isActive");
+    const alertsOnly = searchParams.get("alerts") === "true";
     const isActive =
       isActiveParam === "true"
         ? true
@@ -113,6 +114,12 @@ export async function GET(request: NextRequest) {
       whereConditions.push(`fa.is_active = true`);
     }
 
+    // Add alerts filtering - only show accounts below threshold and exclude certain types
+    if (alertsOnly) {
+      whereConditions.push(`fa.current_balance <= fa.min_threshold`);
+      whereConditions.push(`fa.account_type NOT IN ('jumia', 'e-zwich')`); // Exclude these from alerts
+    }
+
     // Compose the WHERE clause
     const whereClause =
       whereConditions.length > 0
@@ -132,29 +139,67 @@ export async function GET(request: NextRequest) {
     // Use a simpler approach with proper SQL template literals
     let floatAccounts;
     try {
-      if (branchId && branchId !== "undefined") {
-        floatAccounts = await sql`
-          SELECT fa.*, b.name as branch_name
-          FROM float_accounts fa
-          LEFT JOIN branches b ON fa.branch_id = b.id
-          WHERE fa.branch_id = ${branchId}
-          ORDER BY fa.is_active DESC, fa.created_at DESC
-        `;
-      } else if (!isAdmin) {
-        floatAccounts = await sql`
-          SELECT fa.*, b.name as branch_name
-          FROM float_accounts fa
-          LEFT JOIN branches b ON fa.branch_id = b.id
-          WHERE fa.branch_id = ${userBranchId}
-          ORDER BY fa.is_active DESC, fa.created_at DESC
-        `;
+      if (alertsOnly) {
+        // For alerts, filter by branch and exclude certain account types
+        if (branchId && branchId !== "undefined") {
+          floatAccounts = await sql`
+            SELECT fa.*, b.name as branch_name
+            FROM float_accounts fa
+            LEFT JOIN branches b ON fa.branch_id = b.id
+            WHERE fa.branch_id = ${branchId}
+              AND fa.current_balance <= fa.min_threshold
+              AND fa.is_active = true
+              AND fa.account_type NOT IN ('jumia', 'e-zwich')
+            ORDER BY fa.is_active DESC, fa.created_at DESC
+          `;
+        } else if (!isAdmin) {
+          floatAccounts = await sql`
+            SELECT fa.*, b.name as branch_name
+            FROM float_accounts fa
+            LEFT JOIN branches b ON fa.branch_id = b.id
+            WHERE fa.branch_id = ${userBranchId}
+              AND fa.current_balance <= fa.min_threshold
+              AND fa.is_active = true
+              AND fa.account_type NOT IN ('jumia', 'e-zwich')
+            ORDER BY fa.is_active DESC, fa.created_at DESC
+          `;
+        } else {
+          floatAccounts = await sql`
+            SELECT fa.*, b.name as branch_name
+            FROM float_accounts fa
+            LEFT JOIN branches b ON fa.branch_id = b.id
+            WHERE fa.current_balance <= fa.min_threshold
+              AND fa.is_active = true
+              AND fa.account_type NOT IN ('jumia', 'e-zwich')
+            ORDER BY fa.is_active DESC, fa.created_at DESC
+          `;
+        }
       } else {
-        floatAccounts = await sql`
-          SELECT fa.*, b.name as branch_name
-          FROM float_accounts fa
-          LEFT JOIN branches b ON fa.branch_id = b.id
-          ORDER BY fa.is_active DESC, fa.created_at DESC
-        `;
+        // Regular float accounts query
+        if (branchId && branchId !== "undefined") {
+          floatAccounts = await sql`
+            SELECT fa.*, b.name as branch_name
+            FROM float_accounts fa
+            LEFT JOIN branches b ON fa.branch_id = b.id
+            WHERE fa.branch_id = ${branchId}
+            ORDER BY fa.is_active DESC, fa.created_at DESC
+          `;
+        } else if (!isAdmin) {
+          floatAccounts = await sql`
+            SELECT fa.*, b.name as branch_name
+            FROM float_accounts fa
+            LEFT JOIN branches b ON fa.branch_id = b.id
+            WHERE fa.branch_id = ${userBranchId}
+            ORDER BY fa.is_active DESC, fa.created_at DESC
+          `;
+        } else {
+          floatAccounts = await sql`
+            SELECT fa.*, b.name as branch_name
+            FROM float_accounts fa
+            LEFT JOIN branches b ON fa.branch_id = b.id
+            ORDER BY fa.is_active DESC, fa.created_at DESC
+          `;
+        }
       }
     } catch (dbError) {
       console.error("💰 [FLOAT] Database error:", dbError);

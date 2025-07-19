@@ -5,23 +5,23 @@ const sql = neon(process.env.CONNECTION_STRING!);
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const account = await sql`
-      SELECT * FROM gl_accounts WHERE id = ${params.id}
+      SELECT * FROM gl_accounts WHERE id = ${(await params).id}
     `;
 
     if (account.length === 0) {
       return NextResponse.json(
-        { error: `Account with ID ${params.id} not found` },
+        { error: `Account with ID ${(await params).id} not found` },
         { status: 404 }
       );
     }
 
     return NextResponse.json({ account: account[0] });
   } catch (error) {
-    console.error(`Error in GET /api/gl/accounts/${params.id}:`, error);
+    console.error(`Error in GET /api/gl/accounts/${(await params).id}:`, error);
     return NextResponse.json(
       { error: "Failed to fetch GL account" },
       { status: 500 }
@@ -31,7 +31,7 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     const body = await request.json();
@@ -46,12 +46,12 @@ export async function PUT(
 
     // Check if account exists
     const existing = await sql`
-      SELECT id FROM gl_accounts WHERE id = ${params.id}
+      SELECT id FROM gl_accounts WHERE id = ${(await params).id}
     `;
 
     if (existing.length === 0) {
       return NextResponse.json(
-        { error: `Account with ID ${params.id} not found` },
+        { error: `Account with ID ${(await params).id} not found` },
         { status: 404 }
       );
     }
@@ -59,7 +59,7 @@ export async function PUT(
     // Check if new account code conflicts with existing accounts (excluding current account)
     if (account_code) {
       const codeConflict = await sql`
-        SELECT id FROM gl_accounts WHERE code = ${account_code} AND id != ${params.id}
+        SELECT id FROM gl_accounts WHERE code = ${account_code} AND id != ${(await params).id}
       `;
 
       if (codeConflict.length > 0) {
@@ -81,13 +81,13 @@ export async function PUT(
         is_active = ${is_active},
         branch_id = ${branch_id},
         updated_at = NOW()
-      WHERE id = ${params.id}
+      WHERE id = ${(await params).id}
       RETURNING *
     `;
 
     return NextResponse.json({ success: true, account: result[0] });
   } catch (error) {
-    console.error(`Error in PUT /api/gl/accounts/${params.id}:`, error);
+    console.error(`Error in PUT /api/gl/accounts/${(await params).id}:`, error);
     return NextResponse.json(
       { error: "Failed to update GL account" },
       { status: 500 }
@@ -97,17 +97,17 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
     // Check if account exists
     const existing = await sql`
-      SELECT id, name FROM gl_accounts WHERE id = ${params.id}
+      SELECT id, name FROM gl_accounts WHERE id = ${(await params).id}
     `;
 
     if (existing.length === 0) {
       return NextResponse.json(
-        { error: `Account with ID ${params.id} not found` },
+        { error: `Account with ID ${(await params).id} not found` },
         { status: 404 }
       );
     }
@@ -115,7 +115,7 @@ export async function DELETE(
     // Check for child accounts (accounts that have this account as parent)
     const childAccounts = await sql`
       SELECT COUNT(*) as count FROM gl_accounts 
-      WHERE parent_id = ${params.id}
+      WHERE parent_id = ${(await params).id}
     `;
 
     if (childAccounts[0].count > 0) {
@@ -152,13 +152,13 @@ export async function DELETE(
       ) {
         const entries = await sql`
           SELECT COUNT(*) as count FROM gl_journal_entries 
-          WHERE debit_account_id = ${params.id} OR credit_account_id = ${params.id}
+          WHERE debit_account_id = ${(await params).id} OR credit_account_id = ${(await params).id}
         `;
         hasEntries = entries[0].count > 0;
       } else if (columnNames.includes("account_id")) {
         const entries = await sql`
           SELECT COUNT(*) as count FROM gl_journal_entries 
-          WHERE account_id = ${params.id}
+          WHERE account_id = ${(await params).id}
         `;
         hasEntries = entries[0].count > 0;
       }
@@ -176,7 +176,7 @@ export async function DELETE(
 
     // Delete the account
     await sql`
-      DELETE FROM gl_accounts WHERE id = ${params.id}
+      DELETE FROM gl_accounts WHERE id = ${(await params).id}
     `;
 
     return NextResponse.json({
@@ -184,7 +184,7 @@ export async function DELETE(
       message: "Account deleted successfully",
     });
   } catch (error) {
-    console.error(`Error in DELETE /api/gl/accounts/${params.id}:`, error);
+    console.error(`Error in DELETE /api/gl/accounts/${(await params).id}:`, error);
 
     // Handle foreign key constraint errors
     if (error.message.includes("foreign key constraint")) {

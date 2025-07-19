@@ -37,6 +37,7 @@ import {
   Download,
   Calculator,
   DollarSign,
+  ChevronDown,
 } from "lucide-react";
 import { format, subDays, subMonths, startOfMonth, endOfMonth } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -93,6 +94,22 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Helper functions for date ranges
+  const setQuickDateRange = (days: number) => {
+    setDateRange({
+      from: subDays(new Date(), days),
+      to: new Date(),
+    });
+  };
+
+  const setMonthRange = (months: number) => {
+    const now = new Date();
+    setDateRange({
+      from: subMonths(now, months),
+      to: now,
+    });
+  };
 
   // Determine user permissions
   const isAdmin = user?.role === "Admin";
@@ -890,72 +907,76 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="container mx-auto py-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <FileText className="h-8 w-8" />
+    <div className="container mx-auto py-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold flex items-center gap-3">
+            <FileText className="h-8 w-8 text-primary" />
             Financial Reports
           </h1>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground text-lg">
             Generate and view comprehensive financial reports
           </p>
-          {/* Branch Indicator */}
-          <div className="flex items-center gap-2 mt-2">
-            <Badge variant="outline" className="flex items-center gap-1">
+
+          {/* Branch and Role Info */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              variant="outline"
+              className="flex items-center gap-2 px-3 py-1"
+            >
               {canViewAllBranches ? (
                 selectedBranch === "all" ? (
                   <>
-                    <Eye className="h-3 w-3" />
+                    <Eye className="h-4 w-4" />
                     All Branches
                   </>
                 ) : (
                   <>
-                    <Building2 className="h-3 w-3" />
+                    <Building2 className="h-4 w-4" />
                     {branches.find((b) => b.id === selectedBranch)?.name ||
                       "Selected Branch"}
                   </>
                 )
               ) : (
                 <>
-                  <Building2 className="h-3 w-3" />
+                  <Building2 className="h-4 w-4" />
                   {userBranchName || "Your Branch"}
                 </>
               )}
             </Badge>
             {user?.role && (
-              <Badge variant="secondary" className="text-xs">
+              <Badge variant="secondary" className="px-3 py-1">
                 {user.role}
               </Badge>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* Action Buttons */}
+        <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="outline"
             onClick={fetchReportData}
             disabled={loading}
+            className="flex items-center gap-2"
           >
-            <RefreshCw
-              className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
+
           <Button variant="outline" onClick={() => exportReport("pdf")}>
             <Download className="h-4 w-4 mr-2" />
-            Export Text
+            Export PDF
           </Button>
           <Button variant="outline" onClick={() => exportReport("excel")}>
             <Download className="h-4 w-4 mr-2" />
             Export Excel
           </Button>
-          <Button variant="outline" onClick={() => exportReport("csv")}>
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
         </div>
       </div>
 
+      {/* Filter Bar */}
       <ReportsFilterBar
         dateRange={dateRange}
         setDateRange={setDateRange}
@@ -966,7 +987,6 @@ export default function ReportsPage() {
         onApply={fetchReportData}
         onReset={() => {
           setDateRange({ from: subDays(new Date(), 30), to: new Date() });
-          // Reset branch selection based on user role
           if (canViewAllBranches) {
             setSelectedBranch("all");
           } else {
@@ -977,28 +997,9 @@ export default function ReportsPage() {
         loading={loading}
       />
 
-      {/* Branch Info for Non-Admin Users */}
-      {!canViewAllBranches && (
-        <Card className="mb-6">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <Building2 className="h-3 w-3" />
-                  {userBranchName || "Your Branch"}
-                </Badge>
-                <span className="text-sm text-muted-foreground">
-                  Showing data for your assigned branch only
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* No Data Alert */}
+      {/* Alerts */}
       {reportData && !reportData.hasData && (
-        <Alert className="mb-6 border-blue-200 bg-blue-50">
+        <Alert className="border-blue-200 bg-blue-50">
           <AlertTriangle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-700">
             No transaction data found for the selected date range. Try adjusting
@@ -1007,9 +1008,8 @@ export default function ReportsPage() {
         </Alert>
       )}
 
-      {/* Error Alert */}
       {error && (
-        <Alert className="mb-6 border-yellow-200 bg-yellow-50">
+        <Alert className="border-yellow-200 bg-yellow-50">
           <AlertTriangle className="h-4 w-4 text-yellow-600" />
           <AlertDescription className="text-yellow-700">
             {error} - Please try again or contact support if the issue persists.
@@ -1017,9 +1017,8 @@ export default function ReportsPage() {
         </Alert>
       )}
 
-      {/* Sample Data Notice */}
       {reportData?.note && (
-        <Alert className="mb-6 border-blue-200 bg-blue-50">
+        <Alert className="border-blue-200 bg-blue-50">
           <AlertTriangle className="h-4 w-4 text-blue-600" />
           <AlertDescription className="text-blue-700">
             {reportData.note}
@@ -1029,91 +1028,96 @@ export default function ReportsPage() {
 
       {/* Loading State */}
       {loading && (
-        <div className="flex items-center justify-center py-12">
-          <div className="text-center">
-            <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
-            <p>Loading report data...</p>
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center space-y-4">
+            <RefreshCw className="h-12 w-12 animate-spin mx-auto text-primary" />
+            <div>
+              <h3 className="text-lg font-semibold">Loading Reports</h3>
+              <p className="text-muted-foreground">
+                Fetching financial data...
+              </p>
+            </div>
           </div>
         </div>
       )}
 
       {/* Financial Reports Tabs */}
       {!loading && (
-        <Tabs defaultValue="summary" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-8">
-            <TabsTrigger value="summary" className="flex items-center gap-2">
+        <Tabs defaultValue="summary" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 lg:grid-cols-8 gap-2 h-auto p-1">
+            <TabsTrigger
+              value="summary"
+              className="flex items-center gap-2 py-3 px-4"
+            >
               <BarChart3 className="h-4 w-4" />
-              Summary
+              <span className="hidden sm:inline">Summary</span>
             </TabsTrigger>
             {canViewReports && (
               <TabsTrigger
                 value="income-statement"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 py-3 px-4"
               >
                 <TrendingUp className="h-4 w-4" />
-                Income Statement
+                <span className="hidden sm:inline">Income</span>
               </TabsTrigger>
             )}
             {canViewReports && (
               <TabsTrigger
                 value="balance-sheet"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 py-3 px-4"
               >
                 <PieChart className="h-4 w-4" />
-                Balance Sheet
+                <span className="hidden sm:inline">Balance</span>
               </TabsTrigger>
             )}
             {canViewReports && (
               <TabsTrigger
                 value="profit-loss"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 py-3 px-4"
               >
                 <Calculator className="h-4 w-4" />
-                Profit & Loss
+                <span className="hidden sm:inline">P&L</span>
               </TabsTrigger>
             )}
             {canViewReports && (
               <TabsTrigger
                 value="fixed-assets"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 py-3 px-4"
               >
                 <Building2 className="h-4 w-4" />
-                Fixed Assets
+                <span className="hidden sm:inline">Assets</span>
               </TabsTrigger>
             )}
             {canViewReports && (
-              <TabsTrigger value="expenses" className="flex items-center gap-2">
+              <TabsTrigger
+                value="expenses"
+                className="flex items-center gap-2 py-3 px-4"
+              >
                 <DollarSign className="h-4 w-4" />
-                Expenses
+                <span className="hidden sm:inline">Expenses</span>
               </TabsTrigger>
             )}
             {canViewReports && (
-              <TabsTrigger value="equity" className="flex items-center gap-2">
+              <TabsTrigger
+                value="equity"
+                className="flex items-center gap-2 py-3 px-4"
+              >
                 <TrendingUp className="h-4 w-4" />
-                Equity
+                <span className="hidden sm:inline">Equity</span>
               </TabsTrigger>
             )}
             {canViewReports && (
               <TabsTrigger
                 value="cash-flow"
-                className="flex items-center gap-2"
+                className="flex items-center gap-2 py-3 px-4"
               >
                 <FileText className="h-4 w-4" />
-                Cash Flow
-              </TabsTrigger>
-            )}
-            {canViewReports && (
-              <TabsTrigger
-                value="operational"
-                className="flex items-center gap-2"
-              >
-                <BarChart3 className="h-4 w-4" />
-                Operational
+                <span className="hidden sm:inline">Cash Flow</span>
               </TabsTrigger>
             )}
           </TabsList>
 
-          <TabsContent value="summary">
+          <TabsContent value="summary" className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Financial Summary</CardTitle>
@@ -1124,70 +1128,104 @@ export default function ReportsPage() {
               <CardContent>
                 {reportData ? (
                   reportData.hasData ? (
-                    <div className="space-y-6">
+                    <div className="space-y-8">
                       {/* Key Metrics */}
-                      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">
-                            Total Revenue
-                          </p>
-                          <p className="text-2xl font-bold">
-                            GHS{" "}
-                            {reportData.summary.totalRevenue.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">
-                            Total Expenses
-                          </p>
-                          <p className="text-2xl font-bold">
-                            GHS{" "}
-                            {reportData.summary.totalExpenses.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">
-                            Net Income
-                          </p>
-                          <p className="text-2xl font-bold">
-                            GHS {reportData.summary.netIncome.toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium text-muted-foreground">
-                            Profit Margin
-                          </p>
-                          <p className="text-2xl font-bold">
-                            {reportData.summary.profitMargin.toFixed(1)}%
-                          </p>
-                        </div>
+                      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                        <Card className="border-l-4 border-l-green-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Total Revenue
+                              </p>
+                              <p className="text-2xl font-bold text-green-600">
+                                GHS{" "}
+                                {reportData.summary.totalRevenue.toLocaleString()}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-red-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Total Expenses
+                              </p>
+                              <p className="text-2xl font-bold text-red-600">
+                                GHS{" "}
+                                {reportData.summary.totalExpenses.toLocaleString()}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-blue-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Net Income
+                              </p>
+                              <p className="text-2xl font-bold text-blue-600">
+                                GHS{" "}
+                                {reportData.summary.netIncome.toLocaleString()}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-purple-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Profit Margin
+                              </p>
+                              <p className="text-2xl font-bold text-purple-600">
+                                {reportData.summary.profitMargin.toFixed(1)}%
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
                       </div>
 
                       {/* Service Breakdown */}
                       {reportData.services &&
                         reportData.services.length > 0 && (
                           <div className="space-y-4">
-                            <h3 className="text-lg font-semibold">
+                            <h3 className="text-xl font-semibold">
                               Service Performance
                             </h3>
                             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                               {reportData.services.map((service, index) => (
-                                <Card key={index}>
+                                <Card
+                                  key={index}
+                                  className="hover:shadow-md transition-shadow"
+                                >
                                   <CardContent className="pt-6">
-                                    <div className="space-y-2">
-                                      <p className="text-sm font-medium">
-                                        {service.service}
-                                      </p>
-                                      <p className="text-2xl font-bold">
-                                        GHS {service.volume.toLocaleString()}
-                                      </p>
-                                      <p className="text-sm text-muted-foreground">
-                                        {service.transactions} transactions
-                                      </p>
-                                      <p className="text-sm text-muted-foreground">
-                                        Fees: GHS{" "}
-                                        {service.fees.toLocaleString()}
-                                      </p>
+                                    <div className="space-y-3">
+                                      <div className="flex items-center justify-between">
+                                        <p className="text-lg font-semibold">
+                                          {service.service}
+                                        </p>
+                                        <Badge variant="outline">
+                                          {service.transactions} txn
+                                        </Badge>
+                                      </div>
+                                      <div className="space-y-2">
+                                        <div className="flex justify-between">
+                                          <span className="text-sm text-muted-foreground">
+                                            Volume:
+                                          </span>
+                                          <span className="font-semibold">
+                                            GHS{" "}
+                                            {service.volume.toLocaleString()}
+                                          </span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                          <span className="text-sm text-muted-foreground">
+                                            Fees:
+                                          </span>
+                                          <span className="font-semibold">
+                                            GHS {service.fees.toLocaleString()}
+                                          </span>
+                                        </div>
+                                      </div>
                                     </div>
                                   </CardContent>
                                 </Card>
@@ -1198,10 +1236,12 @@ export default function ReportsPage() {
 
                       {/* Cash Position */}
                       <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">Cash Position</h3>
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="grid gap-4 md:grid-cols-3">
+                        <h3 className="text-xl font-semibold">
+                          Cash Position & Trends
+                        </h3>
+                        <div className="grid gap-4 md:grid-cols-3">
+                          <Card>
+                            <CardContent className="pt-6">
                               <div className="space-y-2">
                                 <p className="text-sm font-medium text-muted-foreground">
                                   Cash Balance
@@ -1211,31 +1251,51 @@ export default function ReportsPage() {
                                   {reportData.summary.cashPosition.toLocaleString()}
                                 </p>
                               </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="pt-6">
                               <div className="space-y-2">
                                 <p className="text-sm font-medium text-muted-foreground">
                                   Revenue Change
                                 </p>
-                                <p className="text-2xl font-bold">
+                                <p
+                                  className={`text-2xl font-bold ${
+                                    reportData.summary.revenueChange >= 0
+                                      ? "text-green-600"
+                                      : "text-red-600"
+                                  }`}
+                                >
                                   {reportData.summary.revenueChange > 0
                                     ? "+"
                                     : ""}
                                   {reportData.summary.revenueChange}%
                                 </p>
                               </div>
+                            </CardContent>
+                          </Card>
+                          <Card>
+                            <CardContent className="pt-6">
                               <div className="space-y-2">
                                 <p className="text-sm font-medium text-muted-foreground">
                                   Expense Change
                                 </p>
-                                <p className="text-2xl font-bold">
+                                <p
+                                  className={`text-2xl font-bold ${
+                                    reportData.summary.expenseChange <= 0
+                                      ? "text-green-600"
+                                      : "text-red-600"
+                                  }`}
+                                >
                                   {reportData.summary.expenseChange > 0
                                     ? "+"
                                     : ""}
                                   {reportData.summary.expenseChange}%
                                 </p>
                               </div>
-                            </div>
-                          </CardContent>
-                        </Card>
+                            </CardContent>
+                          </Card>
+                        </div>
                       </div>
                     </div>
                   ) : (
@@ -1265,39 +1325,6 @@ export default function ReportsPage() {
                           Try Last Month
                         </Button>
                       </div>
-
-                      {/* Helpful Guide */}
-                      <div className="max-w-md mx-auto">
-                        <h4 className="font-medium mb-3">
-                          To see real data, create transactions in:
-                        </h4>
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                            <span>MOMO</span>
-                          </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                            <span>Agency Banking</span>
-                          </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                            <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
-                            <span>E-ZWICH</span>
-                          </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
-                            <span>Power</span>
-                          </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                            <div className="w-2 h-2 bg-pink-500 rounded-full"></div>
-                            <span>Jumia</span>
-                          </div>
-                          <div className="flex items-center gap-2 p-2 bg-muted rounded">
-                            <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-                            <span>Expenses</span>
-                          </div>
-                        </div>
-                      </div>
                     </div>
                   )
                 ) : (
@@ -1316,48 +1343,53 @@ export default function ReportsPage() {
           </TabsContent>
 
           {canViewReports && (
-            <TabsContent value="income-statement">
+            <TabsContent value="income-statement" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Income Statement</CardTitle>
-                  <CardDescription>
-                    Revenue, expenses, and net income for the selected period
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-end mb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Income Statement</CardTitle>
+                      <CardDescription>
+                        Revenue, expenses, and net income for the selected
+                        period
+                      </CardDescription>
+                    </div>
                     <Button
                       variant="outline"
                       onClick={exportIncomeStatementPDF}
                     >
                       <Download className="h-4 w-4 mr-2" />
-                      Export Income Statement (PDF)
+                      Export PDF
                     </Button>
                   </div>
+                </CardHeader>
+                <CardContent>
                   {reportData ? (
                     reportData.hasData ? (
-                      <div className="space-y-6">
+                      <div className="space-y-8">
                         {/* Revenue Section */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">Revenue</h3>
-                          <div className="space-y-2">
+                          <h3 className="text-xl font-semibold text-green-600">
+                            Revenue
+                          </h3>
+                          <div className="space-y-3">
                             {reportData.services &&
                               reportData.services.map((service, index) => (
                                 <div
                                   key={index}
-                                  className="flex justify-between items-center py-2 border-b"
+                                  className="flex justify-between items-center py-3 border-b border-gray-100"
                                 >
                                   <span className="font-medium">
                                     {service.service}
                                   </span>
-                                  <span>
+                                  <span className="font-semibold text-green-600">
                                     GHS {service.volume.toLocaleString()}
                                   </span>
                                 </div>
                               ))}
-                            <div className="flex justify-between items-center py-2 border-t-2 font-bold">
+                            <div className="flex justify-between items-center py-4 border-t-2 border-green-200 font-bold text-lg">
                               <span>Total Revenue</span>
-                              <span>
+                              <span className="text-green-600">
                                 GHS{" "}
                                 {reportData.summary.totalRevenue.toLocaleString()}
                               </span>
@@ -1367,18 +1399,20 @@ export default function ReportsPage() {
 
                         {/* Expenses Section */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">Expenses</h3>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center py-2 border-b">
+                          <h3 className="text-xl font-semibold text-red-600">
+                            Expenses
+                          </h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center py-3 border-b border-gray-100">
                               <span>Operating Expenses</span>
-                              <span>
+                              <span className="font-semibold text-red-600">
                                 GHS{" "}
                                 {reportData.summary.totalExpenses.toLocaleString()}
                               </span>
                             </div>
-                            <div className="flex justify-between items-center py-2 border-t-2 font-bold">
+                            <div className="flex justify-between items-center py-4 border-t-2 border-red-200 font-bold text-lg">
                               <span>Total Expenses</span>
-                              <span>
+                              <span className="text-red-600">
                                 GHS{" "}
                                 {reportData.summary.totalExpenses.toLocaleString()}
                               </span>
@@ -1388,9 +1422,9 @@ export default function ReportsPage() {
 
                         {/* Net Income */}
                         <div className="space-y-4">
-                          <div className="flex justify-between items-center py-4 border-t-2 border-b-2 font-bold text-lg">
+                          <div className="flex justify-between items-center py-6 border-t-2 border-b-2 border-blue-200 font-bold text-xl bg-blue-50 px-4 rounded-lg">
                             <span>Net Income</span>
-                            <span>
+                            <span className="text-blue-600">
                               GHS{" "}
                               {reportData.summary.netIncome.toLocaleString()}
                             </span>
@@ -1399,25 +1433,20 @@ export default function ReportsPage() {
                       </div>
                     ) : (
                       <div className="text-center py-12">
-                        <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-                          <TrendingUp className="h-12 w-12 text-muted-foreground" />
-                        </div>
+                        <BarChart3 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                         <h3 className="text-lg font-semibold mb-2">
-                          No Income Data
+                          No Income Statement Data
                         </h3>
                         <p className="text-muted-foreground">
-                          No revenue or expense data available for the selected
-                          period.
+                          No transaction data available for income statement.
                         </p>
                       </div>
                     )
                   ) : (
                     <div className="text-center py-12">
-                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
-                      </div>
+                      <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin mx-auto mb-4" />
                       <h3 className="text-lg font-semibold mb-2">
-                        Loading Data
+                        Loading Income Statement
                       </h3>
                       <p className="text-muted-foreground">
                         Fetching income statement data...
@@ -1430,471 +1459,249 @@ export default function ReportsPage() {
           )}
 
           {canViewReports && (
-            <TabsContent value="balance-sheet">
+            <TabsContent value="balance-sheet" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Balance Sheet</CardTitle>
-                  <CardDescription>
-                    Assets, liabilities, and equity as of the selected date
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-end mb-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Balance Sheet</CardTitle>
+                      <CardDescription>
+                        Assets, liabilities, and equity as of the selected date
+                      </CardDescription>
+                    </div>
                     <Button
                       variant="outline"
                       onClick={exportStatementOfFinancialPositionPDF}
                     >
                       <Download className="h-4 w-4 mr-2" />
-                      Export Statement of Financial Position (PDF)
+                      Export PDF
                     </Button>
                   </div>
-                  {reportData ? (
-                    <div className="space-y-6">
-                      {/* Assets */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">Assets</h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Cash and Cash Equivalents</span>
-                            <span>
-                              GHS{" "}
-                              {reportData.summary.cashPosition.toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Accounts Receivable</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Inventory</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                            <span>Total Assets</span>
-                            <span>
-                              GHS{" "}
-                              {reportData.summary.cashPosition.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Liabilities */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">Liabilities</h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Accounts Payable</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Accrued Expenses</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                            <span>Total Liabilities</span>
-                            <span>GHS 0</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Equity */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">Equity</h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Retained Earnings</span>
-                            <span>
-                              GHS{" "}
-                              {reportData.summary.netIncome.toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                            <span>Total Equity</span>
-                            <span>
-                              GHS{" "}
-                              {reportData.summary.netIncome.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground">No data available</p>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-
-          {canViewReports && (
-            <TabsContent value="cash-flow">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cash Flow Statement</CardTitle>
-                  <CardDescription>
-                    Cash inflows and outflows for the selected period
-                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  {reportData ? (
-                    <div className="space-y-6">
-                      {/* Operating Activities */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">
-                          Operating Activities
-                        </h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Net Income</span>
-                            <span>
-                              GHS{" "}
-                              {reportData.summary.netIncome.toLocaleString()}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Depreciation</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                            <span>Net Cash from Operations</span>
-                            <span>
-                              GHS{" "}
-                              {reportData.summary.netIncome.toLocaleString()}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Investing Activities */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">
-                          Investing Activities
-                        </h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Capital Expenditures</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                            <span>Net Cash from Investing</span>
-                            <span>GHS 0</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Financing Activities */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">
-                          Financing Activities
-                        </h3>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center py-2 border-b">
-                            <span>Dividends Paid</span>
-                            <span>GHS 0</span>
-                          </div>
-                          <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                            <span>Net Cash from Financing</span>
-                            <span>GHS 0</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Net Change */}
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-center py-4 border-t-2 border-b-2 font-bold text-lg">
-                          <span>Net Change in Cash</span>
-                          <span>
-                            GHS {reportData.summary.netIncome.toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground">No data available</p>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-
-          {canViewReports && (
-            <TabsContent value="operational">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Operational Reports</CardTitle>
-                  <CardDescription>
-                    Service performance and operational metrics
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {reportData && reportData.services ? (
-                    <div className="space-y-6">
-                      {/* Service Performance Table */}
-                      <div className="space-y-4">
-                        <h3 className="text-lg font-semibold">
-                          Service Performance
-                        </h3>
-                        <div className="border rounded-lg">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b bg-muted/50">
-                                <th className="text-left p-4 font-medium">
-                                  Service
-                                </th>
-                                <th className="text-right p-4 font-medium">
-                                  Transactions
-                                </th>
-                                <th className="text-right p-4 font-medium">
-                                  Volume
-                                </th>
-                                <th className="text-right p-4 font-medium">
-                                  Fees
-                                </th>
-                                <th className="text-right p-4 font-medium">
-                                  Avg. Transaction
-                                </th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {reportData.services.map((service, index) => (
-                                <tr key={index} className="border-b">
-                                  <td className="p-4 font-medium">
-                                    {service.service}
-                                  </td>
-                                  <td className="p-4 text-right">
-                                    {service.transactions.toLocaleString()}
-                                  </td>
-                                  <td className="p-4 text-right">
-                                    GHS {service.volume.toLocaleString()}
-                                  </td>
-                                  <td className="p-4 text-right">
-                                    GHS {service.fees.toLocaleString()}
-                                  </td>
-                                  <td className="p-4 text-right">
-                                    GHS{" "}
-                                    {service.transactions > 0
-                                      ? (
-                                          service.volume / service.transactions
-                                        ).toLocaleString()
-                                      : "0"}
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-
-                      {/* Performance Metrics */}
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-muted-foreground">
-                                Total Transactions
-                              </p>
-                              <p className="text-2xl font-bold">
-                                {reportData.services
-                                  .reduce((sum, s) => sum + s.transactions, 0)
-                                  .toLocaleString()}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-muted-foreground">
-                                Average Transaction Value
-                              </p>
-                              <p className="text-2xl font-bold">
-                                GHS{" "}
-                                {reportData.services.reduce(
-                                  (sum, s) => sum + s.transactions,
-                                  0
-                                ) > 0
-                                  ? (
-                                      reportData.services.reduce(
-                                        (sum, s) => sum + s.volume,
-                                        0
-                                      ) /
-                                      reportData.services.reduce(
-                                        (sum, s) => sum + s.transactions,
-                                        0
-                                      )
-                                    ).toLocaleString()
-                                  : "0"}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                        <Card>
-                          <CardContent className="pt-6">
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-muted-foreground">
-                                Total Fees Collected
-                              </p>
-                              <p className="text-2xl font-bold">
-                                GHS{" "}
-                                {reportData.services
-                                  .reduce((sum, s) => sum + s.fees, 0)
-                                  .toLocaleString()}
-                              </p>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-muted-foreground">
-                      No operational data available
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-          )}
-
-          {canViewReports && (
-            <TabsContent value="profit-loss">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Profit & Loss Statement</CardTitle>
-                  <CardDescription>
-                    Detailed revenue, expenses, and profit analysis for the
-                    selected period
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-end mb-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => exportProfitLossPDF()}
-                    >
-                      <Download className="h-4 w-4 mr-2" />
-                      Export P&L (PDF)
-                    </Button>
-                  </div>
                   {reportData ? (
                     reportData.hasData ? (
-                      <div className="space-y-6">
-                        {/* Summary Metrics */}
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Revenue
-                            </p>
-                            <p className="text-2xl font-bold text-green-600">
-                              GHS{" "}
-                              {reportData.summary.totalRevenue.toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Expenses
-                            </p>
-                            <p className="text-2xl font-bold text-red-600">
-                              GHS{" "}
-                              {reportData.summary.totalExpenses.toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Gross Profit
-                            </p>
-                            <p
-                              className={`text-2xl font-bold ${
-                                reportData.summary.netIncome >= 0
-                                  ? "text-green-600"
-                                  : "text-red-600"
-                              }`}
-                            >
-                              GHS{" "}
-                              {reportData.summary.netIncome.toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Profit Margin
-                            </p>
-                            <p
-                              className={`text-2xl font-bold ${
-                                reportData.summary.netIncome >= 0
-                                  ? "text-green-600"
-                                  : "text-red-600"
-                              }`}
-                            >
-                              {(
-                                (reportData.summary.netIncome /
-                                  reportData.summary.totalRevenue) *
-                                100
-                              ).toFixed(1)}
-                              %
-                            </p>
+                      <div className="space-y-8">
+                        {/* Assets Section */}
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-semibold text-green-600">
+                            Assets
+                          </h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                              <span className="font-medium">
+                                Cash & Cash Equivalents
+                              </span>
+                              <span className="font-semibold text-green-600">
+                                GHS{" "}
+                                {reportData.summary.cashPosition.toLocaleString()}
+                              </span>
+                            </div>
+                            {reportData.fixedAssets?.summary?.totalValue && (
+                              <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                                <span className="font-medium">
+                                  Fixed Assets
+                                </span>
+                                <span className="font-semibold text-green-600">
+                                  GHS{" "}
+                                  {reportData.fixedAssets.summary.totalValue.toLocaleString()}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center py-4 border-t-2 border-green-200 font-bold text-lg">
+                              <span>Total Assets</span>
+                              <span className="text-green-600">
+                                GHS{" "}
+                                {(
+                                  (reportData.summary.cashPosition || 0) +
+                                  (reportData.fixedAssets?.summary
+                                    ?.totalValue || 0)
+                                ).toLocaleString()}
+                              </span>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Revenue Breakdown */}
+                        {/* Liabilities Section */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">
-                            Revenue Breakdown
+                          <h3 className="text-xl font-semibold text-red-600">
+                            Liabilities
                           </h3>
-                          <div className="space-y-2">
-                            {reportData.services &&
-                              reportData.services.map((service, index) => (
-                                <div
-                                  key={index}
-                                  className="flex justify-between items-center py-2 border-b"
-                                >
-                                  <span className="font-medium">
-                                    {service.service}
-                                  </span>
-                                  <span className="text-green-600">
-                                    GHS {service.volume.toLocaleString()}
-                                  </span>
-                                </div>
-                              ))}
+                          <div className="space-y-3">
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No liabilities data available
+                              </p>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Expense Breakdown */}
+                        {/* Equity Section */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">
-                            Expense Breakdown
+                          <h3 className="text-xl font-semibold text-blue-600">
+                            Equity
                           </h3>
-                          <div className="space-y-2">
-                            <div className="flex justify-between items-center py-2 border-b">
-                              <span>Operating Expenses</span>
-                              <span className="text-red-600">
-                                GHS{" "}
-                                {reportData.summary.totalExpenses.toLocaleString()}
-                              </span>
+                          <div className="space-y-3">
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No equity data available
+                              </p>
                             </div>
-                            <div className="flex justify-between items-center py-2 border-b">
-                              <span>Depreciation</span>
-                              <span className="text-red-600">GHS 0</span>
-                            </div>
-                            <div className="flex justify-between items-center py-2 border-t-2 font-bold">
-                              <span>Total Expenses</span>
-                              <span className="text-red-600">
-                                GHS{" "}
-                                {reportData.summary.totalExpenses.toLocaleString()}
-                              </span>
-                            </div>
+                          </div>
+                        </div>
+
+                        {/* Balance Check */}
+                        <div className="space-y-4">
+                          <div className="text-center py-8">
+                            <p className="text-muted-foreground">
+                              Insufficient data for balance check
+                            </p>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">No data available</p>
+                      <div className="text-center py-12">
+                        <PieChart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">
+                          No Balance Sheet Data
+                        </h3>
+                        <p className="text-muted-foreground">
+                          No transaction data available for balance sheet.
+                        </p>
+                      </div>
                     )
                   ) : (
                     <div className="text-center py-12">
-                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
-                      </div>
+                      <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin mx-auto mb-4" />
                       <h3 className="text-lg font-semibold mb-2">
-                        Loading Data
+                        Loading Balance Sheet
+                      </h3>
+                      <p className="text-muted-foreground">
+                        Fetching balance sheet data...
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {canViewReports && (
+            <TabsContent value="profit-loss" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Profit & Loss Statement</CardTitle>
+                      <CardDescription>
+                        Detailed profit and loss analysis for the period
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" onClick={exportProfitLossPDF}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Export PDF
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {reportData ? (
+                    reportData.hasData ? (
+                      <div className="space-y-8">
+                        {/* Revenue Section */}
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-semibold text-green-600">
+                            Revenue
+                          </h3>
+                          <div className="space-y-3">
+                            {reportData.services &&
+                              reportData.services.map((service, index) => (
+                                <div
+                                  key={index}
+                                  className="flex justify-between items-center py-3 border-b border-gray-100"
+                                >
+                                  <span className="font-medium">
+                                    {service.service}
+                                  </span>
+                                  <span className="font-semibold text-green-600">
+                                    GHS {service.volume.toLocaleString()}
+                                  </span>
+                                </div>
+                              ))}
+                            <div className="flex justify-between items-center py-4 border-t-2 border-green-200 font-bold text-lg">
+                              <span>Total Revenue</span>
+                              <span className="text-green-600">
+                                GHS{" "}
+                                {reportData.summary.totalRevenue.toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Cost of Goods Sold */}
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-semibold text-orange-600">
+                            Cost of Goods Sold
+                          </h3>
+                          <div className="space-y-3">
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No COGS data available
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Gross Profit */}
+                        <div className="space-y-4">
+                          <div className="text-center py-8">
+                            <p className="text-muted-foreground">
+                              Insufficient data for gross profit calculation
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Operating Expenses */}
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-semibold text-red-600">
+                            Operating Expenses
+                          </h3>
+                          <div className="space-y-3">
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No detailed expense breakdown available
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Net Income */}
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center py-6 border-t-2 border-b-2 border-purple-200 font-bold text-xl bg-purple-50 px-4 rounded-lg">
+                            <span>Net Income</span>
+                            <span className="text-purple-600">
+                              GHS{" "}
+                              {reportData.summary.netIncome.toLocaleString()}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12">
+                        <Calculator className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">
+                          No P&L Data
+                        </h3>
+                        <p className="text-muted-foreground">
+                          No transaction data available for profit & loss
+                          statement.
+                        </p>
+                      </div>
+                    )
+                  ) : (
+                    <div className="text-center py-12">
+                      <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">
+                        Loading P&L Statement
                       </h3>
                       <p className="text-muted-foreground">
                         Fetching profit & loss data...
@@ -1907,123 +1714,110 @@ export default function ReportsPage() {
           )}
 
           {canViewReports && (
-            <TabsContent value="fixed-assets">
+            <TabsContent value="fixed-assets" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Fixed Assets Report</CardTitle>
-                  <CardDescription>
-                    Fixed assets, depreciation, and asset management overview
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-end mb-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => exportFixedAssetsPDF()}
-                    >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Fixed Assets</CardTitle>
+                      <CardDescription>
+                        Property, plant, and equipment details
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" onClick={exportFixedAssetsPDF}>
                       <Download className="h-4 w-4 mr-2" />
-                      Export Fixed Assets (PDF)
+                      Export PDF
                     </Button>
                   </div>
-                  {reportData ? (
-                    reportData.hasData ? (
-                      <div className="space-y-6">
-                        {/* Asset Summary */}
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Assets
-                            </p>
-                            <p className="text-2xl font-bold">
-                              {reportData.fixedAssets?.summary?.totalAssets ||
-                                0}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Value
-                            </p>
-                            <p className="text-2xl font-bold">
-                              GHS{" "}
-                              {(
-                                reportData.fixedAssets?.summary
-                                  ?.totalPurchaseCost || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Net Book Value
-                            </p>
-                            <p className="text-2xl font-bold">
-                              GHS{" "}
-                              {(
-                                reportData.fixedAssets?.summary?.netBookValue ||
-                                0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Depreciation
-                            </p>
-                            <p className="text-2xl font-bold text-red-600">
-                              GHS{" "}
-                              {(
-                                reportData.fixedAssets?.summary
-                                  ?.totalDepreciation || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Asset Categories */}
-                        <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">
-                            Assets by Category
-                          </h3>
-                          <div className="space-y-2">
-                            {reportData.fixedAssets?.categoryBreakdown?.map(
-                              (category, index) => (
-                                <div
-                                  key={index}
-                                  className="flex justify-between items-center py-2 border-b"
-                                >
-                                  <span className="font-medium">
-                                    {category.category}
-                                  </span>
-                                  <div className="text-right">
-                                    <div className="font-medium">
-                                      GHS{" "}
-                                      {Number(
-                                        category.total_cost
-                                      ).toLocaleString()}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {category.count} assets
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </div>
+                </CardHeader>
+                <CardContent>
+                  {reportData?.fixedAssets ? (
+                    <div className="space-y-8">
+                      {/* Summary */}
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <Card className="border-l-4 border-l-blue-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Total Value
+                              </p>
+                              <p className="text-2xl font-bold text-blue-600">
+                                GHS{" "}
+                                {reportData.fixedAssets.summary?.totalValue?.toLocaleString() ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-green-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Asset Count
+                              </p>
+                              <p className="text-2xl font-bold text-green-600">
+                                {reportData.fixedAssets.summary?.assetCount ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-purple-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Average Value
+                              </p>
+                              <p className="text-2xl font-bold text-purple-600">
+                                GHS{" "}
+                                {reportData.fixedAssets.summary?.averageValue?.toLocaleString() ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
                       </div>
-                    ) : (
-                      <p className="text-muted-foreground">
-                        No fixed assets data available
-                      </p>
-                    )
+
+                      {/* Asset Details */}
+                      {reportData.fixedAssets.assets &&
+                        reportData.fixedAssets.assets.length > 0 && (
+                          <div className="space-y-4">
+                            <h3 className="text-xl font-semibold">
+                              Asset Details
+                            </h3>
+                            <div className="space-y-3">
+                              {reportData.fixedAssets.assets.map(
+                                (asset: any, index: number) => (
+                                  <div
+                                    key={index}
+                                    className="flex justify-between items-center py-3 border-b border-gray-100"
+                                  >
+                                    <div>
+                                      <span className="font-medium">
+                                        {asset.name || `Asset ${index + 1}`}
+                                      </span>
+                                      <p className="text-sm text-muted-foreground">
+                                        {asset.description || "No description"}
+                                      </p>
+                                    </div>
+                                    <span className="font-semibold">
+                                      GHS {asset.value?.toLocaleString() || "0"}
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+                    </div>
                   ) : (
                     <div className="text-center py-12">
-                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
-                      </div>
+                      <Building2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <h3 className="text-lg font-semibold mb-2">
-                        Loading Data
+                        No Fixed Assets Data
                       </h3>
                       <p className="text-muted-foreground">
-                        Fetching fixed assets data...
+                        No fixed assets data available for the selected period.
                       </p>
                     </div>
                   )}
@@ -2033,120 +1827,113 @@ export default function ReportsPage() {
           )}
 
           {canViewReports && (
-            <TabsContent value="expenses">
+            <TabsContent value="expenses" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Expenses Report</CardTitle>
-                  <CardDescription>
-                    Detailed expense analysis and breakdown by category
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-end mb-4">
-                    <Button
-                      variant="outline"
-                      onClick={() => exportExpensesPDF()}
-                    >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Expenses Report</CardTitle>
+                      <CardDescription>
+                        Operating and administrative expenses breakdown
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" onClick={exportExpensesPDF}>
                       <Download className="h-4 w-4 mr-2" />
-                      Export Expenses (PDF)
+                      Export PDF
                     </Button>
                   </div>
-                  {reportData ? (
-                    reportData.hasData ? (
-                      <div className="space-y-6">
-                        {/* Expense Summary */}
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Expenses
-                            </p>
-                            <p className="text-2xl font-bold text-red-600">
-                              GHS{" "}
-                              {reportData.summary.totalExpenses.toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Paid Expenses
-                            </p>
-                            <p className="text-2xl font-bold">
-                              GHS{" "}
-                              {(
-                                reportData.expenses?.summary?.paidAmount || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Pending Expenses
-                            </p>
-                            <p className="text-2xl font-bold text-orange-600">
-                              GHS{" "}
-                              {(
-                                reportData.expenses?.summary?.pendingAmount || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Payment Rate
-                            </p>
-                            <p className="text-2xl font-bold">
-                              {(
-                                reportData.expenses?.summary?.paymentRate || 0
-                              ).toFixed(1)}
-                              %
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Expense Categories */}
-                        <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">
-                            Expenses by Category
-                          </h3>
-                          <div className="space-y-2">
-                            {reportData.expenses?.categoryBreakdown?.map(
-                              (category, index) => (
-                                <div
-                                  key={index}
-                                  className="flex justify-between items-center py-2 border-b"
-                                >
-                                  <span className="font-medium">
-                                    {category.category}
-                                  </span>
-                                  <div className="text-right">
-                                    <div className="font-medium text-red-600">
-                                      GHS{" "}
-                                      {Number(
-                                        category.total_amount
-                                      ).toLocaleString()}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {category.count} expenses
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </div>
+                </CardHeader>
+                <CardContent>
+                  {reportData?.expenses ? (
+                    <div className="space-y-8">
+                      {/* Summary */}
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <Card className="border-l-4 border-l-red-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Total Expenses
+                              </p>
+                              <p className="text-2xl font-bold text-red-600">
+                                GHS{" "}
+                                {reportData.expenses.summary?.totalExpenses?.toLocaleString() ||
+                                  reportData.summary.totalExpenses.toLocaleString()}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-orange-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Categories
+                              </p>
+                              <p className="text-2xl font-bold text-orange-600">
+                                {reportData.expenses.summary?.categoryCount ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-purple-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Avg per Category
+                              </p>
+                              <p className="text-2xl font-bold text-purple-600">
+                                GHS{" "}
+                                {reportData.expenses.summary?.averagePerCategory?.toLocaleString() ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
                       </div>
-                    ) : (
-                      <p className="text-muted-foreground">
-                        No expenses data available
-                      </p>
-                    )
+
+                      {/* Expense Categories */}
+                      {reportData.expenses.categories &&
+                        reportData.expenses.categories.length > 0 && (
+                          <div className="space-y-4">
+                            <h3 className="text-xl font-semibold">
+                              Expense Categories
+                            </h3>
+                            <div className="space-y-3">
+                              {reportData.expenses.categories.map(
+                                (category: any, index: number) => (
+                                  <div
+                                    key={index}
+                                    className="flex justify-between items-center py-3 border-b border-gray-100"
+                                  >
+                                    <div>
+                                      <span className="font-medium">
+                                        {category.name ||
+                                          `Category ${index + 1}`}
+                                      </span>
+                                      <p className="text-sm text-muted-foreground">
+                                        {category.description ||
+                                          "No description"}
+                                      </p>
+                                    </div>
+                                    <span className="font-semibold text-red-600">
+                                      GHS{" "}
+                                      {category.amount?.toLocaleString() || "0"}
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+                    </div>
                   ) : (
                     <div className="text-center py-12">
-                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
-                      </div>
+                      <DollarSign className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                       <h3 className="text-lg font-semibold mb-2">
-                        Loading Data
+                        No Expenses Data
                       </h3>
                       <p className="text-muted-foreground">
-                        Fetching expenses data...
+                        No expenses data available for the selected period.
                       </p>
                     </div>
                   )}
@@ -2156,126 +1943,207 @@ export default function ReportsPage() {
           )}
 
           {canViewReports && (
-            <TabsContent value="equity">
+            <TabsContent value="equity" className="space-y-6">
               <Card>
                 <CardHeader>
-                  <CardTitle>Equity Report</CardTitle>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle>Equity Report</CardTitle>
+                      <CardDescription>
+                        Shareholders' equity and retained earnings
+                      </CardDescription>
+                    </div>
+                    <Button variant="outline" onClick={exportEquityPDF}>
+                      <Download className="h-4 w-4 mr-2" />
+                      Export PDF
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {reportData?.equity ? (
+                    <div className="space-y-8">
+                      {/* Summary */}
+                      <div className="grid gap-4 md:grid-cols-3">
+                        <Card className="border-l-4 border-l-blue-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Total Equity
+                              </p>
+                              <p className="text-2xl font-bold text-blue-600">
+                                GHS{" "}
+                                {reportData.equity.summary?.totalEquity?.toLocaleString() ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-green-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Equity Accounts
+                              </p>
+                              <p className="text-2xl font-bold text-green-600">
+                                {reportData.equity.summary?.equityAccounts ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                        <Card className="border-l-4 border-l-purple-500">
+                          <CardContent className="pt-6">
+                            <div className="space-y-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                Transactions
+                              </p>
+                              <p className="text-2xl font-bold text-purple-600">
+                                {reportData.equity.summary?.totalTransactions ||
+                                  "0"}
+                              </p>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {/* Equity Components */}
+                      {reportData.equity.components &&
+                        reportData.equity.components.length > 0 && (
+                          <div className="space-y-4">
+                            <h3 className="text-xl font-semibold">
+                              Equity Components
+                            </h3>
+                            <div className="space-y-3">
+                              {reportData.equity.components.map(
+                                (component: any, index: number) => (
+                                  <div
+                                    key={index}
+                                    className="flex justify-between items-center py-3 border-b border-gray-100"
+                                  >
+                                    <span className="font-medium">
+                                      {component.name ||
+                                        `Component ${index + 1}`}
+                                    </span>
+                                    <span className="font-semibold text-blue-600">
+                                      GHS{" "}
+                                      {component.amount?.toLocaleString() ||
+                                        "0"}
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <TrendingUp className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="text-lg font-semibold mb-2">
+                        No Equity Data
+                      </h3>
+                      <p className="text-muted-foreground">
+                        No equity data available for the selected period.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {canViewReports && (
+            <TabsContent value="cash-flow" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Cash Flow Statement</CardTitle>
                   <CardDescription>
-                    Owner's equity, retained earnings, and equity changes
+                    Operating, investing, and financing cash flows
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex justify-end mb-4">
-                    <Button variant="outline" onClick={() => exportEquityPDF()}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Export Equity (PDF)
-                    </Button>
-                  </div>
                   {reportData ? (
                     reportData.hasData ? (
-                      <div className="space-y-6">
-                        {/* Equity Summary */}
-                        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Total Equity
-                            </p>
-                            <p className="text-2xl font-bold text-green-600">
-                              GHS{" "}
-                              {(
-                                reportData.equity?.summary?.totalEquity || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Share Capital
-                            </p>
-                            <p className="text-2xl font-bold">
-                              GHS{" "}
-                              {(
-                                reportData.equity?.equityComponents?.find(
-                                  (c) => c.equity_type === "Share Capital"
-                                )?.net_balance || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Retained Earnings
-                            </p>
-                            <p className="text-2xl font-bold">
-                              GHS{" "}
-                              {(
-                                reportData.equity?.equityComponents?.find(
-                                  (c) => c.equity_type === "Retained Earnings"
-                                )?.net_balance || 0
-                              ).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-sm font-medium text-muted-foreground">
-                              Current Year Earnings
-                            </p>
-                            <p className="text-2xl font-bold">
-                              GHS{" "}
-                              {(
-                                reportData.equity?.equityComponents?.find(
-                                  (c) =>
-                                    c.equity_type === "Current Year Earnings"
-                                )?.net_balance || 0
-                              ).toLocaleString()}
-                            </p>
+                      <div className="space-y-8">
+                        {/* Operating Activities */}
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-semibold text-green-600">
+                            Operating Activities
+                          </h3>
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                              <span className="font-medium">Net Income</span>
+                              <span className="font-semibold text-green-600">
+                                GHS{" "}
+                                {reportData.summary.netIncome.toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No additional operating cash flow data available
+                              </p>
+                            </div>
                           </div>
                         </div>
 
-                        {/* Equity Components */}
+                        {/* Investing Activities */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold">
-                            Equity Components
+                          <h3 className="text-xl font-semibold text-blue-600">
+                            Investing Activities
                           </h3>
-                          <div className="space-y-2">
-                            {reportData.equity?.equityComponents?.map(
-                              (component, index) => (
-                                <div
-                                  key={index}
-                                  className="flex justify-between items-center py-2 border-b"
-                                >
-                                  <span className="font-medium">
-                                    {component.name}
-                                  </span>
-                                  <div className="text-right">
-                                    <div className="font-medium text-green-600">
-                                      GHS{" "}
-                                      {Number(
-                                        component.net_balance
-                                      ).toLocaleString()}
-                                    </div>
-                                    <div className="text-sm text-muted-foreground">
-                                      {component.equity_type}
-                                    </div>
-                                  </div>
-                                </div>
-                              )
-                            )}
+                          <div className="space-y-3">
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No investing activities data available
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Financing Activities */}
+                        <div className="space-y-4">
+                          <h3 className="text-xl font-semibold text-purple-600">
+                            Financing Activities
+                          </h3>
+                          <div className="space-y-3">
+                            <div className="text-center py-8">
+                              <p className="text-muted-foreground">
+                                No financing activities data available
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Cash Position */}
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center py-6 border-t-2 border-b-2 border-green-200 font-bold text-xl bg-green-50 px-4 rounded-lg">
+                            <span>Ending Cash Balance</span>
+                            <span className="text-green-600">
+                              GHS{" "}
+                              {reportData.summary.cashPosition.toLocaleString()}
+                            </span>
                           </div>
                         </div>
                       </div>
                     ) : (
-                      <p className="text-muted-foreground">
-                        No equity data available
-                      </p>
+                      <div className="text-center py-12">
+                        <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">
+                          No Cash Flow Data
+                        </h3>
+                        <p className="text-muted-foreground">
+                          No transaction data available for cash flow statement.
+                        </p>
+                      </div>
                     )
                   ) : (
                     <div className="text-center py-12">
-                      <div className="mx-auto w-24 h-24 bg-muted rounded-full flex items-center justify-center mb-4">
-                        <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin" />
-                      </div>
+                      <RefreshCw className="h-12 w-12 text-muted-foreground animate-spin mx-auto mb-4" />
                       <h3 className="text-lg font-semibold mb-2">
-                        Loading Data
+                        Loading Cash Flow
                       </h3>
                       <p className="text-muted-foreground">
-                        Fetching equity data...
+                        Fetching cash flow data...
                       </p>
                     </div>
                   )}

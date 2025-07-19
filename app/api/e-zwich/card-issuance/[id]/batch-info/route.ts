@@ -5,10 +5,10 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string  }> }
 ) {
   try {
-    const cardIssuanceId = params.id;
+    const { id: cardIssuanceId } = await params;
 
     // Get card issuance with batch information
     const cardIssuance = await sql`

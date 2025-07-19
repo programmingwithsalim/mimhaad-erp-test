@@ -3,10 +3,10 @@ import { neon } from "@neondatabase/serverless"
 
 const sql = neon(process.env.DATABASE_URL!)
 
-export async function PATCH(request: Request, { params }: { params: { id: string } }) {
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
     const { permissions, updated_by } = await request.json()
-    const roleId = params.id
+    const { id: roleId } = await params
 
     // First, remove all existing permissions for this role
     await sql`
@@ -47,9 +47,9 @@ export async function PATCH(request: Request, { params }: { params: { id: string
   }
 }
 
-export async function DELETE(request: Request, { params }: { params: { id: string } }) {
+export async function DELETE(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
-    const roleId = params.id
+    const { id: roleId } = await params
 
     // Check if role is system role
     const role = await sql`

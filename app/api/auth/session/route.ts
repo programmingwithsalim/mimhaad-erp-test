@@ -13,6 +13,10 @@ export async function GET() {
       return NextResponse.json({ user: null }, { status: 401 });
     }
 
+    // Debug: Log the user role
+    console.log("Session API - User role:", session.user.role);
+    console.log("Session API - Full user data:", session.user);
+
     // Update session activity
     await updateSessionActivity(session.sessionToken);
 
