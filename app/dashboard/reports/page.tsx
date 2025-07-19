@@ -44,7 +44,14 @@ import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useToast } from "@/hooks/use-toast";
 import { ReportsFilterBar } from "@/components/reports/reports-filter-bar";
-import { PDFDocument, rgb, StandardFonts, PDFPage, PDFFont } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFPage,
+  PDFFont,
+  StandardFonts,
+  rgb,
+  degrees,
+} from "pdf-lib";
 
 interface Branch {
   id: string;
@@ -310,59 +317,114 @@ export default function ReportsPage() {
 
   const exportReportPDF = async (reportType: string, data: any) => {
     try {
+      console.log("🔍 Export PDF called with:", { reportType, dateRange });
+
+      // Fallback for dateRange if it's not available
+      const currentDateRange = dateRange || {
+        from: subDays(new Date(), 30),
+        to: new Date(),
+      };
+
       const pdfDoc = await PDFDocument.create();
       const page = pdfDoc.addPage([595, 842]); // A4 size
       const { width, height } = page.getSize();
       const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
       const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
+      // Embed the logo image
+      let logoImage;
+      try {
+        const logoResponse = await fetch("/logo.png");
+        const logoArrayBuffer = await logoResponse.arrayBuffer();
+        logoImage = await pdfDoc.embedPng(logoArrayBuffer);
+      } catch (logoError) {
+        console.warn("Could not load logo image:", logoError);
+        logoImage = null;
+      }
+
+      // Add watermark
+      const watermarkText = "Mimhaad Ventures";
+      const watermarkFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+      // Draw watermark diagonally across the page
+      page.drawText(watermarkText, {
+        x: width / 2 - 100,
+        y: height / 2 + 50,
+        size: 48,
+        font: watermarkFont,
+        color: rgb(0.9, 0.9, 0.9), // Very light gray
+        rotate: degrees(-45), // Rotate 45 degrees
+        opacity: 0.1, // Very transparent
+      });
+
       // Header with logo
-      const logoText = "🏦"; // Using emoji as logo placeholder
       const companyName = "Mimhaad Financial Services";
       const reportTitle = `${reportType} Report`;
-      const dateRange = `${format(dateRange.from, "MMM dd, yyyy")} - ${format(
-        dateRange.to,
+      const dateRangeText = `${format(
+        currentDateRange.from,
         "MMM dd, yyyy"
-      )}`;
+      )} - ${format(currentDateRange.to, "MMM dd, yyyy")}`;
       const branchInfo =
         selectedBranch === "all"
           ? "All Branches"
           : branches.find((b) => b.id === selectedBranch)?.name ||
             "Unknown Branch";
 
-      // Draw header
-      page.drawText(logoText, {
-        x: width / 2 - 20,
-        y: height - 80,
-        size: 40,
-        font: font,
-      });
+      // Draw header with logo
+      if (logoImage) {
+        // Draw the actual logo image
+        const logoWidth = 60;
+        const logoHeight = (logoImage.height * logoWidth) / logoImage.width;
+        page.drawImage(logoImage, {
+          x: 50,
+          y: height - 80,
+          width: logoWidth,
+          height: logoHeight,
+        });
 
-      page.drawText(companyName, {
-        x: width / 2 - 100,
-        y: height - 120,
+        // Draw company name next to logo
+        page.drawText(companyName, {
+          x: 130,
+          y: height - 60,
+          size: 18,
+          font: boldFont,
+        });
+      } else {
+        // Fallback to text logo if image fails to load
+        page.drawText("MFS", {
+          x: 50,
+          y: height - 60,
+          size: 32,
+          font: boldFont,
+          color: rgb(0.2, 0.4, 0.8),
+        });
+
+        page.drawText(companyName, {
+          x: 50,
+          y: height - 100,
+          size: 18,
+          font: boldFont,
+        });
+      }
+
+      page.drawText(reportTitle, {
+        x: 50,
+        y: height - 130,
         size: 16,
         font: boldFont,
       });
 
-      page.drawText(reportTitle, {
-        x: width / 2 - 60,
-        y: height - 150,
-        size: 14,
-        font: boldFont,
-      });
-
-      page.drawText(`Period: ${dateRange}`, {
+      page.drawText(`Period: ${dateRangeText}`, {
         x: 50,
-        y: height - 180,
-        size: 10,
+        y: height - 160,
+        size: 12,
         font: font,
       });
 
       page.drawText(`Branch: ${branchInfo}`, {
         x: 50,
-        y: height - 195,
-        size: 10,
+        y: height - 175,
+        size: 12,
         font: font,
       });
 
@@ -370,18 +432,18 @@ export default function ReportsPage() {
         `Generated: ${format(new Date(), "MMM dd, yyyy 'at' HH:mm")}`,
         {
           x: 50,
-          y: height - 210,
-          size: 10,
+          y: height - 190,
+          size: 12,
           font: font,
         }
       );
 
       // Draw separator line
       page.drawLine({
-        start: { x: 50, y: height - 230 },
-        end: { x: width - 50, y: height - 230 },
-        thickness: 1,
-        color: rgb(0.8, 0.8, 0.8),
+        start: { x: 50, y: height - 210 },
+        end: { x: width - 50, y: height - 210 },
+        thickness: 2,
+        color: rgb(0.2, 0.4, 0.8),
       });
 
       let yPosition = height - 260;
@@ -458,9 +520,9 @@ export default function ReportsPage() {
       a.download = `${reportType
         .toLowerCase()
         .replace(/\s+/g, "-")}-report-${format(
-        dateRange.from,
+        currentDateRange.from,
         "yyyy-MM-dd"
-      )}-${format(dateRange.to, "yyyy-MM-dd")}.pdf`;
+      )}-${format(currentDateRange.to, "yyyy-MM-dd")}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
