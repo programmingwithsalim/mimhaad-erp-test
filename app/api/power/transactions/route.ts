@@ -66,6 +66,9 @@ export async function GET(request: NextRequest) {
           user_id,
           gl_entry_id,
           notes,
+          payment_method,
+          payment_account_id,
+          float_account_id,
           created_at,
           updated_at
         FROM power_transactions 
@@ -93,6 +96,9 @@ export async function GET(request: NextRequest) {
       status: tx.status || "N/A",
       reference: tx.reference || "N/A",
       provider: tx.provider || "N/A",
+      payment_method: tx.payment_method || "cash",
+      payment_account_id: tx.payment_account_id || null,
+      float_account_id: tx.float_account_id || null,
       created_at: tx.date,
       branch_id: tx.branch_id,
       branch_name: tx.branch_name,
@@ -205,13 +211,16 @@ export async function POST(request: NextRequest) {
     const insertResult = await sql`
       INSERT INTO power_transactions (
         meter_number, amount, customer_name, customer_phone,
-        provider, reference, status, date, branch_id, user_id, notes
+        provider, reference, status, date, branch_id, user_id, notes,
+        payment_method, payment_account_id, float_account_id
       ) VALUES (
         ${body.meter_number}, ${body.amount}, ${body.customer_name},
         ${body.customer_phone || null}, ${body.provider}, ${reference},
         'completed', NOW(), ${body.branchId}, ${body.userId}, ${
       body.notes || null
-    }
+    }, ${body.payment_method || "cash"}, ${
+      body.payment_account_id || null
+    }, null
       ) RETURNING id, reference
     `;
     const transactionUUID = insertResult[0]?.id;
@@ -253,26 +262,89 @@ export async function POST(request: NextRequest) {
       // Optionally: return error to client or continue
     }
 
-    // Update float and cash in till balances
-    // 1. Decrease power float by id
-    if (body.floatAccountId) {
+    // Handle payment method and fee crediting
+    const amount = Number(body.amount);
+    const fee = Number(body.fee || 0);
+
+    console.log("🔍 [POWER TRANSACTION] Payment details:", {
+      amount,
+      fee,
+      paymentMethod: body.payment_method,
+      paymentAccountId: body.payment_account_id,
+      floatAccountId: body.floatAccountId || body.float_account_id,
+    });
+
+    // Determine which float account to credit based on payment method
+    let floatAccountIdToCredit = null;
+
+    if (body.payment_method === "cash") {
+      // For cash payments, credit both amount and fee to cash-in-till
+      console.log(
+        "🔍 [POWER TRANSACTION] Cash payment - crediting amount + fee to cash-in-till"
+      );
       await sql`
         UPDATE float_accounts
-        SET current_balance = current_balance - ${body.amount},
+        SET current_balance = current_balance + ${amount + fee},
             updated_at = NOW()
-        WHERE id = ${body.floatAccountId}
+        WHERE branch_id = ${body.branchId}
+          AND account_type = 'cash-in-till'
+          AND is_active = true
       `;
+    } else {
+      // For non-cash payments, credit amount to selected float account and fee to cash-in-till
+      if (body.payment_account_id) {
+        console.log(
+          "🔍 [POWER TRANSACTION] Non-cash payment - crediting amount to payment account:",
+          body.payment_account_id
+        );
+        // Credit amount to the selected payment account
+        await sql`
+          UPDATE float_accounts
+          SET current_balance = current_balance + ${amount},
+              updated_at = NOW()
+          WHERE id = ${body.payment_account_id}
+        `;
+
+        // Credit fee to cash-in-till
+        console.log(
+          "🔍 [POWER TRANSACTION] Non-cash payment - crediting fee to cash-in-till"
+        );
+        await sql`
+          UPDATE float_accounts
+          SET current_balance = current_balance + ${fee},
+              updated_at = NOW()
+          WHERE branch_id = ${body.branchId}
+            AND account_type = 'cash-in-till'
+            AND is_active = true
+        `;
+      }
     }
 
-    // 2. Increase cash in till (by branch/type as before)
-    await sql`
-      UPDATE float_accounts
-      SET current_balance = current_balance + ${body.amount},
-          updated_at = NOW()
-      WHERE branch_id = ${body.branchId}
-        AND account_type = 'cash-in-till'
-        AND is_active = true
-    `;
+    // Update the transaction record to store the float_account_id
+    if (body.payment_method === "cash") {
+      // For cash payments, store the cash-in-till account ID
+      const cashInTillAccount = await sql`
+        SELECT id FROM float_accounts 
+        WHERE branch_id = ${body.branchId}
+          AND account_type = 'cash-in-till'
+          AND is_active = true
+        LIMIT 1
+      `;
+      if (cashInTillAccount.length > 0) {
+        await sql`
+          UPDATE power_transactions 
+          SET float_account_id = ${cashInTillAccount[0].id}
+          WHERE id = ${transactionUUID}
+        `;
+      }
+    } else if (body.payment_account_id) {
+      // For non-cash payments, store the selected payment account ID
+      await sql`
+        UPDATE power_transactions 
+        SET float_account_id = ${body.payment_account_id}
+        WHERE id = ${transactionUUID}
+      `;
+    }
 
     return NextResponse.json({
       success: true,

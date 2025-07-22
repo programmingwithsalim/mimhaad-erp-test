@@ -107,49 +107,62 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
     loadFeeConfig();
   }, []);
 
-  // Calculate fee when amount changes
-  useEffect(() => {
-    if (feeConfig && watchAmount > 0) {
-      let calculatedFee = 0;
+  // Track if user has manually modified the fee
+  const [userModifiedFee, setUserModifiedFee] = useState(false);
+  const currentFee = form.watch("fee");
 
-      if (feeConfig.fee_type === "percentage") {
-        calculatedFee = watchAmount * (Number(feeConfig.fee_value) / 100);
-      } else if (feeConfig.fee_type === "fixed") {
-        calculatedFee = Number(feeConfig.fee_value);
-      } else if (feeConfig.fee_type === "tiered") {
-        const tiers = feeConfig.tier_config || [];
-        for (const tier of tiers) {
-          if (
-            watchAmount >= tier.min_amount &&
-            watchAmount <= tier.max_amount
-          ) {
-            calculatedFee = Number(tier.fee_value);
-            break;
+  // Calculate fee when amount changes (only if user hasn't manually modified)
+  useEffect(() => {
+    if (!userModifiedFee) {
+      if (feeConfig && watchAmount > 0) {
+        let calculatedFee = 0;
+
+        if (feeConfig.fee_type === "percentage") {
+          calculatedFee = watchAmount * (Number(feeConfig.fee_value) / 100);
+        } else if (feeConfig.fee_type === "fixed") {
+          calculatedFee = Number(feeConfig.fee_value);
+        } else if (feeConfig.fee_type === "tiered") {
+          const tiers = feeConfig.tier_config || [];
+          for (const tier of tiers) {
+            if (
+              watchAmount >= tier.min_amount &&
+              watchAmount <= tier.max_amount
+            ) {
+              calculatedFee = Number(tier.fee_value);
+              break;
+            }
           }
         }
-      }
 
-      // Apply min/max limits
-      if (
-        feeConfig.minimum_fee &&
-        calculatedFee < Number(feeConfig.minimum_fee)
-      ) {
-        calculatedFee = Number(feeConfig.minimum_fee);
-      }
-      if (
-        feeConfig.maximum_fee &&
-        calculatedFee > Number(feeConfig.maximum_fee)
-      ) {
-        calculatedFee = Number(feeConfig.maximum_fee);
-      }
+        // Apply min/max limits
+        if (
+          feeConfig.minimum_fee &&
+          calculatedFee < Number(feeConfig.minimum_fee)
+        ) {
+          calculatedFee = Number(feeConfig.minimum_fee);
+        }
+        if (
+          feeConfig.maximum_fee &&
+          calculatedFee > Number(feeConfig.maximum_fee)
+        ) {
+          calculatedFee = Number(feeConfig.maximum_fee);
+        }
 
-      form.setValue("fee", Number(calculatedFee.toFixed(2)));
-    } else if (watchAmount > 0) {
-      // Fallback fee calculation
-      const fallbackFee = Math.max(5, watchAmount * 0.01); // 1% with minimum 5 GHS
-      form.setValue("fee", Number(fallbackFee.toFixed(2)));
+        form.setValue("fee", Number(calculatedFee.toFixed(2)));
+      } else if (watchAmount > 0) {
+        // Fallback fee calculation
+        const fallbackFee = Math.max(5, watchAmount * 0.01); // 1% with minimum 5 GHS
+        form.setValue("fee", Number(fallbackFee.toFixed(2)));
+      }
     }
-  }, [watchAmount, feeConfig, form]);
+  }, [watchAmount, feeConfig, form, userModifiedFee]);
+
+  // Reset user modification flag when form is reset
+  useEffect(() => {
+    if (!currentFee || currentFee === 0) {
+      setUserModifiedFee(false);
+    }
+  }, [currentFee]);
 
   // Load E-Zwich settlement accounts with proper null safety
   const loadEzwichSettlementAccounts = async () => {
@@ -464,7 +477,10 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
                         min="0"
                         placeholder="0.00"
                         {...field}
-                        onChange={(e) => field.onChange(Number(e.target.value))}
+                        onChange={(e) => {
+                          field.onChange(Number(e.target.value));
+                          setUserModifiedFee(true);
+                        }}
                       />
                     </FormControl>
                     {feeConfig && (

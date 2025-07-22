@@ -10,6 +10,8 @@ import { RefreshCw } from "lucide-react";
 import { EnhancedAdminDashboard } from "@/components/dashboard/enhanced-admin-dashboard";
 import { EnhancedFinanceDashboard } from "@/components/dashboard/enhanced-finance-dashboard";
 import { EnhancedManagerDashboard } from "@/components/dashboard/enhanced-manager-dashboard";
+import { EnhancedOperationsDashboard } from "@/components/dashboard/enhanced-operations-dashboard";
+import { EnhancedCashierDashboard } from "@/components/dashboard/enhanced-cashier-dashboard";
 
 interface DashboardStats {
   totalTransactions: number;
@@ -362,6 +364,7 @@ export default function DashboardPage() {
     isManager: isManager,
     isFinance: isFinance,
     isOperations: isOperations,
+    isCashier: isCashier,
   });
 
   // Role-based dashboard rendering with proper case-sensitive role detection
@@ -396,6 +399,24 @@ export default function DashboardPage() {
         recentTransactions={
           Array.isArray(stats.recentActivity) ? stats.recentActivity : []
         }
+      />
+    );
+  }
+
+  if (isOperations) {
+    return (
+      <EnhancedOperationsDashboard
+        serviceStats={mappedServiceStats}
+        totalStats={stats}
+      />
+    );
+  }
+
+  if (isCashier) {
+    return (
+      <EnhancedCashierDashboard
+        serviceStats={mappedServiceStats}
+        totalStats={stats}
       />
     );
   }

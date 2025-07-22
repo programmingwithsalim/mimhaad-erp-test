@@ -469,8 +469,8 @@ export async function createMoMoTransaction(transactionData: {
     // Calculate transaction effects
     const cashTillAffected =
       transactionData.type === "cash-in"
-        ? transactionData.amount
-        : -transactionData.amount;
+        ? transactionData.amount + transactionData.fee
+        : -transactionData.amount + transactionData.fee;
     const floatAffected =
       transactionData.type === "cash-in"
         ? -transactionData.amount

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getCurrentUser } from "@/lib/auth-utils";
+import crypto from "crypto";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -47,6 +48,8 @@ export async function GET(request: Request) {
         serial_number as "serialNumber",
         supplier,
         warranty_expiry as "warrantyExpiry",
+        payment_source as "paymentSource",
+        payment_account_id as "paymentAccountId",
         last_maintenance as "lastMaintenance",
         next_maintenance as "nextMaintenance",
         created_at as "createdAt",
@@ -97,12 +100,33 @@ export async function POST(request: Request) {
       supplier,
       warrantyExpiry,
       branchId,
+      paymentSource,
+      paymentAccountId,
     } = body;
 
     // Validate required fields
     if (!name || !category || !purchaseDate || !purchaseCost || !usefulLife) {
       return NextResponse.json(
         { success: false, error: "Missing required fields" },
+        { status: 400 }
+      );
+    }
+
+    // Validate payment source
+    if (!paymentSource) {
+      return NextResponse.json(
+        { success: false, error: "Payment source is required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate payment account for non-cash payments
+    if (paymentSource !== "cash" && !paymentAccountId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Payment account is required for non-cash payments",
+        },
         { status: 400 }
       );
     }
@@ -137,6 +161,164 @@ export async function POST(request: Request) {
     const currentValue = cost;
     const accumulatedDepreciation = 0;
 
+    // Handle payment source and reduce account balance
+    if (paymentSource !== "cash" && paymentAccountId) {
+      // Check if account has sufficient balance
+      const accountResult = await sql`
+        SELECT current_balance, account_type, provider, account_name 
+        FROM float_accounts 
+        WHERE id = ${paymentAccountId} AND branch_id = ${effectiveBranchId}
+      `;
+
+      if (accountResult.length === 0) {
+        return NextResponse.json(
+          { success: false, error: "Payment account not found" },
+          { status: 400 }
+        );
+      }
+
+      const account = accountResult[0];
+      if (account.current_balance < cost) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Insufficient balance. Available: ${account.current_balance}, Required: ${cost}`,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Reduce account balance
+      await sql`
+        UPDATE float_accounts 
+        SET current_balance = current_balance - ${cost}, updated_at = NOW()
+        WHERE id = ${paymentAccountId}
+      `;
+
+      // Create GL entries for the payment
+      const transactionId = "FA-" + crypto.randomUUID();
+
+      // Get GL account IDs
+      const fixedAssetAccount = await sql`
+        SELECT id, code FROM gl_accounts WHERE code = '1200' AND branch_id = ${effectiveBranchId} LIMIT 1
+      `;
+
+      let paymentAccount;
+      if (paymentSource === "cash") {
+        paymentAccount = await sql`
+          SELECT id, code FROM gl_accounts WHERE code = '1000' AND branch_id = ${effectiveBranchId} LIMIT 1
+        `;
+      } else if (paymentSource === "momo") {
+        paymentAccount = await sql`
+          SELECT id, code FROM gl_accounts WHERE code = '1100' AND branch_id = ${effectiveBranchId} LIMIT 1
+        `;
+      } else if (paymentSource === "bank") {
+        paymentAccount = await sql`
+          SELECT id, code FROM gl_accounts WHERE code = '1050' AND branch_id = ${effectiveBranchId} LIMIT 1
+        `;
+      }
+
+      if (
+        fixedAssetAccount &&
+        fixedAssetAccount[0] &&
+        paymentAccount &&
+        paymentAccount[0]
+      ) {
+        // Create debit entry (Fixed Asset account)
+        await sql`
+          INSERT INTO gl_journal_entries (
+            id, transaction_id, account_id, account_code, debit, credit, description, metadata
+          ) VALUES (
+            gen_random_uuid(), ${transactionId}, ${fixedAssetAccount[0].id}, ${
+          fixedAssetAccount[0].code
+        },
+            ${cost}, 0, ${`Fixed Asset Purchase: ${name}`}, 
+            ${JSON.stringify({
+              assetName: name,
+              paymentSource: paymentSource,
+              paymentAccountId: paymentAccountId,
+              category: category,
+              purchaseDate: purchaseDate,
+            })}
+          )
+        `;
+
+        // Create credit entry (Payment account)
+        await sql`
+          INSERT INTO gl_journal_entries (
+            id, transaction_id, account_id, account_code, debit, credit, description, metadata
+          ) VALUES (
+            gen_random_uuid(), ${transactionId}, ${paymentAccount[0].id}, ${
+          paymentAccount[0].code
+        },
+            0, ${cost}, ${`Payment for Fixed Asset: ${name} via ${paymentSource}`}, 
+            ${JSON.stringify({
+              assetName: name,
+              paymentSource: paymentSource,
+              paymentAccountId: paymentAccountId,
+              category: category,
+              purchaseDate: purchaseDate,
+            })}
+          )
+        `;
+      }
+    } else if (paymentSource === "cash") {
+      // Create GL entries for cash payment
+      const transactionId = "FA-" + crypto.randomUUID();
+
+      // Get GL account IDs
+      const fixedAssetAccount = await sql`
+        SELECT id, code FROM gl_accounts WHERE code = '1200' AND branch_id = ${effectiveBranchId} LIMIT 1
+      `;
+
+      const cashAccount = await sql`
+        SELECT id, code FROM gl_accounts WHERE code = '1000' AND branch_id = ${effectiveBranchId} LIMIT 1
+      `;
+
+      if (
+        fixedAssetAccount &&
+        fixedAssetAccount[0] &&
+        cashAccount &&
+        cashAccount[0]
+      ) {
+        // Create debit entry (Fixed Asset account)
+        await sql`
+          INSERT INTO gl_journal_entries (
+            id, transaction_id, account_id, account_code, debit, credit, description, metadata
+          ) VALUES (
+            gen_random_uuid(), ${transactionId}, ${fixedAssetAccount[0].id}, ${
+          fixedAssetAccount[0].code
+        },
+            ${cost}, 0, ${`Fixed Asset Purchase: ${name}`}, 
+            ${JSON.stringify({
+              assetName: name,
+              paymentSource: paymentSource,
+              category: category,
+              purchaseDate: purchaseDate,
+            })}
+          )
+        `;
+
+        // Create credit entry (Cash account)
+        await sql`
+          INSERT INTO gl_journal_entries (
+            id, transaction_id, account_id, account_code, debit, credit, description, metadata
+          ) VALUES (
+            gen_random_uuid(), ${transactionId}, ${cashAccount[0].id}, ${
+          cashAccount[0].code
+        },
+            0, ${cost}, ${`Payment for Fixed Asset: ${name} via cash`}, 
+            ${JSON.stringify({
+              assetName: name,
+              paymentSource: paymentSource,
+              category: category,
+              purchaseDate: purchaseDate,
+            })}
+          )
+        `;
+      }
+    }
+
     // Insert the asset
     const result = await sql`
       INSERT INTO fixed_assets (
@@ -158,6 +340,8 @@ export async function POST(request: Request) {
         serial_number,
         supplier,
         warranty_expiry,
+        payment_source,
+        payment_account_id,
         created_at,
         updated_at
       ) VALUES (
@@ -179,6 +363,8 @@ export async function POST(request: Request) {
         ${serialNumber || null},
         ${supplier || null},
         ${warrantyExpiry || null},
+        ${paymentSource},
+        ${paymentAccountId || null},
         NOW(),
         NOW()
       )
@@ -207,6 +393,8 @@ export async function POST(request: Request) {
       serialNumber: asset.serial_number,
       supplier: asset.supplier,
       warrantyExpiry: asset.warranty_expiry,
+      paymentSource: asset.payment_source,
+      paymentAccountId: asset.payment_account_id,
       lastMaintenance: asset.last_maintenance,
       nextMaintenance: asset.next_maintenance,
       createdAt: asset.created_at,

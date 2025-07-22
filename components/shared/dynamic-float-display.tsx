@@ -238,7 +238,7 @@ export function DynamicFloatDisplay({
       </Card>
 
       {/* All Float Accounts Summary */}
-      {floatAccounts.length > 0 && (
+      {floatAccounts.length > 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">
@@ -270,6 +270,23 @@ export function DynamicFloatDisplay({
                   </div>
                 );
               })}
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">
+              All {serviceType} Providers
+            </CardTitle>
+            <CardDescription>Overview of all float accounts</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="text-center py-4">
+              <AlertTriangle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+              <p className="text-sm text-muted-foreground">
+                No float accounts found for {serviceType}
+              </p>
             </div>
           </CardContent>
         </Card>

@@ -137,15 +137,15 @@ export async function POST(request: NextRequest) {
       floatChange = -normalizedData.amount; // Only the amount, not the fee
       newFloatBalance = Number(account.current_balance) - normalizedData.amount;
     } else {
-      // Cash out: Customer withdraws cash, we receive amount + fee to MoMo float
+      // Cash out: Customer withdraws cash, we receive amount to MoMo float
       // We lose: amount (from cash till)
-      // We receive: amount + fee (to MoMo float)
-      cashTillChange = -normalizedData.amount; // Only the amount, not the fee
-      floatChange = normalizedData.amount + normalizedData.fee; // Amount + fee
+      // We receive: amount (to MoMo float)
+      // Fee is kept in cash till as revenue
+      cashTillChange = -normalizedData.amount + normalizedData.fee; // We pay amount in cash but keep fee
+      floatChange = normalizedData.amount; // Only the amount, not the fee
       newFloatBalance =
         Number(account.current_balance) +
-        normalizedData.amount +
-        normalizedData.fee;
+        normalizedData.amount;
     }
 
     // Create the transaction

@@ -70,6 +70,8 @@ interface FixedAsset {
   serialNumber?: string;
   supplier?: string;
   warrantyExpiry?: string;
+  paymentSource?: string;
+  paymentAccountId?: string;
   lastMaintenance?: string;
   nextMaintenance?: string;
   createdAt: string;
@@ -113,6 +115,8 @@ export default function FixedAssetsPage() {
     serialNumber: "",
     supplier: "",
     warrantyExpiry: "",
+    paymentSource: "cash", // Add payment source field
+    paymentAccountId: "", // Add payment account ID field
   });
 
   const assetCategories = [
@@ -134,9 +138,53 @@ export default function FixedAssetsPage() {
     { value: "units-of-production", label: "Units of Production" },
   ];
 
+  const [floatAccounts, setFloatAccounts] = useState<any[]>([]);
+  const [loadingFloatAccounts, setLoadingFloatAccounts] = useState(false);
+
+  const paymentSources = [
+    { value: "cash", label: "Cash", icon: "💵" },
+    { value: "momo", label: "Mobile Money", icon: "📱" },
+    { value: "bank", label: "Bank Transfer", icon: "🏦" },
+  ];
+
   useEffect(() => {
     fetchAssets();
+    fetchFloatAccounts();
   }, []);
+
+  // Debug logging for user and branch information
+  useEffect(() => {
+    console.log("Fixed Assets - User info:", {
+      role: user?.role,
+      branchId: user?.branchId,
+      branchName: user?.branchName,
+      isAdmin: user?.role?.toLowerCase() === "admin",
+    });
+  }, [user]);
+
+  const fetchFloatAccounts = async () => {
+    try {
+      setLoadingFloatAccounts(true);
+
+      // For admin users, don't filter by branch to show all accounts
+      // For non-admin users, filter by their branch
+      const isAdmin = user?.role?.toLowerCase() === "admin";
+      const url = isAdmin
+        ? "/api/float-accounts"
+        : `/api/float-accounts?branchId=${user?.branchId}`;
+
+      const response = await fetch(url);
+      if (response.ok) {
+        const data = await response.json();
+        console.log("Fetched float accounts:", data.accounts);
+        setFloatAccounts(data.accounts || []);
+      }
+    } catch (error) {
+      console.error("Error fetching float accounts:", error);
+    } finally {
+      setLoadingFloatAccounts(false);
+    }
+  };
 
   const fetchAssets = async () => {
     try {
@@ -144,7 +192,8 @@ export default function FixedAssetsPage() {
       const response = await fetch("/api/fixed-assets");
       if (response.ok) {
         const data = await response.json();
-        setAssets(data.assets || []);
+        const assetsData = data.assets || [];
+        setAssets(assetsData);
       } else {
         throw new Error("Failed to fetch assets");
       }
@@ -255,6 +304,25 @@ export default function FixedAssetsPage() {
       return;
     }
 
+    if (!formData.paymentSource) {
+      toast({
+        title: "Validation Error",
+        description: "Payment source is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate payment account for non-cash payments
+    if (formData.paymentSource !== "cash" && !formData.paymentAccountId) {
+      toast({
+        title: "Validation Error",
+        description: "Payment account is required for non-cash payments",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const response = await fetch("/api/fixed-assets", {
         method: "POST",
@@ -267,6 +335,8 @@ export default function FixedAssetsPage() {
           salvageValue: Number(formData.salvageValue || 0),
           usefulLife: Number(formData.usefulLife),
           branchId: user?.branchId,
+          paymentSource: formData.paymentSource,
+          paymentAccountId: formData.paymentAccountId || null,
         }),
       });
 
@@ -289,6 +359,8 @@ export default function FixedAssetsPage() {
           serialNumber: "",
           supplier: "",
           warrantyExpiry: "",
+          paymentSource: "cash",
+          paymentAccountId: "",
         });
         fetchAssets();
       } else {
@@ -333,6 +405,8 @@ export default function FixedAssetsPage() {
       serialNumber: asset.serialNumber || "",
       supplier: asset.supplier || "",
       warrantyExpiry: asset.warrantyExpiry || "",
+      paymentSource: asset.paymentSource || "cash",
+      paymentAccountId: asset.paymentAccountId || "",
     });
     setShowEditDialog(true);
   };
@@ -425,6 +499,8 @@ export default function FixedAssetsPage() {
           serialNumber: "",
           supplier: "",
           warrantyExpiry: "",
+          paymentSource: "cash",
+          paymentAccountId: "",
         });
         fetchAssets();
       } else {
@@ -501,18 +577,18 @@ export default function FixedAssetsPage() {
     }
   };
 
-  const totalAssets = assets.reduce(
-    (sum, asset) => sum + asset.purchaseCost,
-    0
-  );
-  const totalDepreciation = assets.reduce(
-    (sum, asset) => sum + asset.accumulatedDepreciation,
-    0
-  );
+  const totalAssets = assets.reduce((sum, asset) => {
+    const cost = Number(asset.purchaseCost) || 0;
+    return sum + cost;
+  }, 0);
+  const totalDepreciation = assets.reduce((sum, asset) => {
+    const dep = Number(asset.accumulatedDepreciation) || 0;
+    return sum + dep;
+  }, 0);
   const netBookValue = totalAssets - totalDepreciation;
 
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto py-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
@@ -520,6 +596,16 @@ export default function FixedAssetsPage() {
           </h1>
           <p className="text-muted-foreground">
             Manage and track fixed assets with depreciation calculations
+            {user?.role?.toLowerCase() !== "admin" && user?.branchName && (
+              <span className="ml-2 text-blue-600 font-medium">
+                • {user.branchName}
+              </span>
+            )}
+            {user?.role?.toLowerCase() === "admin" && (
+              <span className="ml-2 text-green-600 font-medium">
+                • All Branches
+              </span>
+            )}
           </p>
         </div>
         <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
@@ -712,6 +798,143 @@ export default function FixedAssetsPage() {
                   />
                 </div>
               </div>
+
+              {/* Payment Source Section */}
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Payment Information</h3>
+                  {user?.role?.toLowerCase() === "admin" && (
+                    <Badge variant="outline" className="text-xs">
+                      Viewing All Branches
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="paymentSource">Payment Source *</Label>
+                    <Select
+                      value={formData.paymentSource}
+                      onValueChange={(value) =>
+                        setFormData({
+                          ...formData,
+                          paymentSource: value,
+                          paymentAccountId: "",
+                        })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select payment source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {paymentSources.map((source) => (
+                          <SelectItem key={source.value} value={source.value}>
+                            <span className="flex items-center gap-2">
+                              <span>{source.icon}</span>
+                              <span>{source.label}</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {formData.paymentSource !== "cash" && (
+                    <div>
+                      <Label htmlFor="paymentAccountId">
+                        Payment Account *
+                      </Label>
+                      <Select
+                        value={formData.paymentAccountId}
+                        onValueChange={(value) =>
+                          setFormData({ ...formData, paymentAccountId: value })
+                        }
+                        disabled={loadingFloatAccounts}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select payment account" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {floatAccounts
+                            .filter((account) => {
+                              if (formData.paymentSource === "momo") {
+                                return account.account_type === "momo";
+                              } else if (formData.paymentSource === "bank") {
+                                return (
+                                  account.account_type === "agency-banking"
+                                );
+                              }
+                              return false;
+                            })
+                            .map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                <span className="flex items-center justify-between w-full">
+                                  <div className="flex flex-col">
+                                    <span>
+                                      {account.provider || account.account_name}
+                                    </span>
+                                    {user?.role?.toLowerCase() === "admin" &&
+                                      account.branch_name && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {account.branch_name}
+                                        </span>
+                                      )}
+                                  </div>
+                                  <span className="text-sm text-muted-foreground">
+                                    {formatCurrency(account.current_balance)}
+                                  </span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
+                {formData.paymentSource !== "cash" &&
+                  formData.paymentAccountId && (
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md">
+                      <p className="text-sm text-blue-800">
+                        <strong>Selected Account:</strong>{" "}
+                        {floatAccounts.find(
+                          (acc) => acc.id === formData.paymentAccountId
+                        )?.provider ||
+                          floatAccounts.find(
+                            (acc) => acc.id === formData.paymentAccountId
+                          )?.account_name}
+                        {user?.role?.toLowerCase() === "admin" &&
+                          floatAccounts.find(
+                            (acc) => acc.id === formData.paymentAccountId
+                          )?.branch_name && (
+                            <span className="text-blue-600 ml-2">
+                              (
+                              {
+                                floatAccounts.find(
+                                  (acc) => acc.id === formData.paymentAccountId
+                                )?.branch_name
+                              }
+                              )
+                            </span>
+                          )}
+                      </p>
+                      <p className="text-sm text-blue-600">
+                        <strong>Current Balance:</strong>{" "}
+                        {formatCurrency(
+                          floatAccounts.find(
+                            (acc) => acc.id === formData.paymentAccountId
+                          )?.current_balance || 0
+                        )}
+                      </p>
+                      <p className="text-sm text-blue-600">
+                        <strong>After Purchase:</strong>{" "}
+                        {formatCurrency(
+                          (floatAccounts.find(
+                            (acc) => acc.id === formData.paymentAccountId
+                          )?.current_balance || 0) -
+                            Number(formData.purchaseCost || 0)
+                        )}
+                      </p>
+                    </div>
+                  )}
+              </div>
             </div>
             <div className="flex justify-end space-x-2 pt-4">
               <Button variant="outline" onClick={() => setShowAddDialog(false)}>
@@ -724,7 +947,7 @@ export default function FixedAssetsPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Assets</CardTitle>
@@ -784,6 +1007,27 @@ export default function FixedAssetsPage() {
             <p className="text-xs text-muted-foreground">Currently in use</p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Branch Context
+            </CardTitle>
+            <Building2 className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-lg font-bold">
+              {user?.role?.toLowerCase() === "admin"
+                ? "All Branches"
+                : user?.branchName || "Unknown Branch"}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {user?.role?.toLowerCase() === "admin"
+                ? "Viewing assets from all branches"
+                : `Viewing assets for ${user?.branchName || "your branch"}`}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Assets Table */}
@@ -811,6 +1055,7 @@ export default function FixedAssetsPage() {
                   <TableHead>Purchase Cost</TableHead>
                   <TableHead>Current Value</TableHead>
                   <TableHead>Depreciation</TableHead>
+                  <TableHead>Payment Source</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Actions</TableHead>
                 </TableRow>
@@ -831,6 +1076,11 @@ export default function FixedAssetsPage() {
                     <TableCell>{formatCurrency(asset.currentValue)}</TableCell>
                     <TableCell>
                       {formatCurrency(asset.accumulatedDepreciation)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="capitalize">
+                        {asset.paymentSource || "Cash"}
+                      </Badge>
                     </TableCell>
                     <TableCell>{getStatusBadge(asset.status)}</TableCell>
                     <TableCell>
@@ -1055,7 +1305,41 @@ export default function FixedAssetsPage() {
                     </p>
                   </div>
                 )}
+                {selectedAsset.paymentSource && (
+                  <div>
+                    <Label className="font-medium">Payment Source</Label>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      {selectedAsset.paymentSource}
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Payment Information Section */}
+              {selectedAsset.paymentSource &&
+                selectedAsset.paymentSource !== "cash" && (
+                  <div className="border-t pt-4">
+                    <h3 className="text-lg font-semibold mb-2">
+                      Payment Information
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="font-medium">Payment Method</Label>
+                        <p className="text-sm text-muted-foreground capitalize">
+                          {selectedAsset.paymentSource}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="font-medium">
+                          Payment Account ID
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedAsset.paymentAccountId || "N/A"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
             </div>
           )}
         </DialogContent>

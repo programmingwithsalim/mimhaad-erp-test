@@ -105,14 +105,17 @@ export class UnifiedTransactionService {
         return { success: false, error: validation.error };
       }
 
-      // 2. Get fee configuration only if fee is not provided or is 0
-      if (!data.fee || data.fee === 0) {
+      // 2. Get fee configuration only if fee is not provided (undefined or null)
+      // Don't recalculate if user explicitly sets fee to 0
+      if (data.fee === undefined || data.fee === null) {
         const feeConfig = await this.getFeeConfiguration(
           data.serviceType,
           data.transactionType
         );
         if (feeConfig) {
           data.fee = this.calculateFee(data.amount, feeConfig);
+        } else {
+          data.fee = 0; // Default to 0 if no fee config found
         }
       }
 
@@ -208,11 +211,11 @@ export class UnifiedTransactionService {
         data.transactionType === "cash-out" ||
         data.transactionType === "withdrawal"
       ) {
-        // Cash-Out/Withdrawal: Customer withdraws cash, we receive amount + fee to MoMo float
-        // Customer gives us: amount + fee from their MoMo account
+        // Cash-Out/Withdrawal: Customer withdraws cash, we receive amount to MoMo float
+        // Customer gives us: amount from their MoMo account
         // Customer receives: amount only in cash
         // We keep: fee as revenue in cash till
-        momoFloatChange = data.amount + data.fee; // We receive amount + fee to our MoMo float
+        momoFloatChange = data.amount; // We receive only the amount to our MoMo float
         cashTillChange = -data.amount + data.fee; // We pay the amount in cash but keep the fee in cash till
 
         // Validate cash in till balance (only need the amount, not the fee)

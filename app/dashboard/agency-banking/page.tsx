@@ -99,32 +99,46 @@ export default function AgencyBankingPage() {
   // Use dynamic fee calculation
   const { calculateFee } = useDynamicFee();
 
-  // Fetch fee when type, amount, or partner bank changes
+  // Track if user has manually modified the fee
+  const [userModifiedFee, setUserModifiedFee] = useState(false);
+
+  // Fetch fee when type, amount, or partner bank changes (only if user hasn't manually modified)
   useEffect(() => {
     const fetchFee = async () => {
       if (!formData.type || !formData.amount || !formData.partner_bank_id) {
         setFormData((prev) => ({ ...prev, fee: "" }));
         return;
       }
-      setFeeLoading(true);
-      try {
-        const feeResult = await calculateFee(
-          "agency_banking",
-          formData.type,
-          Number(formData.amount)
-        );
-        setFormData((prev) => ({
-          ...prev,
-          fee: feeResult.fee.toString(),
-        }));
-      } catch (err) {
-        setFormData((prev) => ({ ...prev, fee: "0" }));
-      } finally {
-        setFeeLoading(false);
+
+      // Only auto-calculate if user hasn't manually modified the fee
+      if (!userModifiedFee) {
+        setFeeLoading(true);
+        try {
+          const feeResult = await calculateFee(
+            "agency_banking",
+            formData.type,
+            Number(formData.amount)
+          );
+          setFormData((prev) => ({
+            ...prev,
+            fee: feeResult.fee.toString(),
+          }));
+        } catch (err) {
+          setFormData((prev) => ({ ...prev, fee: "0" }));
+        } finally {
+          setFeeLoading(false);
+        }
       }
     };
     fetchFee();
-  }, [formData.type, formData.amount, formData.partner_bank_id, calculateFee]);
+  }, [formData.type, formData.amount, formData.partner_bank_id, calculateFee, userModifiedFee]);
+
+  // Reset user modification flag when form is reset
+  useEffect(() => {
+    if (!formData.fee || formData.fee === "") {
+      setUserModifiedFee(false);
+    }
+  }, [formData.fee]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -741,9 +755,10 @@ export default function AgencyBankingPage() {
                           step="0.01"
                           min="0"
                           value={formData.fee}
-                          onChange={(e) =>
-                            setFormData({ ...formData, fee: e.target.value })
-                          }
+                          onChange={(e) => {
+                            setFormData({ ...formData, fee: e.target.value });
+                            setUserModifiedFee(true);
+                          }}
                           placeholder={feeLoading ? "Calculating..." : "0.00"}
                         />
                         <p className="text-xs text-muted-foreground">

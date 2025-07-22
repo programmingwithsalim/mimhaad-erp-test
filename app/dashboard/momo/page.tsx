@@ -125,7 +125,10 @@ export default function MoMoPage() {
   // Use dynamic fee calculation
   const { calculateFee } = useDynamicFee();
 
-  // Calculate fee when type, amount, or provider changes
+  // Track if user has manually modified the fee
+  const [userModifiedFee, setUserModifiedFee] = useState(false);
+
+  // Calculate fee when type, amount, or provider changes (only if user hasn't manually modified)
   useEffect(() => {
     const fetchFee = async () => {
       if (!formData.type || !formData.amount || !formData.provider) {
@@ -133,33 +136,48 @@ export default function MoMoPage() {
         return;
       }
 
-      setFeeLoading(true);
-      try {
-        // Map transaction types for fee calculation
-        const transactionTypeForFee =
-          formData.type === "cash-in" ? "deposit" : "withdrawal";
-        const feeResult = await calculateFee(
-          "momo",
-          transactionTypeForFee,
-          Number(formData.amount)
-        );
-        // Only set the fee if it's empty or hasn't been manually modified
-        setFormData((prev) => ({
-          ...prev,
-          fee: prev.fee === "" ? feeResult.fee.toString() : prev.fee,
-        }));
-      } catch (err) {
-        setFormData((prev) => ({
-          ...prev,
-          fee: prev.fee === "" ? "0" : prev.fee,
-        }));
-      } finally {
-        setFeeLoading(false);
+      // Only auto-calculate if user hasn't manually modified the fee
+      if (!userModifiedFee) {
+        setFeeLoading(true);
+        try {
+          // Map transaction types for fee calculation
+          const transactionTypeForFee =
+            formData.type === "cash-in" ? "deposit" : "withdrawal";
+          const feeResult = await calculateFee(
+            "momo",
+            transactionTypeForFee,
+            Number(formData.amount)
+          );
+          setFormData((prev) => ({
+            ...prev,
+            fee: feeResult.fee.toString(),
+          }));
+        } catch (err) {
+          setFormData((prev) => ({
+            ...prev,
+            fee: "0",
+          }));
+        } finally {
+          setFeeLoading(false);
+        }
       }
     };
 
     fetchFee();
-  }, [formData.type, formData.amount, formData.provider, calculateFee]);
+  }, [
+    formData.type,
+    formData.amount,
+    formData.provider,
+    calculateFee,
+    userModifiedFee,
+  ]);
+
+  // Reset user modification flag when form is reset
+  useEffect(() => {
+    if (!formData.fee || formData.fee === "") {
+      setUserModifiedFee(false);
+    }
+  }, [formData.fee]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -779,9 +797,10 @@ export default function MoMoPage() {
                           step="0.01"
                           min="0"
                           value={formData.fee}
-                          onChange={(e) =>
-                            setFormData({ ...formData, fee: e.target.value })
-                          }
+                          onChange={(e) => {
+                            setFormData({ ...formData, fee: e.target.value });
+                            setUserModifiedFee(true);
+                          }}
                           placeholder="0.00"
                         />
                       </div>

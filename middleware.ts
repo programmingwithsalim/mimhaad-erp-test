@@ -59,8 +59,15 @@ const API_ROUTE_RESTRICTIONS: Record<
   "/api/settings": { roles: ["Admin", "Manager", "Finance"] },
   "/api/gl": { roles: ["Admin", "Finance"] },
   "/api/audit-logs": { roles: ["Admin", "Manager", "Finance"] },
-  "/api/float-accounts": { roles: ["Admin", "Manager", "Finance"] },
-  "/api/expenses": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/float-accounts": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
+  "/api/expenses": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
+  "/api/expenses-statistics": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
   "/api/commissions": { roles: ["Admin", "Manager", "Finance"] },
   "/api/reports": { roles: ["Admin", "Manager", "Finance"] },
   "/api/analytics": { roles: ["Admin", "Manager", "Finance"] },
@@ -80,6 +87,9 @@ export async function middleware(request: NextRequest) {
     "/api/debug/test-sql",
     "/api/debug/check-ezwich-gl-mappings",
     "/api/debug/fix-ezwich-mappings",
+    "/api/db/add-payment-source-to-fixed-assets",
+    "/api/db/add-payment-method-to-power-transactions",
+    "/api/db/fix-float-account-id-column",
   ];
 
   // Skip middleware for static files and Next.js internals

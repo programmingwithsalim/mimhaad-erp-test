@@ -1,28 +1,37 @@
-import { NextResponse } from "next/server"
-import { resetUserPassword, getUserById } from "@/lib/user-service"
+import { NextResponse } from "next/server";
+import { resetUserPassword, getUserById } from "@/lib/user-service";
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string  }> }) {
+export async function POST(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
   try {
-    const { id } = params
-    const body = await request.json()
-    const { newPassword, sendEmail = false } = body
+    const { id } = await params;
+    const body = await request.json();
+    const { sendEmail = false } = body;
+
+    // Always reset to "Password123!"
+    const newPassword = "Password123!";
 
     // Reset the password
-    const result = await resetUserPassword(id, newPassword)
+    const result = await resetUserPassword(id, newPassword);
 
     if (!result.success) {
-      return NextResponse.json({ error: "Failed to reset password" }, { status: 500 })
+      return NextResponse.json(
+        { error: "Failed to reset password" },
+        { status: 500 }
+      );
     }
 
     // Get user details for email notification
-    const user = await getUserById(id)
+    const user = await getUserById(id);
     if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 })
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
     // TODO: Send email notification if requested
     if (sendEmail) {
-      console.log(`Would send password reset email to ${user.email}`)
+      console.log(`Would send password reset email to ${user.email}`);
       // Implement email service here
     }
 
@@ -36,15 +45,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         lastName: user.lastName,
         email: user.email,
       },
-    })
+    });
   } catch (error) {
-    console.error("Error resetting password:", error)
+    console.error("Error resetting password:", error);
     return NextResponse.json(
       {
         error: "Failed to reset password",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

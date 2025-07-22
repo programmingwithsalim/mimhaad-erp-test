@@ -106,16 +106,7 @@ export default function PowerPageEnhancedFixed() {
         account.provider.toLowerCase().includes("nedco"))
   );
 
-  // Debug logging
-  console.log("🔍 [POWER] All float accounts:", floatAccounts.length);
-  console.log("🔍 [POWER] Power floats found:", powerFloats.length);
-  powerFloats.forEach((account) => {
-    console.log(
-      `  - ${account.provider} (${account.account_type}): GHS ${account.current_balance}`
-    );
-  });
-
-  // When preparing floatAccounts for DynamicFloatDisplay, include both power floats and cash in till accounts:
+  // When preparing floatAccounts for DynamicFloatDisplay, show power float accounts and cash-in-till for the branch:
   const allRelevantFloats = [
     ...floatAccounts.filter(
       (acc) =>
@@ -171,20 +162,6 @@ export default function PowerPageEnhancedFixed() {
 
     fetchFee();
   }, [watchedAmount, calculateFee]);
-
-  // Debug logging when float accounts load
-  useEffect(() => {
-    console.log("🔍 [POWER] Float accounts loaded:", floatAccounts.length);
-    console.log(
-      "🔍 [POWER] All accounts:",
-      floatAccounts.map((acc) => ({
-        provider: acc.provider,
-        account_type: acc.account_type,
-        is_active: acc.is_active,
-        balance: acc.current_balance,
-      }))
-    );
-  }, [floatAccounts]);
 
   const onSubmit = async (data: PowerTransactionFormData) => {
     if (!user) {
@@ -628,21 +605,25 @@ export default function PowerPageEnhancedFixed() {
 
             {/* Float Balances Sidebar */}
             <div className="space-y-4">
-              <DynamicFloatDisplay
-                selectedProvider={(() => {
-                  const selectedFloat = powerFloats.find(
-                    (f) => f.id === form.watch("floatAccountId")
-                  );
-                  return selectedFloat?.provider;
-                })()}
-                floatAccounts={allRelevantFloats.map((acc) => ({
-                  ...acc,
-                  account_name: acc.account_number || acc.provider || "",
-                }))}
-                serviceType="Power"
-                onRefresh={refreshAccounts}
-                isLoading={isLoadingAccounts}
-              />
+              {(() => {
+                // Since the EnhancedPowerTransactionForm has its own form state,
+                // we'll show all power float accounts in the DynamicFloatDisplay
+                // without requiring a specific provider to be selected
+                const selectedProvider = undefined; // Don't require a specific provider selection
+
+                return (
+                  <DynamicFloatDisplay
+                    selectedProvider={selectedProvider}
+                    floatAccounts={allRelevantFloats.map((acc) => ({
+                      ...acc,
+                      account_name: acc.account_number || acc.provider || "",
+                    }))}
+                    serviceType="power"
+                    onRefresh={refreshAccounts}
+                    isLoading={isLoadingAccounts}
+                  />
+                );
+              })()}
             </div>
           </div>
         </TabsContent>

@@ -217,6 +217,9 @@ export default function EZwichPage() {
     }
   }, [user?.branchId]);
 
+  // Track if user has manually modified the fee
+  const [userModifiedFee, setUserModifiedFee] = useState(false);
+
   useEffect(() => {
     const fetchFee = async () => {
       if (!withdrawalForm.amount) {
@@ -224,24 +227,34 @@ export default function EZwichPage() {
         return;
       }
 
-      try {
-        const feeResult = await calculateFee(
-          "e_zwich",
-          "withdrawal",
-          Number(withdrawalForm.amount)
-        );
-        setWithdrawalForm((prev) => ({
-          ...prev,
-          fee: feeResult.fee.toString(),
-        }));
-      } catch (error) {
-        console.error("Error calculating fee:", error);
-        setWithdrawalForm((prev) => ({ ...prev, fee: "0" }));
+      // Only auto-calculate if user hasn't manually modified the fee
+      if (!userModifiedFee) {
+        try {
+          const feeResult = await calculateFee(
+            "e_zwich",
+            "withdrawal",
+            Number(withdrawalForm.amount)
+          );
+          setWithdrawalForm((prev) => ({
+            ...prev,
+            fee: feeResult.fee.toString(),
+          }));
+        } catch (error) {
+          console.error("Error calculating fee:", error);
+          setWithdrawalForm((prev) => ({ ...prev, fee: "0" }));
+        }
       }
     };
 
     fetchFee();
-  }, [withdrawalForm.amount, calculateFee]);
+  }, [withdrawalForm.amount, calculateFee, userModifiedFee]);
+
+  // Reset user modification flag when form is reset
+  useEffect(() => {
+    if (!withdrawalForm.fee || withdrawalForm.fee === "") {
+      setUserModifiedFee(false);
+    }
+  }, [withdrawalForm.fee]);
 
   const handleWithdrawalSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -970,12 +983,13 @@ export default function EZwichPage() {
                           id="withdrawal_fee"
                           type="number"
                           value={withdrawalForm.fee || 0}
-                          onChange={(e) =>
+                          onChange={(e) => {
                             setWithdrawalForm({
                               ...withdrawalForm,
                               fee: e.target.value,
-                            })
-                          }
+                            });
+                            setUserModifiedFee(true);
+                          }}
                         />
                       </div>
                     </div>

@@ -491,7 +491,7 @@ export class TransactionManagementService {
     switch (sourceModule) {
       case "momo":
         if (type === "cash-in") return -(amount + fee); // float decreases
-        if (type === "cash-out") return amount + fee; // float increases
+        if (type === "cash-out") return amount; // float increases by amount only
         break;
       case "agency_banking":
         if (type === "deposit") return -amount; // float decreases by amount only
@@ -933,7 +933,7 @@ export class TransactionManagementService {
     switch (sourceModule) {
       case "momo":
         if (type === "cash-in") return amount + fee; // cash till increases
-        if (type === "cash-out") return -(amount + fee); // cash till decreases
+        if (type === "cash-out") return -amount + fee; // cash till decreases by amount, but keeps fee
         break;
       case "agency_banking":
         if (type === "deposit") return amount + fee; // cash till increases by amount + fee
