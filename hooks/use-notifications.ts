@@ -13,10 +13,33 @@ interface Notification {
   read_at?: string;
 }
 
+interface UserPreferences {
+  emailNotifications: boolean;
+  emailAddress: string;
+  smsNotifications: boolean;
+  phoneNumber: string;
+  pushNotifications: boolean;
+  transactionAlerts: boolean;
+  floatThresholdAlerts: boolean;
+  systemUpdates: boolean;
+  securityAlerts: boolean;
+  dailyReports: boolean;
+  weeklyReports: boolean;
+  loginAlerts: boolean;
+  marketingEmails: boolean;
+  quietHoursEnabled: boolean;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  alertFrequency: "immediate" | "hourly" | "daily";
+  reportFrequency: "daily" | "weekly" | "monthly";
+}
+
 export function useNotifications() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
   const fetchNotifications = useCallback(async () => {
@@ -184,16 +207,76 @@ export function useNotifications() {
 
   const unreadCount = notifications.filter((n) => !n.is_read).length;
 
+  // Load user preferences
+  const loadPreferences = useCallback(async (userId: string) => {
+    try {
+      setIsLoading(true);
+      const response = await fetch("/api/users/notification-settings");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success) {
+          setPreferences(data.data);
+        } else {
+          console.error("Failed to load preferences:", data.error);
+        }
+      } else {
+        console.error("Failed to fetch preferences");
+      }
+    } catch (error) {
+      console.error("Error loading preferences:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Save user preferences
+  const savePreferences = useCallback(
+    async (preferences: UserPreferences, userId: string) => {
+      try {
+        setIsLoading(true);
+        const response = await fetch("/api/users/notification-settings", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(preferences),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setPreferences(preferences);
+            return true;
+          } else {
+            throw new Error(data.error || "Failed to save preferences");
+          }
+        } else {
+          throw new Error("Failed to save preferences");
+        }
+      } catch (error) {
+        console.error("Error saving preferences:", error);
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
+
   useEffect(() => {
     fetchNotifications();
   }, [fetchNotifications]);
 
   return {
     notifications,
+    preferences,
     loading,
+    isLoading,
     updating,
     unreadCount,
     fetchNotifications,
+    loadPreferences,
+    savePreferences,
     markAsRead,
     deleteNotification,
     markAllAsRead,

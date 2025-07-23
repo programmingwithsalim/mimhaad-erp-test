@@ -211,13 +211,6 @@ export function SidebarNavigation() {
     new Set()
   );
 
-  // Debug log for user and userRole
-  useEffect(() => {
-    console.log("[Sidebar] user:", user);
-    console.log("[Sidebar] userRole:", userRole);
-    console.log("[Sidebar] authLoading:", authLoading);
-  }, [user, userRole, authLoading]);
-
   // Check if mobile on initial load
   useEffect(() => {
     const checkIsMobile = () => {
@@ -254,18 +247,7 @@ export function SidebarNavigation() {
       userRole || (user?.role ? normalizeRole(user.role) : null);
 
     const hasAccess = effectiveRole ? roles.includes(effectiveRole) : false;
-    console.log(
-      `[Sidebar] Checking permission for roles:`,
-      roles,
-      `userRole:`,
-      userRole,
-      `userRoleFromAuth:`,
-      user?.role,
-      `effectiveRole:`,
-      effectiveRole,
-      `hasAccess:`,
-      hasAccess
-    );
+
     return hasAccess;
   };
 
@@ -376,25 +358,8 @@ export function SidebarNavigation() {
               })
               .filter((section) => section.items.length > 0);
 
-            console.log("[Sidebar] Menu filtering:", {
-              userRole,
-              totalSections: menuItems.length,
-              visibleSections: visibleItems.length,
-              totalItems: menuItems.reduce(
-                (sum, section) => sum + section.items.length,
-                0
-              ),
-              visibleItems: visibleItems.reduce(
-                (sum, section) => sum + section.items.length,
-                0
-              ),
-            });
-
             // If no role-based items are visible, show fallback items
             if (visibleItems.length === 0) {
-              console.log(
-                "[Sidebar] No role-based items visible, showing fallback menu"
-              );
               return (
                 <div className="space-y-1">
                   {getFallbackMenuItems().map((item) => {

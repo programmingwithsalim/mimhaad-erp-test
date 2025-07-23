@@ -49,8 +49,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkSession = async () => {
     try {
-      console.log("Checking session...");
-
       const response = await fetch("/api/auth/session", {
         credentials: "include",
         cache: "no-store",
@@ -58,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Session check successful:", !!data.user);
+
         if (data.user) {
           // Ensure all user fields are properly mapped
           const userData = {
@@ -72,7 +70,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
         }
       } else {
-        console.log("Session check failed:", response.status);
         setUser(null);
       }
     } catch (error) {
@@ -85,7 +82,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      console.log("Logging in...");
       setIsLoading(true);
 
       const response = await fetch("/api/auth/login", {
@@ -99,7 +95,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        console.log("Login successful, user data:", data.user);
 
         // Ensure all user fields are properly mapped
         const userData = {
@@ -109,18 +104,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             `${data.user.firstName || ""} ${data.user.lastName || ""}`.trim(),
         };
 
-        console.log("Setting user data:", userData);
         setUser(userData);
 
         // Add a small delay to ensure state is updated before redirect
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        console.log("Redirecting to dashboard...");
         router.push("/dashboard");
 
         // Force a page refresh after a short delay to ensure all components load with correct role
         setTimeout(() => {
-          console.log("Force refreshing page to ensure proper role loading...");
           window.location.reload();
         }, 500);
 
@@ -140,7 +132,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      console.log("Logging out...");
       setIsLoading(true);
 
       // Call logout API to invalidate database session
@@ -150,7 +141,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (response.ok) {
-        console.log("Logout API successful");
       } else {
         console.error("Logout API failed:", response.status);
       }
