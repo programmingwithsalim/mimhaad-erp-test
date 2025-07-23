@@ -138,27 +138,27 @@ export default function MoMoPage() {
 
       // Only auto-calculate if user hasn't manually modified the fee
       if (!userModifiedFee) {
-        setFeeLoading(true);
-        try {
-          // Map transaction types for fee calculation
-          const transactionTypeForFee =
-            formData.type === "cash-in" ? "deposit" : "withdrawal";
-          const feeResult = await calculateFee(
-            "momo",
-            transactionTypeForFee,
-            Number(formData.amount)
-          );
-          setFormData((prev) => ({
-            ...prev,
+      setFeeLoading(true);
+      try {
+        // Map transaction types for fee calculation
+        const transactionTypeForFee =
+          formData.type === "cash-in" ? "deposit" : "withdrawal";
+        const feeResult = await calculateFee(
+          "momo",
+          transactionTypeForFee,
+          Number(formData.amount)
+        );
+        setFormData((prev) => ({
+          ...prev,
             fee: feeResult.fee.toString(),
-          }));
-        } catch (err) {
-          setFormData((prev) => ({
-            ...prev,
+        }));
+      } catch (err) {
+        setFormData((prev) => ({
+          ...prev,
             fee: "0",
-          }));
-        } finally {
-          setFeeLoading(false);
+        }));
+      } finally {
+        setFeeLoading(false);
         }
       }
     };

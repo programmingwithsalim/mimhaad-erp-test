@@ -112,21 +112,21 @@ export default function AgencyBankingPage() {
 
       // Only auto-calculate if user hasn't manually modified the fee
       if (!userModifiedFee) {
-        setFeeLoading(true);
-        try {
-          const feeResult = await calculateFee(
-            "agency_banking",
-            formData.type,
-            Number(formData.amount)
-          );
-          setFormData((prev) => ({
-            ...prev,
-            fee: feeResult.fee.toString(),
-          }));
-        } catch (err) {
-          setFormData((prev) => ({ ...prev, fee: "0" }));
-        } finally {
-          setFeeLoading(false);
+      setFeeLoading(true);
+      try {
+        const feeResult = await calculateFee(
+          "agency_banking",
+          formData.type,
+          Number(formData.amount)
+        );
+        setFormData((prev) => ({
+          ...prev,
+          fee: feeResult.fee.toString(),
+        }));
+      } catch (err) {
+        setFormData((prev) => ({ ...prev, fee: "0" }));
+      } finally {
+        setFeeLoading(false);
         }
       }
     };

@@ -309,14 +309,14 @@ export async function POST(request: NextRequest) {
         console.log(
           "🔍 [POWER TRANSACTION] Non-cash payment - crediting fee to cash-in-till"
         );
-        await sql`
-          UPDATE float_accounts
+    await sql`
+      UPDATE float_accounts
           SET current_balance = current_balance + ${fee},
-              updated_at = NOW()
-          WHERE branch_id = ${body.branchId}
-            AND account_type = 'cash-in-till'
-            AND is_active = true
-        `;
+          updated_at = NOW()
+      WHERE branch_id = ${body.branchId}
+        AND account_type = 'cash-in-till'
+        AND is_active = true
+    `;
       }
     }
 

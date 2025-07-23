@@ -114,46 +114,46 @@ export function WithdrawalForm({ onSuccess, onCancel }: WithdrawalFormProps) {
   // Calculate fee when amount changes (only if user hasn't manually modified)
   useEffect(() => {
     if (!userModifiedFee) {
-      if (feeConfig && watchAmount > 0) {
-        let calculatedFee = 0;
+    if (feeConfig && watchAmount > 0) {
+      let calculatedFee = 0;
 
-        if (feeConfig.fee_type === "percentage") {
-          calculatedFee = watchAmount * (Number(feeConfig.fee_value) / 100);
-        } else if (feeConfig.fee_type === "fixed") {
-          calculatedFee = Number(feeConfig.fee_value);
-        } else if (feeConfig.fee_type === "tiered") {
-          const tiers = feeConfig.tier_config || [];
-          for (const tier of tiers) {
-            if (
-              watchAmount >= tier.min_amount &&
-              watchAmount <= tier.max_amount
-            ) {
-              calculatedFee = Number(tier.fee_value);
-              break;
-            }
+      if (feeConfig.fee_type === "percentage") {
+        calculatedFee = watchAmount * (Number(feeConfig.fee_value) / 100);
+      } else if (feeConfig.fee_type === "fixed") {
+        calculatedFee = Number(feeConfig.fee_value);
+      } else if (feeConfig.fee_type === "tiered") {
+        const tiers = feeConfig.tier_config || [];
+        for (const tier of tiers) {
+          if (
+            watchAmount >= tier.min_amount &&
+            watchAmount <= tier.max_amount
+          ) {
+            calculatedFee = Number(tier.fee_value);
+            break;
           }
         }
-
-        // Apply min/max limits
-        if (
-          feeConfig.minimum_fee &&
-          calculatedFee < Number(feeConfig.minimum_fee)
-        ) {
-          calculatedFee = Number(feeConfig.minimum_fee);
-        }
-        if (
-          feeConfig.maximum_fee &&
-          calculatedFee > Number(feeConfig.maximum_fee)
-        ) {
-          calculatedFee = Number(feeConfig.maximum_fee);
-        }
-
-        form.setValue("fee", Number(calculatedFee.toFixed(2)));
-      } else if (watchAmount > 0) {
-        // Fallback fee calculation
-        const fallbackFee = Math.max(5, watchAmount * 0.01); // 1% with minimum 5 GHS
-        form.setValue("fee", Number(fallbackFee.toFixed(2)));
       }
+
+      // Apply min/max limits
+      if (
+        feeConfig.minimum_fee &&
+        calculatedFee < Number(feeConfig.minimum_fee)
+      ) {
+        calculatedFee = Number(feeConfig.minimum_fee);
+      }
+      if (
+        feeConfig.maximum_fee &&
+        calculatedFee > Number(feeConfig.maximum_fee)
+      ) {
+        calculatedFee = Number(feeConfig.maximum_fee);
+      }
+
+      form.setValue("fee", Number(calculatedFee.toFixed(2)));
+    } else if (watchAmount > 0) {
+      // Fallback fee calculation
+      const fallbackFee = Math.max(5, watchAmount * 0.01); // 1% with minimum 5 GHS
+      form.setValue("fee", Number(fallbackFee.toFixed(2)));
+    }
     }
   }, [watchAmount, feeConfig, form, userModifiedFee]);
 

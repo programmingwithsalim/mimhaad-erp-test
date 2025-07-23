@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDatabaseSession } from "@/lib/database-session-service";
 import { sql } from "@/lib/db";
 import { neon } from "@neondatabase/serverless";
 import fs from "fs";
@@ -9,44 +8,103 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getDatabaseSession();
+    // Get backup settings from system_config
+    const backupSettingsResult = await sql`
+      SELECT config_value FROM system_config 
+      WHERE config_key = 'backupSettings' AND category = 'general'
+    `;
 
-    if (!session?.user) {
+    if (backupSettingsResult.length === 0) {
       return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
+        {
+          success: false,
+          error: "Backup settings not found",
+        },
+        { status: 404 }
       );
     }
 
-    // Check if user is admin
-    if (session.user.role !== "Admin") {
-      return NextResponse.json(
-        { success: false, error: "Access denied. Admin privileges required." },
-        { status: 403 }
-      );
+    const backupSettings = JSON.parse(backupSettingsResult[0].config_value);
+
+    // Check if auto-backup is enabled
+    if (!backupSettings.autoBackup) {
+      return NextResponse.json({
+        success: false,
+        message: "Auto-backup is disabled",
+      });
+    }
+
+    // Check if it's time for backup based on frequency
+    const shouldBackup = await checkBackupSchedule(
+      backupSettings.backupFrequency
+    );
+
+    if (!shouldBackup) {
+      return NextResponse.json({
+        success: false,
+        message: "Not time for backup yet",
+      });
     }
 
     // Create backup
     const backupResult = await createSystemBackup();
 
+    // Clean up old backups based on retention policy
+    await cleanupOldBackups(backupSettings.retentionDays);
+
     return NextResponse.json({
       success: true,
       data: backupResult,
-      message: "System backup created successfully",
+      message: "Auto-backup completed successfully",
     });
   } catch (error) {
-    console.error("Error creating backup:", error);
+    console.error("Error in auto-backup:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to create backup" },
+      { success: false, error: "Failed to create auto-backup" },
       { status: 500 }
     );
+  }
+}
+
+async function checkBackupSchedule(frequency: string): Promise<boolean> {
+  try {
+    // Get last backup date
+    const lastBackupResult = await sql`
+      SELECT created_at FROM system_backups 
+      WHERE backup_type = 'auto' 
+      ORDER BY created_at DESC 
+      LIMIT 1
+    `;
+
+    if (lastBackupResult.length === 0) {
+      return true; // No previous backup, should backup
+    }
+
+    const lastBackup = new Date(lastBackupResult[0].created_at);
+    const now = new Date();
+    const hoursSinceLastBackup =
+      (now.getTime() - lastBackup.getTime()) / (1000 * 60 * 60);
+
+    switch (frequency) {
+      case "daily":
+        return hoursSinceLastBackup >= 24;
+      case "weekly":
+        return hoursSinceLastBackup >= 168; // 7 days
+      case "monthly":
+        return hoursSinceLastBackup >= 720; // 30 days
+      default:
+        return hoursSinceLastBackup >= 24; // Default to daily
+    }
+  } catch (error) {
+    console.error("Error checking backup schedule:", error);
+    return true; // If error, allow backup
   }
 }
 
 async function createSystemBackup() {
   try {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const backupId = `backup_${timestamp}`;
+    const backupId = `auto_backup_${timestamp}`;
 
     // Create backup directory if it doesn't exist
     const backupDir = path.join(process.cwd(), "backups");
@@ -72,7 +130,7 @@ async function createSystemBackup() {
       backupId,
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version || "1.0.0",
-      backupType: "full",
+      backupType: "auto",
       schema: schemaResult,
       data: {},
       metadata: {
@@ -82,24 +140,19 @@ async function createSystemBackup() {
       },
     };
 
-    // List of all tables to backup (based on schema analysis)
+    // List of all tables to backup
     const tablesToBackup = [
-      // Core system tables
       "users",
       "branches",
       "system_config",
       "system_settings",
       "system_backups",
-
-      // Transaction tables
       "momo_transactions",
       "agency_banking_transactions",
       "e_zwich_transactions",
       "power_transactions",
       "jumia_transactions",
       "ezwich_transactions",
-
-      // Financial tables
       "gl_accounts",
       "gl_transactions",
       "gl_journal_entries",
@@ -109,32 +162,22 @@ async function createSystemBackup() {
       "commissions",
       "expenses",
       "expense_heads",
-
-      // E-Zwich specific tables
       "e_zwich_card_issuances",
       "e_zwich_withdrawals",
       "e_zwich_partner_accounts",
       "ezwich_card_batches",
       "ezwich_card_issuance",
       "ezwich_cards",
-
-      // Security and audit tables
       "audit_logs",
       "security_events",
       "login_attempts",
       "user_sessions",
-
-      // Configuration tables
       "fee_config",
       "partner_banks",
       "permissions",
       "roles",
-
-      // Notification tables
       "notifications",
       "user_notification_settings",
-
-      // Other tables
       "fixed_assets",
       "jumia_packages",
       "user_branch_assignments",
@@ -145,17 +188,11 @@ async function createSystemBackup() {
     // Backup each table
     for (const tableName of tablesToBackup) {
       try {
-        console.log(`Backing up table: ${tableName}`);
-
-        // Get all data from table (no LIMIT - full backup)
         const tableData = await sql`SELECT * FROM ${sql(tableName)}`;
-
         backupData.data[tableName] = tableData;
         totalRecords += tableData.length;
-
-        console.log(`✓ ${tableName}: ${tableData.length} records`);
       } catch (error) {
-        console.log(`⚠ Table ${tableName} not found or error:`, error.message);
+        console.log(`Table ${tableName} not found, skipping`);
         backupData.data[tableName] = [];
       }
     }
@@ -171,9 +208,9 @@ async function createSystemBackup() {
     // Update backup size
     backupData.metadata.backupSize = fs.statSync(backupFilePath).size;
 
-    // Record backup in database (if table exists)
+    // Record backup in database
     try {
-      const backupRecord = await sql`
+      await sql`
         INSERT INTO system_backups (
           backup_id,
           backup_type,
@@ -184,13 +221,13 @@ async function createSystemBackup() {
           created_at
         ) VALUES (
           ${backupId},
-          'full',
+          'auto',
           'completed',
           ${backupFilePath},
           ${backupData.metadata.backupSize},
           ${JSON.stringify(backupData.metadata)},
           NOW()
-        ) RETURNING *
+        )
       `;
     } catch (error) {
       console.log("system_backups table not found, skipping database record");
@@ -204,7 +241,40 @@ async function createSystemBackup() {
       createdAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error("Error creating backup:", error);
+    console.error("Error creating auto-backup:", error);
     throw error;
+  }
+}
+
+async function cleanupOldBackups(retentionDays: number) {
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+    // Get old backup files to delete
+    const oldBackups = await sql`
+      SELECT backup_id, file_path FROM system_backups 
+      WHERE created_at < ${cutoffDate.toISOString()}
+    `;
+
+    for (const backup of oldBackups) {
+      try {
+        // Delete file
+        if (fs.existsSync(backup.file_path)) {
+          fs.unlinkSync(backup.file_path);
+        }
+
+        // Delete database record
+        await sql`
+          DELETE FROM system_backups WHERE backup_id = ${backup.backup_id}
+        `;
+
+        console.log(`Deleted old backup: ${backup.backup_id}`);
+      } catch (error) {
+        console.error(`Error deleting backup ${backup.backup_id}:`, error);
+      }
+    }
+  } catch (error) {
+    console.error("Error cleaning up old backups:", error);
   }
 }

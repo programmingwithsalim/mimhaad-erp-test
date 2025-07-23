@@ -229,19 +229,19 @@ export default function EZwichPage() {
 
       // Only auto-calculate if user hasn't manually modified the fee
       if (!userModifiedFee) {
-        try {
-          const feeResult = await calculateFee(
-            "e_zwich",
-            "withdrawal",
-            Number(withdrawalForm.amount)
-          );
-          setWithdrawalForm((prev) => ({
-            ...prev,
-            fee: feeResult.fee.toString(),
-          }));
-        } catch (error) {
-          console.error("Error calculating fee:", error);
-          setWithdrawalForm((prev) => ({ ...prev, fee: "0" }));
+      try {
+        const feeResult = await calculateFee(
+          "e_zwich",
+          "withdrawal",
+          Number(withdrawalForm.amount)
+        );
+        setWithdrawalForm((prev) => ({
+          ...prev,
+          fee: feeResult.fee.toString(),
+        }));
+      } catch (error) {
+        console.error("Error calculating fee:", error);
+        setWithdrawalForm((prev) => ({ ...prev, fee: "0" }));
         }
       }
     };

@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Check if user is admin
-    if (session.user.role !== "admin") {
+    if (session.user.role !== "Admin") {
       return NextResponse.json(
         { success: false, error: "Access denied. Admin privileges required." },
         { status: 403 }
@@ -52,7 +52,6 @@ async function getSystemStats() {
     const tableCounts = await sql`
       SELECT 
         (SELECT COUNT(*) FROM users) as user_count,
-        (SELECT COUNT(*) FROM transactions) as transaction_count,
         (SELECT COUNT(*) FROM audit_logs) as audit_log_count,
         (SELECT COUNT(*) FROM branches) as branch_count
     `;
@@ -88,7 +87,6 @@ async function getSystemStats() {
       lastBackup: "Unknown",
       cacheSize: "N/A",
       user_count: 0,
-      transaction_count: 0,
       audit_log_count: 0,
       branch_count: 0,
       databaseSize: "Unknown",
@@ -135,6 +133,7 @@ async function getLastBackupDate(): Promise<string> {
 
     return "Never";
   } catch (error) {
+    console.log("system_backups table not found");
     return "Never";
   }
 }

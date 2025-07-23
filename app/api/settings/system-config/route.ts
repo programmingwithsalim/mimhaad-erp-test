@@ -6,6 +6,13 @@ export async function GET() {
   try {
     const session = await getDatabaseSession();
 
+    console.log("GET Session check:", {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      userRole: session?.user?.role,
+      userId: session?.user?.id,
+    });
+
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
@@ -13,8 +20,14 @@ export async function GET() {
       );
     }
 
-    // Check if user is admin
-    if (session.user.role !== "admin") {
+    // Check if user is admin (case-sensitive check)
+    if (session.user.role !== "Admin") {
+      console.log(
+        "GET Access denied for user:",
+        session.user.email,
+        "Role:",
+        session.user.role
+      );
       return NextResponse.json(
         { success: false, error: "Access denied. Admin privileges required." },
         { status: 403 }
@@ -23,12 +36,20 @@ export async function GET() {
 
     // Get system configuration from database
     const configResult = await sql`
-      SELECT config FROM system_config WHERE id = 1
+      SELECT config_key, config_value FROM system_config WHERE category = 'general'
     `;
 
-    const config = configResult[0];
+    // Convert key-value pairs to object
+    const config: any = {};
+    for (const row of configResult) {
+      try {
+        config[row.config_key] = JSON.parse(row.config_value);
+      } catch {
+        config[row.config_key] = row.config_value;
+      }
+    }
 
-    if (!config) {
+    if (Object.keys(config).length === 0) {
       // Return default configuration if none exists
       const defaultConfig = {
         systemName: "Mimhaad Financial Services",
@@ -67,7 +88,7 @@ export async function GET() {
 
     return NextResponse.json({
       success: true,
-      data: config.config,
+      data: config,
     });
   } catch (error) {
     console.error("Error fetching system config:", error);
@@ -82,6 +103,13 @@ export async function PUT(request: NextRequest) {
   try {
     const session = await getDatabaseSession();
 
+    console.log("Session check:", {
+      hasSession: !!session,
+      hasUser: !!session?.user,
+      userRole: session?.user?.role,
+      userId: session?.user?.id,
+    });
+
     if (!session?.user) {
       return NextResponse.json(
         { success: false, error: "Unauthorized" },
@@ -89,8 +117,14 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Check if user is admin
-    if (session.user.role !== "admin") {
+    // Check if user is admin (case-sensitive check)
+    if (session.user.role !== "Admin") {
+      console.log(
+        "Access denied for user:",
+        session.user.email,
+        "Role:",
+        session.user.role
+      );
       return NextResponse.json(
         { success: false, error: "Access denied. Admin privileges required." },
         { status: 403 }
@@ -98,6 +132,14 @@ export async function PUT(request: NextRequest) {
     }
 
     const body = await request.json();
+
+    console.log("Received system config update:", {
+      hasSystemName: !!body.systemName,
+      hasPasswordPolicy: !!body.passwordPolicy,
+      hasBackupSettings: !!body.backupSettings,
+      hasSecuritySettings: !!body.securitySettings,
+      bodyKeys: Object.keys(body),
+    });
 
     // Validate required fields
     if (!body.systemName) {
@@ -107,20 +149,34 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update or create system configuration
-    const config = await sql`
-      INSERT INTO system_config (id, config, created_at, updated_at)
-      VALUES (1, ${JSON.stringify(body)}, NOW(), NOW())
-      ON CONFLICT (id) 
-      DO UPDATE SET 
-        config = EXCLUDED.config,
-        updated_at = NOW()
-      RETURNING config
-    `;
+    // Convert the body object to key-value pairs and insert/update
+    const configEntries = [
+      { key: "systemName", value: body.systemName },
+      { key: "systemVersion", value: body.systemVersion },
+      { key: "maintenanceMode", value: JSON.stringify(body.maintenanceMode) },
+      { key: "debugMode", value: JSON.stringify(body.debugMode) },
+      { key: "sessionTimeout", value: JSON.stringify(body.sessionTimeout) },
+      { key: "maxLoginAttempts", value: JSON.stringify(body.maxLoginAttempts) },
+      { key: "passwordPolicy", value: JSON.stringify(body.passwordPolicy) },
+      { key: "backupSettings", value: JSON.stringify(body.backupSettings) },
+      { key: "securitySettings", value: JSON.stringify(body.securitySettings) },
+    ];
+
+    // Insert or update each configuration entry
+    for (const entry of configEntries) {
+      await sql`
+        INSERT INTO system_config (config_key, config_value, category, updated_at)
+        VALUES (${entry.key}, ${entry.value}, 'general', NOW())
+        ON CONFLICT (config_key) 
+        DO UPDATE SET 
+          config_value = EXCLUDED.config_value,
+          updated_at = NOW()
+      `;
+    }
 
     return NextResponse.json({
       success: true,
-      data: config[0].config,
+      data: body,
       message: "System configuration updated successfully",
     });
   } catch (error) {
