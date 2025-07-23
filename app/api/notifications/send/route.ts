@@ -16,12 +16,12 @@ export async function POST(request: Request) {
     switch (type) {
       case "welcome":
         emailContent = EmailTemplates.welcome(data.userName)
-        smsContent = `Welcome to FinTech Platform, ${data.userName}! Your account has been created successfully.`
+        smsContent = `Welcome to Mimhaad Financial Services, ${data.userName}! Your account has been created successfully.`
         break
 
       case "password-reset":
         emailContent = EmailTemplates.passwordReset(data.userName, data.resetLink)
-        smsContent = `Password reset requested for your FinTech Platform account. Check your email for the reset link.`
+        smsContent = `Password reset requested for your Mimhaad Financial Services account. Check your email for the reset link.`
         break
 
       case "transaction-alert":

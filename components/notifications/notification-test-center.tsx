@@ -52,7 +52,7 @@ export function NotificationTestCenter() {
   const [testEmail, setTestEmail] = useState("");
   const [testPhone, setTestPhone] = useState("");
   const [testMessage, setTestMessage] = useState(
-    "This is a test notification from your FinTech platform."
+    "This is a test notification from Mimhaad Financial Services."
   );
   const [notificationType, setNotificationType] = useState("email");
   const [scenarioType, setScenarioType] = useState("transaction_alert");
@@ -137,7 +137,7 @@ export function NotificationTestCenter() {
     });
 
     try {
-      const response = await fetch("/api/notifications/test", {
+      const response = await fetch("/api/notifications/test-sms", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -145,7 +145,7 @@ export function NotificationTestCenter() {
         body: JSON.stringify({
           type: "email",
           recipient: testEmail,
-          subject: "Test Email from FinTech Platform",
+          subject: "Test Email from Mimhaad Financial Services",
           message: testMessage,
         }),
       });
@@ -203,7 +203,9 @@ export function NotificationTestCenter() {
       const response = await fetch("/api/notifications/test-sms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Optionally, you could allow custom message/phone via body
+        body: JSON.stringify({
+          testPhone: testPhone,
+        }),
       });
       const result = await response.json();
       if (result.success) {

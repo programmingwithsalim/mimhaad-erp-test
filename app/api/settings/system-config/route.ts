@@ -1,76 +1,133 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
-
-const sql = neon(process.env.DATABASE_URL!)
+import { NextRequest, NextResponse } from "next/server";
+import { getDatabaseSession } from "@/lib/database-session-service";
+import { sql } from "@/lib/db";
 
 export async function GET() {
   try {
-    // Ensure system_config table exists
-    await sql`
-      CREATE TABLE IF NOT EXISTS system_config (
-        id SERIAL PRIMARY KEY,
-        config_key VARCHAR(255) UNIQUE NOT NULL,
-        config_value TEXT,
-        category VARCHAR(100) NOT NULL,
-        description TEXT,
-        data_type VARCHAR(20) DEFAULT 'string',
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_by INTEGER
-      )
-    `
+    const session = await getDatabaseSession();
 
-    const configs = await sql`
-      SELECT * FROM system_config 
-      ORDER BY category, config_key
-    `
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    // Check if user is admin
+    if (session.user.role !== "admin") {
+      return NextResponse.json(
+        { success: false, error: "Access denied. Admin privileges required." },
+        { status: 403 }
+      );
+    }
+
+    // Get system configuration from database
+    const configResult = await sql`
+      SELECT config FROM system_config WHERE id = 1
+    `;
+
+    const config = configResult[0];
+
+    if (!config) {
+      // Return default configuration if none exists
+      const defaultConfig = {
+        systemName: "Mimhaad Financial Services",
+        systemVersion: "1.0.0",
+        maintenanceMode: false,
+        debugMode: false,
+        sessionTimeout: 30,
+        maxLoginAttempts: 5,
+        passwordPolicy: {
+          minLength: 8,
+          requireUppercase: true,
+          requireLowercase: true,
+          requireNumbers: true,
+          requireSpecialChars: true,
+        },
+        backupSettings: {
+          autoBackup: true,
+          backupFrequency: "daily",
+          retentionDays: 30,
+          backupLocation: "",
+        },
+        securitySettings: {
+          enableTwoFactor: false,
+          requireTwoFactorForAdmins: true,
+          enableAuditLogs: true,
+          enableIpWhitelist: false,
+          allowedIps: "",
+        },
+      };
+
+      return NextResponse.json({
+        success: true,
+        data: defaultConfig,
+      });
+    }
 
     return NextResponse.json({
       success: true,
-      data: configs,
-    })
+      data: config.config,
+    });
   } catch (error) {
-    console.error("Error fetching system config:", error)
+    console.error("Error fetching system config:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch system configuration",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
+      { success: false, error: "Failed to fetch system configuration" },
+      { status: 500 }
+    );
   }
 }
 
-export async function PUT(request: Request) {
+export async function PUT(request: NextRequest) {
   try {
-    const { configs, userId } = await request.json()
+    const session = await getDatabaseSession();
 
-    if (!Array.isArray(configs)) {
-      return NextResponse.json({ success: false, error: "Invalid configuration data" }, { status: 400 })
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
     }
 
-    // Update or insert each configuration
-    for (const config of configs) {
-      const { config_key, config_value } = config
-
-      await sql`
-        INSERT INTO system_config (config_key, config_value, category, updated_by, updated_at)
-        VALUES (${config_key}, ${config_value}, 'system', ${userId || 1}, NOW())
-        ON CONFLICT (config_key) 
-        DO UPDATE SET 
-          config_value = EXCLUDED.config_value,
-          updated_by = EXCLUDED.updated_by,
-          updated_at = EXCLUDED.updated_at
-      `
+    // Check if user is admin
+    if (session.user.role !== "admin") {
+      return NextResponse.json(
+        { success: false, error: "Access denied. Admin privileges required." },
+        { status: 403 }
+      );
     }
+
+    const body = await request.json();
+
+    // Validate required fields
+    if (!body.systemName) {
+      return NextResponse.json(
+        { success: false, error: "System name is required" },
+        { status: 400 }
+      );
+    }
+
+    // Update or create system configuration
+    const config = await sql`
+      INSERT INTO system_config (id, config, created_at, updated_at)
+      VALUES (1, ${JSON.stringify(body)}, NOW(), NOW())
+      ON CONFLICT (id) 
+      DO UPDATE SET 
+        config = EXCLUDED.config,
+        updated_at = NOW()
+      RETURNING config
+    `;
 
     return NextResponse.json({
       success: true,
+      data: config[0].config,
       message: "System configuration updated successfully",
-    })
+    });
   } catch (error) {
-    console.error("Error updating system config:", error)
-    return NextResponse.json({ success: false, error: "Failed to update system configuration" }, { status: 500 })
+    console.error("Error updating system config:", error);
+    return NextResponse.json(
+      { success: false, error: "Failed to update system configuration" },
+      { status: 500 }
+    );
   }
 }

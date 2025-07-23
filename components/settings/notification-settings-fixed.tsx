@@ -139,7 +139,7 @@ export function NotificationSettingsFixed() {
 
   const testNotification = async (type: "email" | "sms") => {
     try {
-      const response = await fetch("/api/notifications/test", {
+      const response = await fetch("/api/notifications/test-sms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

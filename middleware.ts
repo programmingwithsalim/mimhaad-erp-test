@@ -90,6 +90,7 @@ export async function middleware(request: NextRequest) {
     "/api/db/add-payment-source-to-fixed-assets",
     "/api/db/add-payment-method-to-power-transactions",
     "/api/db/fix-float-account-id-column",
+    "/api/db/add-system-config-table",
   ];
 
   // Skip middleware for static files and Next.js internals

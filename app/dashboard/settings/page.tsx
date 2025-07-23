@@ -11,8 +11,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { SystemConfigSettings } from "@/components/settings/system-config-settings";
+import { GeneralConfiguration } from "@/components/settings/general-configuration";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { SettingsIcon, Shield, Users } from "lucide-react";
+import { SettingsIcon, Shield, Users, Database } from "lucide-react";
 import { RolePermissionSettings } from "@/components/settings/role-permission-settings";
 import { normalizeRole } from "@/lib/rbac/unified-rbac";
 
@@ -74,6 +75,12 @@ const SettingsPage = () => {
       label: "System",
       icon: SettingsIcon,
       description: "System configuration, limits, fees and communication",
+    },
+    {
+      id: "general",
+      label: "General Configuration",
+      icon: Database,
+      description: "System-wide settings and administrative functions",
     },
   ];
 
@@ -172,6 +179,22 @@ const SettingsPage = () => {
                   </p>
                 </div>
                 <SystemConfigSettings userRole={user?.role} />
+              </div>
+            )}
+
+            {/* General Configuration */}
+            {activeTab === "general" && (
+              <div className="space-y-6">
+                <div>
+                  <h2 className="text-xl font-semibold flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    General Configuration
+                  </h2>
+                  <p className="text-muted-foreground text-sm mt-1">
+                    System-wide settings and administrative functions
+                  </p>
+                </div>
+                <GeneralConfiguration userRole={user?.role} />
               </div>
             )}
           </div>

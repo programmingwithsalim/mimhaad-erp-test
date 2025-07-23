@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Form,
@@ -124,9 +125,11 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
     message: string;
   } | null>(null);
   const [allSmsConfigs, setAllSmsConfigs] = useState<any>({});
-  const [selectedSmsProvider, setSelectedSmsProvider] = useState(
-    initialSmsConfig.smsProvider
-  );
+  const [selectedSmsProvider, setSelectedSmsProvider] = useState<
+    "hubtel" | "twilio" | "custom" | "smsonlinegh"
+  >(initialSmsConfig.smsProvider);
+  const [testPhoneNumber, setTestPhoneNumber] =
+    useState<string>("+233241378880");
 
   const emailForm = useForm<EmailConfigValues>({
     resolver: zodResolver(emailConfigSchema),
@@ -441,13 +444,12 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
 
     try {
       const values = smsForm.getValues();
-      const response = await fetch("/api/notifications/test", {
+      const response = await fetch("/api/notifications/test-sms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: "sms",
           config: values,
-          testPhone: "+233241378880", // Test phone number
+          testPhone: testPhoneNumber,
         }),
         credentials: "include", // Ensure session token is sent
       });
@@ -839,7 +841,13 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                               <Select
                                 onValueChange={(val) => {
                                   field.onChange(val);
-                                  setSelectedSmsProvider(val);
+                                  setSelectedSmsProvider(
+                                    val as
+                                      | "hubtel"
+                                      | "twilio"
+                                      | "custom"
+                                      | "smsonlinegh"
+                                  );
                                 }}
                                 value={field.value}
                               >
@@ -871,7 +879,10 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                             <FormItem>
                               <FormLabel>Sender ID</FormLabel>
                               <FormControl>
-                                <Input placeholder="Mimhaad Finance" {...field} />
+                                <Input
+                                  placeholder="Mimhaad Finance"
+                                  {...field}
+                                />
                               </FormControl>
                               <FormDescription>
                                 SMS sender ID (alphanumeric, max 11 chars)
@@ -963,6 +974,22 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                             </FormItem>
                           )}
                         />
+                      </div>
+
+                      {/* Test Phone Number Input */}
+                      <div className="space-y-2">
+                        <Label htmlFor="testPhone">Test Phone Number</Label>
+                        <Input
+                          id="testPhone"
+                          type="tel"
+                          placeholder="+233241378880"
+                          value={testPhoneNumber}
+                          onChange={(e) => setTestPhoneNumber(e.target.value)}
+                        />
+                        <p className="text-sm text-muted-foreground">
+                          Enter the phone number where you want to receive the
+                          test SMS
+                        </p>
                       </div>
 
                       {/* SMS Test Result */}

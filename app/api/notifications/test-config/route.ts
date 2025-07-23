@@ -18,7 +18,7 @@ export async function POST() {
         test_endpoint: "/api/notifications/test",
       },
       sms_provider: {
-        name: "Twilio",
+        name: "Hubtel",
         status: "not_configured",
         api_key: "not_set",
         phone_number: "not_set",
@@ -46,7 +46,7 @@ export async function POST() {
             Authorization: `Bearer ${resendApiKey}`,
           },
           body: JSON.stringify({
-            from: "FinTech Platform <programmingwithsalim@gmail.com>",
+            from: "Mimhaad Financial Services <programmingwithsalim@gmail.com>",
             to: ["test@example.com"], // This will fail but test the API connection
             subject: "Configuration Test",
             html: "<p>This is a configuration test</p>",

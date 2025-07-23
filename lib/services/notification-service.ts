@@ -230,6 +230,27 @@ export class NotificationService {
         WHERE user_id = ${userId}
       `;
 
+      // Get system SMS configuration
+      const systemConfig = await sql`
+        SELECT config_key, config_value
+        FROM system_config
+        WHERE config_key IN (
+          'sms_provider',
+          'hubtel_sms_api_key',
+          'hubtel_sms_api_secret', 
+          'hubtel_sms_sender_id',
+          'smsonlinegh_sms_api_key',
+          'smsonlinegh_sms_api_secret',
+          'smsonlinegh_sms_sender_id'
+        )
+      `;
+
+      // Convert system config to object
+      const systemConfigObj = systemConfig.reduce((acc: any, config: any) => {
+        acc[config.config_key] = config.config_value;
+        return acc;
+      }, {});
+
       if (settings.length === 0) {
         // Get user's email and phone from users table as fallback
         const user = await sql`
@@ -238,7 +259,7 @@ export class NotificationService {
 
         if (user.length === 0) return null;
 
-        // Return default settings with user's contact info
+        // Return default settings with user's contact info and system SMS config
         return {
           email_enabled: true,
           sms_enabled: false,
@@ -250,6 +271,16 @@ export class NotificationService {
           low_balance_threshold: 100,
           email_address: user[0].email,
           phone_number: user[0].phone,
+          sms_provider: systemConfigObj.sms_provider || "hubtel",
+          sms_api_key:
+            systemConfigObj.hubtel_sms_api_key ||
+            systemConfigObj.smsonlinegh_sms_api_key,
+          sms_api_secret:
+            systemConfigObj.hubtel_sms_api_secret ||
+            systemConfigObj.smsonlinegh_sms_api_secret,
+          sms_sender_id:
+            systemConfigObj.hubtel_sms_sender_id ||
+            systemConfigObj.smsonlinegh_sms_sender_id,
         };
       }
 
@@ -266,10 +297,20 @@ export class NotificationService {
         low_balance_threshold: setting.low_balance_threshold || 100,
         email_address: setting.email_address,
         phone_number: setting.phone_number,
-        sms_provider: setting.sms_provider,
-        sms_api_key: setting.sms_api_key,
-        sms_api_secret: setting.sms_api_secret,
-        sms_sender_id: setting.sms_sender_id,
+        sms_provider:
+          setting.sms_provider || systemConfigObj.sms_provider || "hubtel",
+        sms_api_key:
+          setting.sms_api_key ||
+          systemConfigObj.hubtel_sms_api_key ||
+          systemConfigObj.smsonlinegh_sms_api_key,
+        sms_api_secret:
+          setting.sms_api_secret ||
+          systemConfigObj.hubtel_sms_api_secret ||
+          systemConfigObj.smsonlinegh_sms_api_secret,
+        sms_sender_id:
+          setting.sms_sender_id ||
+          systemConfigObj.hubtel_sms_sender_id ||
+          systemConfigObj.smsonlinegh_sms_sender_id,
       };
     } catch (error) {
       console.error("Error fetching user notification settings:", error);
@@ -374,12 +415,21 @@ export class NotificationService {
       }
 
       // Determine provider
-      const provider = prefs.sms_provider || "twilio";
+      const provider = prefs.sms_provider || "hubtel";
       const apiKey = prefs.sms_api_key;
       const apiSecret = prefs.sms_api_secret;
       const senderId = prefs.sms_sender_id;
       const phone = prefs.phone_number;
       const message = data.message;
+
+      console.log("🔍 [SMS] Configuration:", {
+        provider,
+        apiKey: apiKey ? "***" : "missing",
+        apiSecret: apiSecret ? "***" : "missing",
+        senderId,
+        phone,
+        messageLength: message.length,
+      });
 
       if (provider === "smsonlinegh") {
         // SMSOnlineGH API
@@ -408,31 +458,41 @@ export class NotificationService {
           };
         }
       } else if (provider === "hubtel") {
-        // Hubtel API
-        const response = await fetch(
-          "https://sms.hubtel.com/v1/messages/send",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Basic ${Buffer.from(
-                `${apiKey}:${apiSecret}`
-              ).toString("base64")}`,
-            },
-            body: JSON.stringify({
-              from: senderId,
-              to: phone,
-              content: message,
-            }),
-          }
-        );
+        // Hubtel API - use HTTP Basic Auth
+        const formattedPhone = phone.startsWith("+")
+          ? phone.substring(1)
+          : phone.startsWith("233")
+          ? phone
+          : `233${phone.replace(/^0/, "")}`;
+
+        const url = "https://devp-sms03726-api.hubtel.com/v1/messages/send";
+        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${auth}`,
+          },
+          body: JSON.stringify({
+            from: senderId,
+            to: formattedPhone,
+            content: message,
+          }),
+        });
         const result = await response.json();
-        if (result.Status === 0 || result.status === "Success") {
+        console.log("🔍 [HUBTEL] API Response:", result);
+
+        // Hubtel returns status: 0 for success, or other values for failure
+        if (result.status === 0 || (result.data && result.data.status === 0)) {
           return { success: true, message: "SMS sent via Hubtel" };
         } else {
           return {
             success: false,
-            error: result.Message || result.message || "Hubtel send failed",
+            error:
+              result.statusDescription ||
+              result.message ||
+              `Hubtel send failed with status: ${result.status}`,
           };
         }
       }
@@ -546,31 +606,40 @@ export class NotificationService {
           };
         }
       } else if (provider === "hubtel") {
-        // Hubtel API
-        const response = await fetch(
-          "https://sms.hubtel.com/v1/messages/send",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Basic ${Buffer.from(
-                `${apiKey}:${apiSecret}`
-              ).toString("base64")}`,
-            },
-            body: JSON.stringify({
-              from: senderId,
-              to: phone,
-              content: message,
-            }),
-          }
-        );
+        // Hubtel API - use HTTP Basic Auth
+        const formattedPhone = phone.startsWith("+")
+          ? phone.substring(1)
+          : phone.startsWith("233")
+          ? phone
+          : `233${phone.replace(/^0/, "")}`;
+
+        const url = "https://devp-sms03726-api.hubtel.com/v1/messages/send";
+        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Basic ${auth}`,
+          },
+          body: JSON.stringify({
+            from: senderId,
+            to: formattedPhone,
+            content: message,
+          }),
+        });
         const result = await response.json();
-        if (result.Status === 0 || result.status === "Success") {
+        console.log("🔍 [HUBTEL] API Response:", result);
+
+        if (result.status === 0 || (result.data && result.data.status === 0)) {
           return { success: true, message: "SMS sent via Hubtel" };
         } else {
           return {
             success: false,
-            error: result.Message || result.message || "Hubtel send failed",
+            error:
+              result.statusDescription ||
+              result.message ||
+              `Hubtel send failed with status: ${result.status}`,
           };
         }
       }
