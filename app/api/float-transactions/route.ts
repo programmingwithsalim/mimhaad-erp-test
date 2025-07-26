@@ -89,7 +89,7 @@ export async function GET(request: Request) {
               'N/A' as float_account_number,
               u.first_name || ' ' || u.last_name as created_by_name
             FROM gl_transactions gt
-            INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
+            INNER JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
             LEFT JOIN users u ON gt.created_by::uuid = u.id
             WHERE gt.date >= ${startDate}
             AND gt.date <= ${endDate}
@@ -132,7 +132,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.date >= ${startDate}
               AND gt.date <= ${endDate}
@@ -173,7 +173,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.date >= ${startDate}
               AND gt.date <= ${endDate}
@@ -216,7 +216,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.branch_id = ${session.user.branchId}::uuid
               AND (
@@ -255,7 +255,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE (
                 gje.account_id = ${accountId}::uuid 
