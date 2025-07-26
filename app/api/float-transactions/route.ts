@@ -28,105 +28,225 @@ export async function GET(request: Request) {
 
 
 
-    // Build the main query using GL system with proper conditional logic
-    let whereConditions: string[] = [];
-    let queryParams: any[] = [];
-
-    // Base condition
-    whereConditions.push("gm.float_account_id = $1");
-    queryParams.push(accountId);
-
-    if (type) {
-      whereConditions.push("gt.source_transaction_type = $2");
-      queryParams.push(type);
+    // Build the main query using GL system with simple template literals
+    let transactions;
+    
+    if (type && startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+      // All conditions
+      transactions = await sql`
+        SELECT 
+          gt.id,
+          gt.date as transaction_date,
+          gt.source_module,
+          gt.source_transaction_type as type,
+          gt.source_transaction_id as reference_id,
+          gt.amount,
+          gt.description,
+          gt.status,
+          gt.reference,
+          gt.created_at,
+          gt.branch_id,
+          gt.branch_name,
+          gm.mapping_type,
+          fa.account_type as float_account_type,
+          fa.provider as float_account_provider,
+          fa.account_number as float_account_number,
+          u.first_name || ' ' || u.last_name as created_by_name
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        LEFT JOIN users u ON gt.created_by = u.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.source_transaction_type = ${type}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          AND gt.branch_id = ${session.user.branchId}
+        ORDER BY gt.date DESC, gt.created_at DESC 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    } else if (type && startDate && endDate) {
+      // Type, startDate, endDate
+      transactions = await sql`
+        SELECT 
+          gt.id,
+          gt.date as transaction_date,
+          gt.source_module,
+          gt.source_transaction_type as type,
+          gt.source_transaction_id as reference_id,
+          gt.amount,
+          gt.description,
+          gt.status,
+          gt.reference,
+          gt.created_at,
+          gt.branch_id,
+          gt.branch_name,
+          gm.mapping_type,
+          fa.account_type as float_account_type,
+          fa.provider as float_account_provider,
+          fa.account_number as float_account_number,
+          u.first_name || ' ' || u.last_name as created_by_name
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        LEFT JOIN users u ON gt.created_by = u.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.source_transaction_type = ${type}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+        ORDER BY gt.date DESC, gt.created_at DESC 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    } else if (startDate && endDate) {
+      // startDate, endDate
+      transactions = await sql`
+        SELECT 
+          gt.id,
+          gt.date as transaction_date,
+          gt.source_module,
+          gt.source_transaction_type as type,
+          gt.source_transaction_id as reference_id,
+          gt.amount,
+          gt.description,
+          gt.status,
+          gt.reference,
+          gt.created_at,
+          gt.branch_id,
+          gt.branch_name,
+          gm.mapping_type,
+          fa.account_type as float_account_type,
+          fa.provider as float_account_provider,
+          fa.account_number as float_account_number,
+          u.first_name || ' ' || u.last_name as created_by_name
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        LEFT JOIN users u ON gt.created_by = u.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+        ORDER BY gt.date DESC, gt.created_at DESC 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    } else if (type) {
+      // Type only
+      transactions = await sql`
+        SELECT 
+          gt.id,
+          gt.date as transaction_date,
+          gt.source_module,
+          gt.source_transaction_type as type,
+          gt.source_transaction_id as reference_id,
+          gt.amount,
+          gt.description,
+          gt.status,
+          gt.reference,
+          gt.created_at,
+          gt.branch_id,
+          gt.branch_name,
+          gm.mapping_type,
+          fa.account_type as float_account_type,
+          fa.provider as float_account_provider,
+          fa.account_number as float_account_number,
+          u.first_name || ' ' || u.last_name as created_by_name
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        LEFT JOIN users u ON gt.created_by = u.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.source_transaction_type = ${type}
+        ORDER BY gt.date DESC, gt.created_at DESC 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
+    } else {
+      // Basic query - only accountId
+      transactions = await sql`
+        SELECT 
+          gt.id,
+          gt.date as transaction_date,
+          gt.source_module,
+          gt.source_transaction_type as type,
+          gt.source_transaction_id as reference_id,
+          gt.amount,
+          gt.description,
+          gt.status,
+          gt.reference,
+          gt.created_at,
+          gt.branch_id,
+          gt.branch_name,
+          gm.mapping_type,
+          fa.account_type as float_account_type,
+          fa.provider as float_account_provider,
+          fa.account_number as float_account_number,
+          u.first_name || ' ' || u.last_name as created_by_name
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        LEFT JOIN users u ON gt.created_by = u.id
+        WHERE gm.float_account_id = ${accountId}
+        ORDER BY gt.date DESC, gt.created_at DESC 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
     }
 
-    if (startDate) {
-      whereConditions.push("gt.date >= $" + (queryParams.length + 1));
-      queryParams.push(startDate);
+    // Get total count for pagination using template literals
+    let countResult;
+    
+    if (type && startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+      // All conditions
+      countResult = await sql`
+        SELECT COUNT(*) as total
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.source_transaction_type = ${type}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          AND gt.branch_id = ${session.user.branchId}
+      `;
+    } else if (type && startDate && endDate) {
+      // Type, startDate, endDate
+      countResult = await sql`
+        SELECT COUNT(*) as total
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.source_transaction_type = ${type}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+      `;
+    } else if (startDate && endDate) {
+      // startDate, endDate
+      countResult = await sql`
+        SELECT COUNT(*) as total
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+      `;
+    } else if (type) {
+      // Type only
+      countResult = await sql`
+        SELECT COUNT(*) as total
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        WHERE gm.float_account_id = ${accountId}
+          AND gt.source_transaction_type = ${type}
+      `;
+    } else {
+      // Basic query - only accountId
+      countResult = await sql`
+        SELECT COUNT(*) as total
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        WHERE gm.float_account_id = ${accountId}
+      `;
     }
-
-    if (endDate) {
-      whereConditions.push("gt.date <= $" + (queryParams.length + 1));
-      queryParams.push(endDate);
-    }
-
-    // Add branch filter for non-admin users
-    if (session.user.role !== "Admin" && session.user.branchId) {
-      whereConditions.push("gt.branch_id = $" + (queryParams.length + 1));
-      queryParams.push(session.user.branchId);
-    }
-
-    // Build the complete query
-    let queryString = `
-      SELECT 
-        gt.id,
-        gt.date as transaction_date,
-        gt.source_module,
-        gt.source_transaction_type as type,
-        gt.source_transaction_id as reference_id,
-        gt.amount,
-        gt.description,
-        gt.status,
-        gt.reference,
-        gt.created_at,
-        gt.branch_id,
-        gt.branch_name,
-        gm.mapping_type,
-        fa.account_type as float_account_type,
-        fa.provider as float_account_provider,
-        fa.account_number as float_account_number,
-        u.first_name || ' ' || u.last_name as created_by_name
-      FROM gl_transactions gt
-      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
-      JOIN float_accounts fa ON gm.float_account_id = fa.id
-      LEFT JOIN users u ON gt.created_by = u.id
-      WHERE ${whereConditions.join(' AND ')}
-      ORDER BY gt.date DESC, gt.created_at DESC 
-      LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
-    `;
-    queryParams.push(limit, offset);
-
-    const transactions = await sql.unsafe(queryString, ...queryParams);
-
-    // Get total count for pagination
-    let countWhereConditions: string[] = [];
-    let countParams: any[] = [];
-
-    // Base condition for count query
-    countWhereConditions.push("gm.float_account_id = $1");
-    countParams.push(accountId);
-
-    if (type) {
-      countWhereConditions.push("gt.source_transaction_type = $2");
-      countParams.push(type);
-    }
-
-    if (startDate) {
-      countWhereConditions.push("gt.date >= $" + (countParams.length + 1));
-      countParams.push(startDate);
-    }
-
-    if (endDate) {
-      countWhereConditions.push("gt.date <= $" + (countParams.length + 1));
-      countParams.push(endDate);
-    }
-
-    if (session.user.role !== "Admin" && session.user.branchId) {
-      countWhereConditions.push("gt.branch_id = $" + (countParams.length + 1));
-      countParams.push(session.user.branchId);
-    }
-
-    // Build the count query
-    let countQueryString = `
-      SELECT COUNT(*) as total
-      FROM gl_transactions gt
-      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
-      JOIN float_accounts fa ON gm.float_account_id = fa.id
-      WHERE ${countWhereConditions.join(' AND ')}
-    `;
-
-    const countResult = await sql.unsafe(countQueryString, ...countParams);
     const total = countResult[0]?.total || 0;
 
     // Get float account details
