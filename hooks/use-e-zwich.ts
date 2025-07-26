@@ -165,6 +165,7 @@ export function useCardBatches() {
     unit_cost?: number;
     partner_bank_id: string;
     partner_bank_name: string;
+    payment_method_id: string;
     expiry_date: string;
     branch_id?: string; // Admin can specify branch
     notes?: string;
@@ -189,6 +190,7 @@ export function useCardBatches() {
         unit_cost: batchData.unit_cost || 0,
         partner_bank_id: batchData.partner_bank_id,
         partner_bank_name: batchData.partner_bank_name,
+        payment_method_id: batchData.payment_method_id,
         expiry_date: batchData.expiry_date,
         notes: batchData.notes || "",
         branch_id: targetBranchId,

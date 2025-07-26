@@ -32,7 +32,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useBranches } from "@/hooks/use-branches";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import { useFloatAccountsByBranch } from "@/hooks/use-float-accounts";
+import { useFloatAccounts } from "@/hooks/use-float-accounts";
 
 interface ExpenseFormProps {
   open: boolean;
@@ -185,14 +185,25 @@ export function ExpenseForm({
 
   // Fetch float accounts for payment source
   const { accounts: floatAccounts, loading: loadingFloats } =
-    useFloatAccountsByBranch(formData.branch_id);
+    useFloatAccounts();
 
-  // Filter out E-Zwich, Power, and Jumia floats
-  const filteredFloatAccounts = floatAccounts.filter(
-    (acc) =>
-      acc.is_active !== false &&
-      !["e-zwich", "power", "jumia"].includes(acc.account_type?.toLowerCase?.())
-  );
+  // Filter float accounts based on user role and branch
+  const filteredFloatAccounts = floatAccounts.filter((acc) => {
+    // First, filter out inactive accounts and restricted account types
+    if (acc.is_active === false) return false;
+    if (
+      ["e-zwich", "power", "jumia"].includes(acc.account_type?.toLowerCase?.())
+    )
+      return false;
+
+    // For non-admin users, only show accounts from their branch
+    if (user?.role?.toLowerCase() !== "admin") {
+      return acc.branch_id === user?.branchId;
+    }
+
+    // For admin users, show all accounts (they can select branch in the form)
+    return true;
+  });
 
   // Debug log for payment source
   console.log(
@@ -486,13 +497,13 @@ export function ExpenseForm({
                   onValueChange={(value) =>
                     handleSelectChange("payment_source", value)
                   }
-                  disabled={loadingFloats || filteredFloatAccounts.length === 0}
+                  disabled={loadingFloats}
                   required
                 >
                   <SelectTrigger>
                     <SelectValue
                       placeholder={
-                        loadingFloats ? "Loading..." : "Select float account"
+                        loadingFloats ? "Loading..." : "Select payment source"
                       }
                     />
                   </SelectTrigger>
@@ -504,6 +515,11 @@ export function ExpenseForm({
                     ))}
                   </SelectContent>
                 </Select>
+                {!loadingFloats && filteredFloatAccounts.length === 0 && (
+                  <div className="text-sm text-muted-foreground">
+                    No float accounts available for this branch.
+                  </div>
+                )}
               </div>
             </div>
 

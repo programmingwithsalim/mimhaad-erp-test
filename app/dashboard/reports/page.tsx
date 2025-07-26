@@ -44,6 +44,7 @@ import { cn } from "@/lib/utils";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useToast } from "@/hooks/use-toast";
 import { ReportsFilterBar } from "@/components/reports/reports-filter-bar";
+import { normalizeRole } from "@/lib/rbac/unified-rbac";
 import {
   PDFDocument,
   PDFPage,
@@ -92,21 +93,62 @@ interface ReportData {
 }
 
 export default function ReportsPage() {
-  const { user } = useCurrentUser();
+  const { user, loading: userLoading, error: userError } = useCurrentUser();
   const { toast } = useToast();
 
-  // Determine user permissions first
-  const isAdmin = user?.role === "Admin";
-  const isFinance = user?.role === "Finance";
-  const isManager = user?.role === "Manager";
-  const isOperations = user?.role === "Operations";
-  const isCashier = user?.role === "Cashier";
+  // Determine user permissions first (using normalized roles)
+  console.log("🔍 [REPORTS] User", user);
+  const normalizedRole = normalizeRole(user?.role);
+
+  // Debug logging
+  console.log("🔍 [REPORTS] Debug Info:", {
+    originalRole: user?.role,
+    normalizedRole: normalizedRole,
+    userId: user?.id,
+    userName: user?.name,
+    userEmail: user?.email,
+  });
+
+  // Fallback: if normalization fails, try direct comparison with common variations
+  const originalRole = user?.role?.toLowerCase();
+
+  // Comprehensive role checking with multiple variations
+  const isAdmin =
+    normalizedRole === "Admin" ||
+    originalRole === "admin" ||
+    originalRole === "administrator";
+  const isFinance =
+    normalizedRole === "Finance" ||
+    originalRole === "finance" ||
+    originalRole === "financial";
+  const isManager =
+    normalizedRole === "Manager" ||
+    originalRole === "manager" ||
+    originalRole === "management";
+  const isOperations =
+    normalizedRole === "Operations" ||
+    originalRole === "operations" ||
+    originalRole === "operation";
+  const isCashier =
+    normalizedRole === "Cashier" ||
+    originalRole === "cashier" ||
+    originalRole === "cash";
   const canViewAllBranches = isAdmin;
   const userBranchId = user?.branchId;
   const userBranchName = user?.branchName;
 
   // Role-based access control
   const canViewReports = isAdmin || isFinance || isManager;
+
+  console.log("🔍 [REPORTS] Access Control:", {
+    isAdmin,
+    isFinance,
+    isManager,
+    isOperations,
+    isCashier,
+    canViewReports,
+    canViewAllBranches,
+  });
 
   const [dateRange, setDateRange] = useState({
     from: subDays(new Date(), 30),
@@ -657,6 +699,20 @@ export default function ReportsPage() {
         font: font,
       }
     );
+    y -= 15;
+
+    page.drawText("Inventory", {
+      x: 80,
+      y,
+      size: 10,
+      font: font,
+    });
+    page.drawText(`GHS ${data.assets.current.inventory.toLocaleString()}`, {
+      x: 400,
+      y,
+      size: 10,
+      font: font,
+    });
     y -= 20;
 
     page.drawText("Fixed Assets:", {
@@ -1067,6 +1123,40 @@ export default function ReportsPage() {
     }
   }, [dateRange, selectedBranch, canViewReports]);
 
+  // If user data is not loaded yet, show loading
+  if (userLoading) {
+    return (
+      <div className="container mx-auto py-6">
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center space-y-4">
+            <RefreshCw className="h-12 w-12 animate-spin mx-auto text-primary" />
+            <div>
+              <h3 className="text-lg font-semibold">Loading User Data</h3>
+              <p className="text-muted-foreground">
+                Please wait while we load your user information...
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If there's an error loading user data
+  if (userError || !user) {
+    return (
+      <div className="container mx-auto py-6">
+        <Alert className="border-red-200 bg-red-50">
+          <AlertTriangle className="h-4 w-4 text-red-600" />
+          <AlertDescription className="text-red-700">
+            {userError ||
+              "Failed to load user data. Please refresh the page or contact support."}
+          </AlertDescription>
+        </Alert>
+      </div>
+    );
+  }
+
   // If user doesn't have permission to view reports
   if (!canViewReports) {
     return (
@@ -1075,7 +1165,7 @@ export default function ReportsPage() {
           <AlertTriangle className="h-4 w-4 text-red-600" />
           <AlertDescription className="text-red-700">
             You don't have permission to view financial reports. Please contact
-            your administrator.
+            your administrator. (Role: {user?.role || "Unknown"})
           </AlertDescription>
         </Alert>
       </div>
@@ -1147,10 +1237,6 @@ export default function ReportsPage() {
           >
             <Download className="h-4 w-4 mr-2" />
             Export PDF
-          </Button>
-          <Button variant="outline" onClick={() => exportReport("excel")}>
-            <Download className="h-4 w-4 mr-2" />
-            Export Excel
           </Button>
         </div>
       </div>
@@ -1409,6 +1495,13 @@ export default function ReportsPage() {
                           <span className="font-semibold text-green-600">
                             GHS{" "}
                             {reportData.balanceSheet.assets.current.accountsReceivable.toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center py-3 border-b border-gray-100">
+                          <span className="font-medium">Inventory</span>
+                          <span className="font-semibold text-green-600">
+                            GHS{" "}
+                            {reportData.balanceSheet.assets.current.inventory.toLocaleString()}
                           </span>
                         </div>
                         <div className="flex justify-between items-center py-4 border-t-2 border-green-200 font-bold text-lg">

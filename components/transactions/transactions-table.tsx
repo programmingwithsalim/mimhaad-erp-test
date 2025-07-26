@@ -4,10 +4,10 @@ import { useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
-  Eye,
-  DollarSign,
-  AlertCircle,
   FileText,
+  Eye,
+  CheckCircle,
+  Truck,
 } from "lucide-react";
 import { format } from "date-fns";
 
@@ -30,17 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import type { PaginationInfo } from "@/hooks/use-all-transactions";
@@ -58,6 +47,7 @@ interface Transaction {
   created_at: string;
   branch_id: string;
   branch_name?: string;
+  branchName?: string;
   processed_by: string;
   service_type: string;
 }
@@ -84,68 +74,122 @@ export function TransactionsTable({
   onTransactionUpdate,
 }: TransactionsTableProps) {
   const [pageSize, setPageSize] = useState(pagination.limit);
-  const [disbursingTransaction, setDisbursingTransaction] = useState<
-    string | null
-  >(null);
-  const { toast } = useToast();
   const { user } = useCurrentUser();
+  const { toast } = useToast();
+  const [processingActions, setProcessingActions] = useState<Set<string>>(
+    new Set()
+  );
 
-  const isCashier = user?.role?.toLowerCase() === "cashier";
-  const isManager = user?.role?.toLowerCase() === "manager";
-  const isAdmin = user?.role?.toLowerCase() === "admin";
-  const canDisburse = isCashier || isManager || isAdmin;
-
-  const handleDisburse = async (transaction: Transaction) => {
-    if (!canDisburse) {
-      toast({
-        title: "Access Denied",
-        description: "You don't have permission to disburse transactions",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (transaction.status?.toLowerCase() === "reversed") {
-      toast({
-        title: "Cannot Disburse",
-        description: "Reversed transactions cannot be disbursed",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (transaction.status?.toLowerCase() === "disbursed") {
-      toast({
-        title: "Already Disbursed",
-        description: "This transaction has already been disbursed",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setDisbursingTransaction(transaction.id);
+  const handleComplete = async (transaction: Transaction) => {
+    const actionId = `${transaction.id}-complete`;
+    setProcessingActions((prev) => new Set(prev).add(actionId));
 
     try {
-      const response = await fetch(
-        `/api/transactions/${transaction.id}/disburse`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            sourceModule: transaction.service_type,
-            reason: "Cash disbursement by cashier",
-          }),
-        }
-      );
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "complete",
+          transactionId: transaction.id,
+          sourceModule: transaction.service_type,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.firstName && user?.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("Transaction completed successfully");
+        onTransactionUpdate?.();
+      } else {
+        toast.error(result.error || "Failed to complete transaction");
+      }
+    } catch (error) {
+      console.error("Error completing transaction:", error);
+      toast.error("Failed to complete transaction");
+    } finally {
+      setProcessingActions((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(actionId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleDeliver = async (transaction: Transaction) => {
+    const actionId = `${transaction.id}-deliver`;
+    setProcessingActions((prev) => new Set(prev).add(actionId));
+
+    try {
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "deliver",
+          transactionId: transaction.id,
+          sourceModule: transaction.service_type,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.firstName && user?.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast.success("Transaction delivered successfully");
+        onTransactionUpdate?.();
+      } else {
+        toast.error(result.error || "Failed to deliver transaction");
+      }
+    } catch (error) {
+      console.error("Error delivering transaction:", error);
+      toast.error("Failed to deliver transaction");
+    } finally {
+      setProcessingActions((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(actionId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleDisburse = async (transaction: Transaction) => {
+    const actionId = `${transaction.id}-disburse`;
+    setProcessingActions((prev) => new Set(prev).add(actionId));
+
+    try {
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "disburse",
+          transactionId: transaction.id,
+          sourceModule: transaction.service_type,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.firstName && user?.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user?.email,
+        }),
+      });
 
       const result = await response.json();
 
       if (result.success) {
         toast({
           title: "Transaction Disbursed",
-          description: `Successfully disbursed ${transaction.customer_name}'s transaction`,
+          description:
+            result.message || "Transaction has been disbursed successfully",
         });
         onTransactionUpdate?.();
       } else {
@@ -159,9 +203,146 @@ export function TransactionsTable({
         variant: "destructive",
       });
     } finally {
-      setDisbursingTransaction(null);
+      setProcessingActions((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(actionId);
+        return newSet;
+      });
     }
   };
+
+  const getActionButton = (transaction: Transaction) => {
+    const { service_type, status, type } = transaction;
+    const actionId = `${transaction.id}-${service_type}`;
+    const isProcessing = processingActions.has(actionId);
+
+    // Power transactions: Show Complete button when pending
+    if (service_type === "power" && status === "pending") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleComplete(transaction)}
+          disabled={isProcessing}
+          className="h-8 w-8 p-0"
+          title="Complete Transaction"
+        >
+          <CheckCircle className="h-4 w-4" />
+        </Button>
+      );
+    }
+
+    // Jumia transactions: Show Deliver button when completed
+    if (service_type === "jumia" && status === "completed") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleDeliver(transaction)}
+          disabled={isProcessing}
+          className="h-8 w-8 p-0"
+          title="Deliver Transaction"
+        >
+          <Truck className="h-4 w-4" />
+        </Button>
+      );
+    }
+
+    // MoMo transactions: Show Disburse button when completed
+    if (service_type === "momo" && status === "completed") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleDisburse(transaction)}
+          disabled={isProcessing}
+          className="h-8 w-8 p-0"
+          title="Disburse Transaction"
+        >
+          <span style={{ fontWeight: 700, fontSize: 18, lineHeight: 1 }}>
+            &#8373;
+          </span>
+        </Button>
+      );
+    }
+
+    // Agency Banking transactions: Show Disburse button when completed
+    if (service_type === "agency_banking" && status === "completed") {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleDisburse(transaction)}
+          disabled={isProcessing}
+          className="h-8 w-8 p-0"
+          title="Disburse Transaction"
+        >
+          <span style={{ fontWeight: 700, fontSize: 18, lineHeight: 1 }}>
+            &#8373;
+          </span>
+        </Button>
+      );
+    }
+
+    // E-Zwich withdrawal transactions: Show Disburse button when pending
+    if (
+      service_type === "e_zwich" &&
+      type === "withdrawal" &&
+      status === "pending"
+    ) {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleDisburse(transaction)}
+          disabled={isProcessing}
+          className="h-8 w-8 p-0"
+          title="Disburse Transaction"
+        >
+          <span style={{ fontWeight: 700, fontSize: 18, lineHeight: 1 }}>
+            &#8373;
+          </span>
+        </Button>
+      );
+    }
+
+    // E-Zwich card issuance transactions: Show Disburse button when completed
+    if (
+      service_type === "e_zwich" &&
+      type === "card_issuance" &&
+      status === "completed"
+    ) {
+      return (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => handleDisburse(transaction)}
+          disabled={isProcessing}
+          className="h-8 w-8 p-0"
+          title="Disburse Transaction"
+        >
+          <span style={{ fontWeight: 700, fontSize: 18, lineHeight: 1 }}>
+            &#8373;
+          </span>
+        </Button>
+      );
+    }
+
+    // Default: Show View button for all transactions
+    return (
+      <Button
+        size="sm"
+        variant="ghost"
+        onClick={() => onViewTransaction(transaction)}
+        className="h-8 w-8 p-0"
+        title="View Transaction Details"
+      >
+        <Eye className="h-4 w-4" />
+      </Button>
+    );
+  };
+
+  const userRole = user?.role || "Unknown";
 
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
@@ -188,7 +369,7 @@ export function TransactionsTable({
         return "bg-blue-100 text-blue-800";
       case "agency_banking":
         return "bg-purple-100 text-purple-800";
-      case "ezwich":
+      case "e_zwich":
         return "bg-green-100 text-green-800";
       case "power":
         return "bg-yellow-100 text-yellow-800";
@@ -213,7 +394,7 @@ export function TransactionsTable({
             A
           </AvatarFallback>
         );
-      case "ezwich":
+      case "e_zwich":
         return (
           <AvatarFallback className="bg-green-100 text-green-600">
             E
@@ -340,76 +521,19 @@ export function TransactionsTable({
                 </TableCell>
                 <TableCell
                   className="max-w-[100px] truncate"
-                  title={transaction.branch_name || transaction.branch_id}
+                  title={
+                    transaction.branchName ||
+                    transaction.branch_name ||
+                    transaction.branch_id
+                  }
                 >
-                  {transaction.branch_name || transaction.branch_id || "N/A"}
+                  {transaction.branchName ||
+                    transaction.branch_name ||
+                    transaction.branch_id ||
+                    "N/A"}
                 </TableCell>
                 <TableCell className="whitespace-nowrap">
-                  <div className="flex items-center gap-1">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onViewTransaction(transaction)}
-                      title="View transaction details"
-                    >
-                      <Eye className="h-4 w-4" />
-                    </Button>
-
-                    {canDisburse &&
-                      transaction.status?.toLowerCase() !== "reversed" &&
-                      transaction.status?.toLowerCase() !== "disbursed" && (
-                        <AlertDialog>
-                          <AlertDialogTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={
-                                disbursingTransaction === transaction.id
-                              }
-                              title="Disburse transaction"
-                              className="text-green-600 hover:text-green-700 hover:bg-green-50"
-                            >
-                              <DollarSign className="h-4 w-4" />
-                            </Button>
-                          </AlertDialogTrigger>
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Confirm Disbursement
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                Are you sure you want to mark this transaction
-                                as disbursed? This action indicates that cash
-                                has been given to the customer.
-                                <br />
-                                <br />
-                                <strong>Transaction Details:</strong>
-                                <br />
-                                Customer: {transaction.customer_name}
-                                <br />
-                                Amount: ₵{transaction.amount.toLocaleString()}
-                                <br />
-                                Reference: {transaction.reference}
-                                <br />
-                                Service:{" "}
-                                {transaction.service_type.replace("_", " ")}
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                onClick={() => handleDisburse(transaction)}
-                                className="bg-green-600 hover:bg-green-700"
-                              >
-                                {disbursingTransaction === transaction.id
-                                  ? "Disbursing..."
-                                  : "Confirm Disbursement"}
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      )}
-                  </div>
+                  {getActionButton(transaction)}
                 </TableCell>
               </TableRow>
             ))}

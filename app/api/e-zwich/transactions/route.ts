@@ -193,6 +193,26 @@ export async function POST(request: NextRequest) {
         );
       }
     }
+
+    // Check if cash-in-till account exists for this branch
+    const cashInTillAccount = await sql`
+      SELECT id FROM float_accounts 
+      WHERE branch_id = ${branchId}
+        AND account_type = 'cash-in-till'
+        AND is_active = true
+      LIMIT 1
+    `;
+
+    if (cashInTillAccount.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "No active cash-in-till account found for this branch. Please contact your administrator.",
+        },
+        { status: 400 }
+      );
+    }
     // Generate UUID for transaction ID
     const transactionIdResult = await sql`SELECT gen_random_uuid() as id`;
     const transactionId = transactionIdResult[0].id;
@@ -278,7 +298,7 @@ export async function POST(request: NextRequest) {
           ${transactionId}, ${card_number}, ${settlement_account_id}, ${customer_name},
           ${amount}, ${
         fee || 0
-      }, 'completed', ${txnReference}, ${branchId}, ${partner_bank}, ${now}
+      }, 'pending', ${txnReference}, ${branchId}, ${partner_bank}, ${now}
         )
       `;
       // Decrease settlement account by amount

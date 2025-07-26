@@ -1,11 +1,11 @@
-import { NextResponse } from "next/server"
-import { neon } from "@neondatabase/serverless"
+import { NextResponse } from "next/server";
+import { neon } from "@neondatabase/serverless";
 
-const sql = neon(process.env.DATABASE_URL!)
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST() {
   try {
-    console.log("🏗️ Initializing agency banking database schema...")
+    console.log("🏗️ Initializing agency banking database schema...");
 
     // Create enum types first
     await sql`
@@ -20,7 +20,7 @@ export async function POST() {
           );
         END IF;
       END $$;
-    `
+    `;
 
     await sql`
       DO $$ 
@@ -30,14 +30,17 @@ export async function POST() {
             'pending',
             'completed',
             'failed',
-            'reversed'
+            'reversed',
+            'disbursed'
           );
+        ELSIF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'disbursed' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'agency_transaction_status')) THEN
+          ALTER TYPE agency_transaction_status ADD VALUE 'disbursed';
         END IF;
       END $$;
-    `
+    `;
 
     // Drop and recreate the table with correct schema
-    await sql`DROP TABLE IF EXISTS agency_banking_transactions`
+    await sql`DROP TABLE IF EXISTS agency_banking_transactions`;
 
     await sql`
       CREATE TABLE agency_banking_transactions (
@@ -61,16 +64,16 @@ export async function POST() {
         created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
       )
-    `
+    `;
 
     // Create indexes
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_branch_id ON agency_banking_transactions(branch_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_user_id ON agency_banking_transactions(user_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_date ON agency_banking_transactions(date)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_status ON agency_banking_transactions(status)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_partner_bank_code ON agency_banking_transactions(partner_bank_code)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_partner_bank_id ON agency_banking_transactions(partner_bank_id)`
-    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_account_number ON agency_banking_transactions(account_number)`
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_branch_id ON agency_banking_transactions(branch_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_user_id ON agency_banking_transactions(user_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_date ON agency_banking_transactions(date)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_status ON agency_banking_transactions(status)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_partner_bank_code ON agency_banking_transactions(partner_bank_code)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_partner_bank_id ON agency_banking_transactions(partner_bank_id)`;
+    await sql`CREATE INDEX IF NOT EXISTS idx_agency_transactions_account_number ON agency_banking_transactions(account_number)`;
 
     // Create update trigger function if it doesn't exist
     await sql`
@@ -81,31 +84,31 @@ export async function POST() {
         RETURN NEW;
       END;
       $$ LANGUAGE plpgsql;
-    `
+    `;
 
     // Create trigger
-    await sql`DROP TRIGGER IF EXISTS update_agency_banking_transactions_timestamp ON agency_banking_transactions`
+    await sql`DROP TRIGGER IF EXISTS update_agency_banking_transactions_timestamp ON agency_banking_transactions`;
     await sql`
       CREATE TRIGGER update_agency_banking_transactions_timestamp
       BEFORE UPDATE ON agency_banking_transactions
       FOR EACH ROW EXECUTE FUNCTION update_timestamp()
-    `
+    `;
 
-    console.log("✅ Agency banking database schema initialized successfully")
+    console.log("✅ Agency banking database schema initialized successfully");
 
     return NextResponse.json({
       success: true,
       message: "Agency banking database schema initialized successfully",
-    })
+    });
   } catch (error: any) {
-    console.error("❌ Error initializing agency banking schema:", error)
+    console.error("❌ Error initializing agency banking schema:", error);
     return NextResponse.json(
       {
         success: false,
         message: "Failed to initialize agency banking schema",
         error: error.message,
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

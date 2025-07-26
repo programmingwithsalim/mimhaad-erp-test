@@ -175,30 +175,68 @@ export async function GET(request: NextRequest) {
           `;
         }
       } else {
-        // Regular float accounts query
+        // Regular float accounts query with proper filtering
         if (branchId && branchId !== "undefined") {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${branchId}
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
+          if (accountType) {
+            floatAccounts = await sql`
+              SELECT fa.*, b.name as branch_name
+              FROM float_accounts fa
+              LEFT JOIN branches b ON fa.branch_id = b.id
+              WHERE fa.branch_id = ${branchId}
+                AND fa.account_type = ${accountType}
+                AND fa.is_active = true
+              ORDER BY fa.is_active DESC, fa.created_at DESC
+            `;
+          } else {
+            floatAccounts = await sql`
+              SELECT fa.*, b.name as branch_name
+              FROM float_accounts fa
+              LEFT JOIN branches b ON fa.branch_id = b.id
+              WHERE fa.branch_id = ${branchId}
+                AND fa.is_active = true
+              ORDER BY fa.is_active DESC, fa.created_at DESC
+            `;
+          }
         } else if (!isAdmin) {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            WHERE fa.branch_id = ${userBranchId}
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
+          if (accountType) {
+            floatAccounts = await sql`
+              SELECT fa.*, b.name as branch_name
+              FROM float_accounts fa
+              LEFT JOIN branches b ON fa.branch_id = b.id
+              WHERE fa.branch_id = ${userBranchId}
+                AND fa.account_type = ${accountType}
+                AND fa.is_active = true
+              ORDER BY fa.is_active DESC, fa.created_at DESC
+            `;
+          } else {
+            floatAccounts = await sql`
+              SELECT fa.*, b.name as branch_name
+              FROM float_accounts fa
+              LEFT JOIN branches b ON fa.branch_id = b.id
+              WHERE fa.branch_id = ${userBranchId}
+                AND fa.is_active = true
+              ORDER BY fa.is_active DESC, fa.created_at DESC
+            `;
+          }
         } else {
-          floatAccounts = await sql`
-            SELECT fa.*, b.name as branch_name
-            FROM float_accounts fa
-            LEFT JOIN branches b ON fa.branch_id = b.id
-            ORDER BY fa.is_active DESC, fa.created_at DESC
-          `;
+          if (accountType) {
+            floatAccounts = await sql`
+              SELECT fa.*, b.name as branch_name
+              FROM float_accounts fa
+              LEFT JOIN branches b ON fa.branch_id = b.id
+              WHERE fa.account_type = ${accountType}
+                AND fa.is_active = true
+              ORDER BY fa.is_active DESC, fa.created_at DESC
+            `;
+          } else {
+            floatAccounts = await sql`
+              SELECT fa.*, b.name as branch_name
+              FROM float_accounts fa
+              LEFT JOIN branches b ON fa.branch_id = b.id
+              WHERE fa.is_active = true
+              ORDER BY fa.is_active DESC, fa.created_at DESC
+            `;
+          }
         }
       }
     } catch (dbError) {

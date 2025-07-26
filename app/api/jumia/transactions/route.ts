@@ -143,6 +143,26 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
+
+      // Check if a collection already exists for this package
+      const existingCollection = await sql`
+        SELECT id FROM jumia_transactions 
+        WHERE tracking_id = ${transactionData.tracking_id} 
+        AND branch_id = ${transactionData.branch_id}
+        AND transaction_type = 'pod_collection'
+        AND status != 'deleted'
+      `;
+
+      if (existingCollection.length > 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "A collection already exists for this package. Cannot create duplicate collection.",
+          },
+          { status: 400 }
+        );
+      }
     } else if (transactionData.transaction_type === "settlement") {
       if (
         !transactionData.amount ||
@@ -172,6 +192,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Check if cash-in-till account exists for this branch
+    const cashInTillAccount = await sql`
+      SELECT id FROM float_accounts 
+      WHERE branch_id = ${transactionData.branch_id}
+        AND account_type = 'cash-in-till'
+        AND is_active = true
+      LIMIT 1
+    `;
+
+    if (cashInTillAccount.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "No active cash-in-till account found for this branch. Please contact your administrator.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // For POD collections, check if Jumia float account exists
+    if (transactionData.transaction_type === "pod_collection") {
+      const jumiaFloatAccount = await sql`
+        SELECT id FROM float_accounts 
+        WHERE branch_id = ${transactionData.branch_id}
+          AND account_type = 'jumia'
+          AND is_active = true
+        LIMIT 1
+      `;
+
+      if (jumiaFloatAccount.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "No active Jumia float account found for this branch. Please create a Jumia float account to record liability for POD collections.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Generate unique transaction ID based on type
     const transactionId = generateTransactionId(
       transactionData.transaction_type || "JUMIA"
@@ -182,6 +244,10 @@ export async function POST(request: NextRequest) {
       ...transactionData,
       transaction_id: transactionId,
       payment_method: transactionData.payment_method,
+      status:
+        transactionData.transaction_type === "pod_collection"
+          ? "completed"
+          : transactionData.status || "active",
     });
 
     console.log("Created new transaction:", newTransaction);

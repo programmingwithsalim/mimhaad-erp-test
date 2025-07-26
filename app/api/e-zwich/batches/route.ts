@@ -34,6 +34,8 @@ export async function GET(request: NextRequest) {
         total_cost DECIMAL(10,2) DEFAULT 0.00,
         partner_bank_id UUID,
         partner_bank_name VARCHAR(100),
+        payment_method_id UUID,
+        payment_method_name VARCHAR(100),
         expiry_date DATE,
         status VARCHAR(20) DEFAULT 'active',
         branch_id VARCHAR(100) NOT NULL,
@@ -63,9 +65,12 @@ export async function GET(request: NextRequest) {
       batches = await sql`
         SELECT 
           cb.*,
-          b.name as branch_name
+          b.name as branch_name,
+          fa.provider as payment_method_provider,
+          fa.account_type as payment_method_type
         FROM ezwich_card_batches cb
         LEFT JOIN branches b ON cb.branch_id = b.id
+        LEFT JOIN float_accounts fa ON cb.payment_method_id = fa.id
         ORDER BY cb.created_at DESC
       `;
       console.log(`🔍 [DEBUG] Admin: Found ${batches.length} total batches`);
@@ -74,9 +79,12 @@ export async function GET(request: NextRequest) {
       batches = await sql`
       SELECT 
           cb.*,
-          b.name as branch_name
+          b.name as branch_name,
+          fa.provider as payment_method_provider,
+          fa.account_type as payment_method_type
         FROM ezwich_card_batches cb
         LEFT JOIN branches b ON cb.branch_id = b.id
+        LEFT JOIN float_accounts fa ON cb.payment_method_id = fa.id
         WHERE cb.branch_id = ${user.branchId}
         ORDER BY cb.created_at DESC
       `;
@@ -125,12 +133,49 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate required fields
-    if (!batch_code || !quantity_received || !partner_bank_id) {
+    if (
+      !batch_code ||
+      !quantity_received ||
+      !partner_bank_id ||
+      !body.payment_method_id
+    ) {
       return NextResponse.json(
         {
           success: false,
           error:
-            "Missing required fields: batch_code, quantity_received, partner_bank_id",
+            "Missing required fields: batch_code, quantity_received, partner_bank_id, payment_method_id",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Validate payment method (float account) exists and is active
+    const paymentMethod = await sql`
+      SELECT id, current_balance, account_type, provider 
+      FROM float_accounts 
+      WHERE id = ${body.payment_method_id} 
+      AND is_active = true
+      LIMIT 1
+    `;
+
+    if (paymentMethod.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "Selected payment method (float account) not found or inactive",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Check if float account has sufficient balance
+    const totalCost = (unit_cost || 0) * quantity_received;
+    if (paymentMethod[0].current_balance < totalCost) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Insufficient balance in selected payment method. Available: ₵${paymentMethod[0].current_balance.toLocaleString()}, Required: ₵${totalCost.toLocaleString()}`,
         },
         { status: 400 }
       );
@@ -151,9 +196,6 @@ export async function POST(request: NextRequest) {
     const targetBranchId = user.role === "admin" ? branch_id : user.branchId;
     const targetBranchName = user.role === "admin" ? "" : user.branchName;
 
-    // Calculate total cost
-    const totalCost = (unit_cost || 0) * quantity_received;
-
     // Ensure table exists with partner bank field
     await sql`
       CREATE TABLE IF NOT EXISTS ezwich_card_batches (
@@ -167,6 +209,8 @@ export async function POST(request: NextRequest) {
         total_cost DECIMAL(10,2) DEFAULT 0.00,
         partner_bank_id UUID,
         partner_bank_name VARCHAR(100),
+        payment_method_id UUID,
+        payment_method_name VARCHAR(100),
         expiry_date DATE,
         status VARCHAR(20) DEFAULT 'active',
         branch_id VARCHAR(100) NOT NULL,
@@ -188,6 +232,8 @@ export async function POST(request: NextRequest) {
         total_cost,
         partner_bank_id,
         partner_bank_name,
+        payment_method_id,
+        payment_method_name,
         expiry_date,
         branch_id,
         branch_name,
@@ -201,6 +247,8 @@ export async function POST(request: NextRequest) {
         ${totalCost},
         ${partner_bank_id},
         ${partner_bank_name || ""},
+        ${body.payment_method_id},
+        ${paymentMethod[0].provider || "Unknown Payment Method"},
         ${expiry_date ? new Date(expiry_date) : null},
         ${targetBranchId},
         ${targetBranchName},
@@ -212,7 +260,59 @@ export async function POST(request: NextRequest) {
 
     const batch = result[0];
 
-    // Create GL entries for inventory purchase
+    // Debit the selected float account for the purchase
+    if (totalCost > 0) {
+      try {
+        // Debit the float account
+        await sql`
+          UPDATE float_accounts 
+          SET current_balance = current_balance - ${totalCost},
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ${body.payment_method_id}
+        `;
+
+        // Log the float transaction
+        await sql`
+          INSERT INTO float_transactions (
+            float_account_id,
+            transaction_type,
+            amount,
+            balance_before,
+            balance_after,
+            description,
+            reference,
+            created_at
+          ) VALUES (
+            ${body.payment_method_id},
+            'debit',
+            ${totalCost},
+            ${paymentMethod[0].current_balance},
+            ${paymentMethod[0].current_balance - totalCost},
+            ${`E-Zwich card batch purchase: ${batch_code} - ${quantity_received} cards`},
+            ${batch_code},
+            CURRENT_TIMESTAMP
+          )
+        `;
+
+        console.log(
+          `Debited ₵${totalCost} from float account ${body.payment_method_id}`
+        );
+      } catch (floatError) {
+        console.error("Error debiting float account:", floatError);
+        // Rollback the batch creation if float debit fails
+        await sql`DELETE FROM ezwich_card_batches WHERE id = ${batch.id}`;
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "Failed to debit payment method. Batch creation rolled back.",
+          },
+          { status: 500 }
+        );
+      }
+    }
+
+    // Create GL entries for inventory purchase (asset, not expense)
     if (totalCost > 0) {
       try {
         const glResult =
@@ -233,6 +333,9 @@ export async function POST(request: NextRequest) {
               unit_cost: unit_cost,
               partner_bank_id: partner_bank_id,
               partner_bank_name: partner_bank_name,
+              payment_method_id: body.payment_method_id,
+              payment_method_name:
+                paymentMethod[0].provider || "Unknown Payment Method",
             },
           });
 
@@ -246,132 +349,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Create expense record for the purchase
-    if (totalCost > 0) {
-      try {
-        // First, check if the expense head already exists
-        const existingHead = await sql`
-          SELECT id FROM expense_heads 
-          WHERE name = 'Inventory Purchase' AND branch_id = ${targetBranchId}
-          LIMIT 1
-        `;
-
-        let expenseHeadId;
-        if (existingHead.length > 0) {
-          expenseHeadId = existingHead[0].id;
-        } else {
-          // Create the expense head if it doesn't exist
-          try {
-            const expenseHeadResult = await sql`
-              INSERT INTO expense_heads (name, category, description, gl_account_code, is_active, branch_id)
-              VALUES ('Inventory Purchase', 'operational', 'E-Zwich card inventory purchases', '6000', true, ${targetBranchId})
-              RETURNING id
-            `;
-            expenseHeadId = expenseHeadResult[0].id;
-          } catch (headError: any) {
-            // If branch_id column doesn't exist, try without it
-            if (headError.message?.includes("branch_id")) {
-              const expenseHeadResult = await sql`
-                INSERT INTO expense_heads (name, category, description, gl_account_code, is_active)
-                VALUES ('Inventory Purchase', 'operational', 'E-Zwich card inventory purchases', '6000', true)
-                RETURNING id
-              `;
-              expenseHeadId = expenseHeadResult[0].id;
-            } else {
-              throw headError;
-            }
-          }
-        }
-
-        if (expenseHeadId) {
-          try {
-            // Try to create expense with branch_id column
-            const expenseResult = await sql`
-              INSERT INTO expenses (
-                expense_head_id,
-                amount,
-                description,
-                expense_date,
-                reference_number,
-                branch_id,
-                created_by,
-                status,
-                payment_source
-              ) VALUES (
-                ${expenseHeadId},
-                ${totalCost},
-                ${`E-Zwich card batch purchase: ${batch_code} - ${quantity_received} cards`},
-                CURRENT_DATE,
-                ${batch_code},
-                ${targetBranchId},
-                ${created_by || user.username},
-                'approved',
-                'bank_transfer'
-              )
-              RETURNING id
-            `;
-
-            if (expenseResult.length > 0) {
-              console.log(
-                "Expense recorded successfully:",
-                expenseResult[0].id
-              );
-            }
-          } catch (expenseError: any) {
-            // If branch_id column doesn't exist, try without it
-            if (expenseError.message?.includes("branch_id")) {
-              console.log(
-                "branch_id column not found, creating expense without branch info"
-              );
-              const expenseResult = await sql`
-                INSERT INTO expenses (
-                  expense_head_id,
-                  amount,
-                  description,
-                  expense_date,
-                  reference_number,
-                  created_by,
-                  status,
-                  payment_source
-                ) VALUES (
-                  ${expenseHeadId},
-                  ${totalCost},
-                  ${`E-Zwich card batch purchase: ${batch_code} - ${quantity_received} cards`},
-                  CURRENT_DATE,
-                  ${batch_code},
-                  ${created_by || user.username},
-                  'approved',
-                  'bank_transfer'
-                )
-                RETURNING id
-              `;
-
-              if (expenseResult.length > 0) {
-                console.log(
-                  "Expense recorded successfully (without branch):",
-                  expenseResult[0].id
-                );
-              }
-            } else {
-              throw expenseError;
-            }
-          }
-        } else {
-          console.log(
-            "Could not find or create expense head for inventory purchase"
-          );
-        }
-      } catch (expenseError) {
-        console.error("Error creating expense record:", expenseError);
-        // Don't fail the entire transaction, just log the error
-      }
-    }
-
     return NextResponse.json({
       success: true,
       data: batch,
       message:
-        "Card batch added successfully with GL entries and expense record",
+        "Card batch added successfully. Payment method debited and inventory recorded.",
     });
   } catch (error) {
     console.error("Error creating card batch:", error);

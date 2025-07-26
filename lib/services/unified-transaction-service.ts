@@ -85,6 +85,7 @@ export interface TransactionResult {
   error?: string;
   message?: string;
   receipt?: string;
+  data?: any;
 }
 
 export class UnifiedTransactionService {
@@ -781,9 +782,7 @@ export class UnifiedTransactionService {
         ) VALUES (
           ${data.branchId}, ${data.userId}, 'sale', ${data.amount}, ${data.fee},
           ${data.customerName}, ${data.phoneNumber}, ${data.provider}, 
-          ${
-            data.reference || `POWER-${Date.now()}`
-          }, 'completed', ${meterNumber}
+          ${data.reference || `POWER-${Date.now()}`}, 'pending', ${meterNumber}
         )
         RETURNING *
       `;
@@ -2120,6 +2119,167 @@ export class UnifiedTransactionService {
   }
 
   /**
+   * Complete a Power or Jumia transaction (pending -> completed)
+   */
+  static async completeTransaction(
+    transactionId: string,
+    sourceModule: string,
+    userId: string,
+    branchId: string,
+    processedBy: string
+  ): Promise<TransactionResult> {
+    try {
+      console.log(`🔄 Completing ${sourceModule} transaction:`, transactionId);
+
+      // Get the transaction details
+      const transaction = await this.getTransactionById(
+        transactionId,
+        sourceModule
+      );
+      if (!transaction) {
+        return { success: false, error: "Transaction not found" };
+      }
+
+      // Validate transaction can be completed
+      if (sourceModule === "power" && transaction.status !== "pending") {
+        return {
+          success: false,
+          error: "Power transaction is not in pending status",
+        };
+      }
+
+      if (sourceModule === "jumia" && transaction.status !== "completed") {
+        return {
+          success: false,
+          error: "Jumia transaction is not in completed status",
+        };
+      }
+
+      // For Power and Jumia: Update transaction status to completed
+      const newStatus = "completed";
+      await this.updateTransactionStatus(
+        transactionId,
+        sourceModule,
+        newStatus
+      );
+
+      // Log audit
+      const userName = await getUserFullName(userId);
+      await AuditLoggerService.log({
+        userId: userId,
+        username: userName,
+        actionType: "transaction_completed",
+        entityType: "transaction",
+        entityId: transactionId,
+        description: `${sourceModule} transaction completed`,
+        branchId: branchId,
+        branchName: "Branch",
+        status: "success",
+        severity: "low",
+        details: {
+          sourceModule: sourceModule,
+          transactionId: transactionId,
+          processedBy: processedBy,
+        },
+      });
+
+      return {
+        success: true,
+        message: `${sourceModule} transaction completed successfully`,
+        data: { transactionId, newStatus },
+      };
+    } catch (error) {
+      console.error(`Error completing ${sourceModule} transaction:`, error);
+      return {
+        success: false,
+        error: `Failed to complete ${sourceModule} transaction: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      };
+    }
+  }
+
+  /**
+   * Deliver a Jumia transaction (completed -> delivered)
+   */
+  static async deliverTransaction(
+    transactionId: string,
+    sourceModule: string,
+    userId: string,
+    branchId: string,
+    processedBy: string
+  ): Promise<TransactionResult> {
+    try {
+      console.log(`🔄 Delivering ${sourceModule} transaction:`, transactionId);
+
+      // Get the transaction details
+      const transaction = await this.getTransactionById(
+        transactionId,
+        sourceModule
+      );
+      if (!transaction) {
+        return { success: false, error: "Transaction not found" };
+      }
+
+      // Validate transaction can be delivered
+      if (sourceModule !== "jumia") {
+        return {
+          success: false,
+          error: "Deliver action only available for Jumia transactions",
+        };
+      }
+
+      if (transaction.status !== "completed") {
+        return {
+          success: false,
+          error: "Jumia transaction is not in completed status",
+        };
+      }
+
+      // Update transaction status to delivered
+      await this.updateTransactionStatus(
+        transactionId,
+        sourceModule,
+        "delivered"
+      );
+
+      // Log audit
+      const userName = await getUserFullName(userId);
+      await AuditLoggerService.log({
+        userId: userId,
+        username: userName,
+        actionType: "transaction_delivered",
+        entityType: "transaction",
+        entityId: transactionId,
+        description: `${sourceModule} transaction delivered`,
+        branchId: branchId,
+        branchName: "Branch",
+        status: "success",
+        severity: "low",
+        details: {
+          sourceModule: sourceModule,
+          transactionId: transactionId,
+          processedBy: processedBy,
+        },
+      });
+
+      return {
+        success: true,
+        message: `${sourceModule} transaction delivered successfully`,
+        data: { transactionId, newStatus: "delivered" },
+      };
+    } catch (error) {
+      console.error(`Error delivering ${sourceModule} transaction:`, error);
+      return {
+        success: false,
+        error: `Failed to deliver ${sourceModule} transaction: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      };
+    }
+  }
+
+  /**
    * Update transaction record in the appropriate table
    */
   private static async updateTransactionRecord(
@@ -2425,23 +2585,25 @@ export class UnifiedTransactionService {
         // Fetch MoMo transactions
         const momoTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            type as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id
-          FROM momo_transactions
-          WHERE branch_id = ${branchId}
-          ${provider ? sql`AND provider = ${provider}` : sql``}
-          ORDER BY created_at DESC
+            mt.id,
+            mt.customer_name,
+            mt.phone_number,
+            mt.amount,
+            mt.fee,
+            mt.type as transaction_type,
+            mt.provider,
+            mt.reference,
+            mt.status,
+            mt.created_at,
+            mt.branch_id,
+            mt.user_id,
+            mt.float_account_id,
+            b.name as branch_name
+          FROM momo_transactions mt
+          LEFT JOIN branches b ON mt.branch_id = b.id
+          WHERE mt.branch_id = ${branchId}
+          ${provider ? sql`AND mt.provider = ${provider}` : sql``}
+          ORDER BY mt.created_at DESC
           LIMIT ${limit}
           OFFSET ${offset}
         `;
@@ -2465,6 +2627,7 @@ export class UnifiedTransactionService {
           status: t.status,
           date: t.created_at,
           branchId: t.branch_id,
+          branchName: t.branch_name,
           userId: t.user_id,
           floatAccountId: t.float_account_id,
           serviceType: "momo",
@@ -2475,23 +2638,25 @@ export class UnifiedTransactionService {
         // Fetch Agency Banking transactions
         const agencyTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id
-          FROM agency_banking_transactions
-          WHERE branch_id = ${branchId}
-          ${provider ? sql`AND provider = ${provider}` : sql``}
-          ORDER BY created_at DESC
+            abt.id,
+            abt.customer_name,
+            abt.phone_number,
+            abt.amount,
+            abt.fee,
+            abt.transaction_type,
+            abt.provider,
+            abt.reference,
+            abt.status,
+            abt.created_at,
+            abt.branch_id,
+            abt.user_id,
+            abt.float_account_id,
+            b.name as branch_name
+          FROM agency_banking_transactions abt
+          LEFT JOIN branches b ON abt.branch_id = b.id
+          WHERE abt.branch_id = ${branchId}
+          ${provider ? sql`AND abt.provider = ${provider}` : sql``}
+          ORDER BY abt.created_at DESC
           LIMIT ${limit}
           OFFSET ${offset}
         `;
@@ -2515,6 +2680,7 @@ export class UnifiedTransactionService {
           status: t.status,
           date: t.created_at,
           branchId: t.branch_id,
+          branchName: t.branch_name,
           userId: t.user_id,
           floatAccountId: t.float_account_id,
           serviceType: "agency_banking",
@@ -2525,42 +2691,46 @@ export class UnifiedTransactionService {
         // Fetch E-Zwich transactions (combine card issuances and withdrawals)
         const cardIssuances = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
+            eci.id,
+            eci.customer_name,
+            eci.phone_number,
+            eci.amount,
+            eci.fee,
             'card_issuance' as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id
-          FROM e_zwich_card_issuances
-          WHERE branch_id = ${branchId}
-          ${provider ? sql`AND provider = ${provider}` : sql``}
+            eci.provider,
+            eci.reference,
+            eci.status,
+            eci.created_at,
+            eci.branch_id,
+            eci.user_id,
+            eci.float_account_id,
+            b.name as branch_name
+          FROM e_zwich_card_issuances eci
+          LEFT JOIN branches b ON eci.branch_id = b.id
+          WHERE eci.branch_id = ${branchId}
+          ${provider ? sql`AND eci.provider = ${provider}` : sql``}
         `;
 
         const withdrawals = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
+            ew.id,
+            ew.customer_name,
+            ew.phone_number,
+            ew.amount,
+            ew.fee,
             'withdrawal' as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id
-          FROM e_zwich_withdrawals
-          WHERE branch_id = ${branchId}
-          ${provider ? sql`AND provider = ${provider}` : sql``}
+            ew.provider,
+            ew.reference,
+            ew.status,
+            ew.created_at,
+            ew.branch_id,
+            ew.user_id,
+            ew.float_account_id,
+            b.name as branch_name
+          FROM e_zwich_withdrawals ew
+          LEFT JOIN branches b ON ew.branch_id = b.id
+          WHERE ew.branch_id = ${branchId}
+          ${provider ? sql`AND ew.provider = ${provider}` : sql``}
         `;
 
         const allTransactions = [...cardIssuances, ...withdrawals]
@@ -2593,6 +2763,7 @@ export class UnifiedTransactionService {
           status: t.status,
           date: t.created_at,
           branchId: t.branch_id,
+          branchName: t.branch_name,
           userId: t.user_id,
           floatAccountId: t.float_account_id,
           serviceType: "e_zwich",
@@ -2603,22 +2774,24 @@ export class UnifiedTransactionService {
         // Fetch Power transactions
         const powerTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            customer_phone as phone_number,
-            amount,
-            commission as fee,
-            type as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            meter_number,
-            'power' as service_type
-          FROM power_transactions
-          WHERE branch_id = ${branchId}
+            pt.id,
+            pt.customer_name,
+            pt.customer_phone as phone_number,
+            pt.amount,
+            pt.commission as fee,
+            pt.type as transaction_type,
+            pt.provider,
+            pt.reference,
+            pt.status,
+            pt.created_at,
+            pt.branch_id,
+            pt.user_id,
+            pt.meter_number,
+            'power' as service_type,
+            b.name as branch_name
+          FROM power_transactions pt
+          LEFT JOIN branches b ON pt.branch_id = b.id
+          WHERE pt.branch_id = ${branchId}
         `;
 
         const countResult = await sql`
@@ -2639,6 +2812,7 @@ export class UnifiedTransactionService {
           status: t.status,
           date: t.created_at,
           branchId: t.branch_id,
+          branchName: t.branch_name,
           userId: t.user_id,
           meterNumber: t.meter_number,
           serviceType: "power",
@@ -2649,23 +2823,25 @@ export class UnifiedTransactionService {
         // Fetch Jumia transactions
         const jumiaTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id
-          FROM jumia_transactions
-          WHERE branch_id = ${branchId}
-          ${provider ? sql`AND provider = ${provider}` : sql``}
-          ORDER BY created_at DESC
+            jt.id,
+            jt.customer_name,
+            jt.phone_number,
+            jt.amount,
+            jt.fee,
+            jt.transaction_type,
+            jt.provider,
+            jt.reference,
+            jt.status,
+            jt.created_at,
+            jt.branch_id,
+            jt.user_id,
+            jt.float_account_id,
+            b.name as branch_name
+          FROM jumia_transactions jt
+          LEFT JOIN branches b ON jt.branch_id = b.id
+          WHERE jt.branch_id = ${branchId}
+          ${provider ? sql`AND jt.provider = ${provider}` : sql``}
+          ORDER BY jt.created_at DESC
           LIMIT ${limit}
           OFFSET ${offset}
         `;
@@ -2689,6 +2865,7 @@ export class UnifiedTransactionService {
           status: t.status,
           date: t.created_at,
           branchId: t.branch_id,
+          branchName: t.branch_name,
           userId: t.user_id,
           floatAccountId: t.float_account_id,
           serviceType: "jumia",
@@ -2702,126 +2879,138 @@ export class UnifiedTransactionService {
         // MoMo transactions
         const momoTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            type as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id,
-            'momo' as service_type
-          FROM momo_transactions
-          WHERE branch_id = ${branchId}
+            mt.id,
+            mt.customer_name,
+            mt.phone_number,
+            mt.amount,
+            mt.fee,
+            mt.type as transaction_type,
+            mt.provider,
+            mt.reference,
+            mt.status,
+            mt.created_at,
+            mt.branch_id,
+            mt.user_id,
+            mt.float_account_id,
+            'momo' as service_type,
+            b.name as branch_name
+          FROM momo_transactions mt
+          LEFT JOIN branches b ON mt.branch_id = b.id
+          WHERE mt.branch_id = ${branchId}
         `;
 
         // Agency Banking transactions
         const agencyTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id,
-            'agency_banking' as service_type
-          FROM agency_banking_transactions
-          WHERE branch_id = ${branchId}
+            abt.id,
+            abt.customer_name,
+            abt.phone_number,
+            abt.amount,
+            abt.fee,
+            abt.transaction_type,
+            abt.provider,
+            abt.reference,
+            abt.status,
+            abt.created_at,
+            abt.branch_id,
+            abt.user_id,
+            abt.float_account_id,
+            'agency_banking' as service_type,
+            b.name as branch_name
+          FROM agency_banking_transactions abt
+          LEFT JOIN branches b ON abt.branch_id = b.id
+          WHERE abt.branch_id = ${branchId}
         `;
 
         // E-Zwich transactions
         const ezwichCardIssuances = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
+            eci.id,
+            eci.customer_name,
+            eci.phone_number,
+            eci.amount,
+            eci.fee,
             'card_issuance' as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id,
-            'e_zwich' as service_type
-          FROM e_zwich_card_issuances
-          WHERE branch_id = ${branchId}
+            eci.provider,
+            eci.reference,
+            eci.status,
+            eci.created_at,
+            eci.branch_id,
+            eci.user_id,
+            eci.float_account_id,
+            'e_zwich' as service_type,
+            b.name as branch_name
+          FROM e_zwich_card_issuances eci
+          LEFT JOIN branches b ON eci.branch_id = b.id
+          WHERE eci.branch_id = ${branchId}
         `;
 
         const ezwichWithdrawals = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
+            ew.id,
+            ew.customer_name,
+            ew.phone_number,
+            ew.amount,
+            ew.fee,
             'withdrawal' as transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id,
-            'e_zwich' as service_type
-          FROM e_zwich_withdrawals
-          WHERE branch_id = ${branchId}
+            ew.provider,
+            ew.reference,
+            ew.status,
+            ew.created_at,
+            ew.branch_id,
+            ew.user_id,
+            ew.float_account_id,
+            'e_zwich' as service_type,
+            b.name as branch_name
+          FROM e_zwich_withdrawals ew
+          LEFT JOIN branches b ON ew.branch_id = b.id
+          WHERE ew.branch_id = ${branchId}
         `;
 
         // Power transactions
         const powerTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id,
-            'power' as service_type
-          FROM power_transactions
-          WHERE branch_id = ${branchId}
+            pt.id,
+            pt.customer_name,
+            pt.customer_phone as phone_number,
+            pt.amount,
+            pt.commission as fee,
+            pt.type as transaction_type,
+            pt.provider,
+            pt.reference,
+            pt.status,
+            pt.created_at,
+            pt.branch_id,
+            pt.user_id,
+            pt.float_account_id,
+            'power' as service_type,
+            b.name as branch_name
+          FROM power_transactions pt
+          LEFT JOIN branches b ON pt.branch_id = b.id
+          WHERE pt.branch_id = ${branchId}
         `;
 
         // Jumia transactions
         const jumiaTransactions = await sql`
           SELECT 
-            id,
-            customer_name,
-            phone_number,
-            amount,
-            fee,
-            transaction_type,
-            provider,
-            reference,
-            status,
-            created_at,
-            branch_id,
-            user_id,
-            float_account_id,
-            'jumia' as service_type
-          FROM jumia_transactions
-          WHERE branch_id = ${branchId}
+            jt.id,
+            jt.customer_name,
+            jt.phone_number,
+            jt.amount,
+            jt.fee,
+            jt.transaction_type,
+            jt.provider,
+            jt.reference,
+            jt.status,
+            jt.created_at,
+            jt.branch_id,
+            jt.user_id,
+            jt.float_account_id,
+            'jumia' as service_type,
+            b.name as branch_name
+          FROM jumia_transactions jt
+          LEFT JOIN branches b ON jt.branch_id = b.id
+          WHERE jt.branch_id = ${branchId}
         `;
 
         // Combine all transactions and sort by date
@@ -2852,6 +3041,7 @@ export class UnifiedTransactionService {
             status: t.status,
             date: t.created_at,
             branchId: t.branch_id,
+            branchName: t.branch_name,
             userId: t.user_id,
             floatAccountId: t.float_account_id,
             serviceType: t.service_type,
@@ -3063,5 +3253,74 @@ export class UnifiedTransactionService {
       (a: any, b: any) =>
         new Date(b.date).getTime() - new Date(a.date).getTime()
     );
+  }
+
+  static async disburseTransaction(
+    transactionId: string,
+    sourceModule: string,
+    userId: string,
+    branchId: string,
+    processedBy: string
+  ): Promise<TransactionResult> {
+    try {
+      console.log(`🔄 Disbursing ${sourceModule} transaction:`, transactionId);
+
+      // Get the transaction details
+      const transaction = await this.getTransactionById(
+        transactionId,
+        sourceModule
+      );
+      if (!transaction) {
+        return { success: false, error: "Transaction not found" };
+      }
+
+      // Validate transaction can be disbursed
+      if (!["completed", "pending"].includes(transaction.status)) {
+        return {
+          success: false,
+          error: "Transaction is not in a disbursable status",
+        };
+      }
+
+      // Update transaction status to disbursed
+      await this.updateTransactionStatus(
+        transactionId,
+        sourceModule,
+        "disbursed"
+      );
+
+      // Log audit
+      const userName = await getUserFullName(userId);
+      await AuditLoggerService.log({
+        userId: userId,
+        username: userName,
+        actionType: "transaction_disbursed",
+        entityType: "transaction",
+        entityId: transactionId,
+        description: `${sourceModule} transaction disbursed`,
+        branchId: branchId,
+        branchName: "Branch",
+        status: "success",
+        severity: "low",
+        details: {
+          sourceModule: sourceModule,
+          transactionId: transactionId,
+          processedBy: processedBy,
+        },
+      });
+
+      return {
+        success: true,
+        message: `${sourceModule} transaction disbursed successfully`,
+      };
+    } catch (error) {
+      console.error(`Error disbursing ${sourceModule} transaction:`, error);
+      return {
+        success: false,
+        error: `Failed to disburse transaction: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+      };
+    }
   }
 }

@@ -165,6 +165,60 @@ export async function PUT(request: NextRequest) {
         );
         return NextResponse.json(deleteResult);
 
+      case "complete":
+        // Complete Power and Jumia transactions (pending -> completed)
+        if (sourceModule !== "power" && sourceModule !== "jumia") {
+          return NextResponse.json(
+            {
+              success: false,
+              error:
+                "Complete action only available for Power and Jumia transactions",
+            },
+            { status: 400 }
+          );
+        }
+        const completeResult =
+          await UnifiedTransactionService.completeTransaction(
+            transactionId,
+            sourceModule,
+            userId,
+            branchId,
+            processedBy || userId
+          );
+        return NextResponse.json(completeResult);
+
+      case "deliver":
+        // Deliver Jumia transactions (completed -> delivered)
+        if (sourceModule !== "jumia") {
+          return NextResponse.json(
+            {
+              success: false,
+              error: "Deliver action only available for Jumia transactions",
+            },
+            { status: 400 }
+          );
+        }
+        const deliverResult =
+          await UnifiedTransactionService.deliverTransaction(
+            transactionId,
+            sourceModule,
+            userId,
+            branchId,
+            processedBy || userId
+          );
+        return NextResponse.json(deliverResult);
+
+      case "disburse":
+        const disburseResult =
+          await UnifiedTransactionService.disburseTransaction(
+            transactionId,
+            sourceModule,
+            userId,
+            branchId,
+            processedBy || userId
+          );
+        return NextResponse.json(disburseResult);
+
       default:
         return NextResponse.json(
           { success: false, error: "Invalid action" },

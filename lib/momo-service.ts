@@ -14,10 +14,28 @@ export interface MoMoTransactionData {
   branchId?: string;
 }
 
-export async function createMoMoTransaction(data: MoMoTransactionData, request: Request) {
+export async function createMoMoTransaction(
+  data: MoMoTransactionData,
+  request: Request
+) {
   try {
     const user = await getCurrentUser(request as any);
-    
+
+    // Check if cash-in-till account exists for this branch
+    const cashInTillAccount = await sql`
+      SELECT id FROM float_accounts 
+      WHERE branch_id = ${data.branchId || user.branchId}
+        AND account_type = 'cash-in-till'
+        AND is_active = true
+      LIMIT 1
+    `;
+
+    if (cashInTillAccount.length === 0) {
+      throw new Error(
+        "No active cash-in-till account found for this branch. Please contact your administrator."
+      );
+    }
+
     const result = await sql`
       INSERT INTO momo_transactions (
         amount,
@@ -38,8 +56,8 @@ export async function createMoMoTransaction(data: MoMoTransactionData, request: 
         ${data.reference},
         ${data.description || null},
         ${data.transactionType},
-        ${data.provider || 'momo'},
-        ${data.status || 'pending'},
+        ${data.provider || "momo"},
+        ${data.status || "completed"},
         ${data.branchId || user.branchId},
         ${user.id},
         NOW(),
@@ -51,7 +69,7 @@ export async function createMoMoTransaction(data: MoMoTransactionData, request: 
     return result[0] || null;
   } catch (error) {
     console.error("Error creating MoMo transaction:", error);
-    return null;
+    throw error; // Re-throw to handle in the API route
   }
 }
 

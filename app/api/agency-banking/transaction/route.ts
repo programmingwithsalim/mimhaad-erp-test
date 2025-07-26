@@ -181,7 +181,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!type || !["deposit", "withdrawal", "interbank", "interbank_transfer", "commission"].includes(type)) {
+    if (
+      !type ||
+      ![
+        "deposit",
+        "withdrawal",
+        "interbank",
+        "interbank_transfer",
+        "commission",
+      ].includes(type)
+    ) {
       return NextResponse.json(
         { error: "Valid transaction type is required" },
         { status: 400 }
@@ -191,6 +200,26 @@ export async function POST(request: Request) {
     if (!partner_bank_id) {
       return NextResponse.json(
         { error: "Partner bank is required" },
+        { status: 400 }
+      );
+    }
+
+    // Check if cash-in-till account exists for this branch
+    const cashInTillAccount = await sql`
+      SELECT id FROM float_accounts 
+      WHERE branch_id = ${user.branchId}
+        AND account_type = 'cash-in-till'
+        AND is_active = true
+      LIMIT 1
+    `;
+
+    if (cashInTillAccount.length === 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            "No active cash-in-till account found for this branch. Please contact your administrator.",
+        },
         { status: 400 }
       );
     }
@@ -335,7 +364,7 @@ export async function POST(request: Request) {
         ${partnerBank.account_name || partnerBank.provider || ""},
         ${partnerBank.account_number || ""},
         ${partnerBank.id},
-          ${reference || `AGENCY-${Date.now()}`}, 'completed', ${now},
+                    ${reference || `AGENCY-${Date.now()}`}, 'completed', ${now},
         ${user.branchId},
           ${user.id},
           ${cashTillAffected}, ${floatAffected}, ${now}, ${now}

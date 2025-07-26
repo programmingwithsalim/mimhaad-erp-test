@@ -26,7 +26,7 @@ export function useCashInTillRobust() {
 
   // Calculate balance status
   const balanceStatus = useCallback(() => {
-    if (!cashAccount) return "loading";
+    if (!cashAccount) return "error";
 
     const balance = cashAccount.current_balance;
     const minThreshold = cashAccount.min_threshold;
@@ -63,6 +63,12 @@ export function useCashInTillRobust() {
         if (data.account) {
           setCashAccount(data.account);
           return;
+        } else {
+          // No cash-in-till account found
+          setCashAccount(null);
+          setError("No cash-in-till account found for this branch");
+          setIsLoading(false);
+          return;
         }
       }
 
@@ -82,14 +88,15 @@ export function useCashInTillRobust() {
       if (floatResponse.ok) {
         const floatData = await floatResponse.json();
         console.log("Float accounts API response:", floatData);
-        
+
         // Check different possible response formats
-        const accounts = floatData.data || floatData.accounts || floatData.floatAccounts || [];
-        
+        const accounts =
+          floatData.data || floatData.accounts || floatData.floatAccounts || [];
+
         if (Array.isArray(accounts) && accounts.length > 0) {
           const account = accounts[0];
           console.log("Found cash in till account:", account);
-          
+
           // Transform the account data to match expected format
           setCashAccount({
             id: account.id,
@@ -105,34 +112,18 @@ export function useCashInTillRobust() {
         }
       }
 
-      // If no account found, create a default one
-      setCashAccount({
-        id: "default-cash-till",
-        current_balance: 0,
-        min_threshold: 1000,
-        max_threshold: 50000,
-        account_name: "Cash in Till",
-        account_type: "cash-in-till",
-        branch_id: branchId,
-        is_active: true,
-      });
+      // If no account found, set to null
+      setCashAccount(null);
+      setError("No cash-in-till account found for this branch");
     } catch (err) {
       console.error("Error fetching cash account:", err);
       setError(
         err instanceof Error ? err.message : "Failed to fetch cash account"
       );
 
-      // Set default account on error
-      setCashAccount({
-        id: "default-cash-till",
-        current_balance: 0,
-        min_threshold: 1000,
-        max_threshold: 50000,
-        account_name: "Cash in Till",
-        account_type: "cash-in-till",
-        branch_id: branchId,
-        is_active: true,
-      });
+      // Set to null on error
+      setCashAccount(null);
+      setError("Failed to fetch cash-in-till account");
     } finally {
       setIsLoading(false);
     }

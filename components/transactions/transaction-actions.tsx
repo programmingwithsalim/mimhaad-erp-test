@@ -1,11 +1,21 @@
 "use client";
 
 import { useState } from "react";
+import {
+  MoreVertical,
+  Edit,
+  Trash2,
+  RotateCcw,
+  Eye,
+  Printer,
+  DollarSign,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -15,25 +25,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useCurrentUser } from "@/hooks/use-current-user";
-import {
-  MoreVertical,
-  Edit,
-  RotateCcw,
-  Trash2,
-  Receipt,
-  Eye,
-  Printer,
-  CheckCircle,
-} from "lucide-react";
-import {
-  TransactionReceipt,
-  TransactionReceiptData,
-} from "@/components/shared/transaction-receipt";
 
 interface TransactionActionsProps {
   transaction: any;
@@ -58,42 +53,197 @@ export function TransactionActions({
   sourceModule,
   onSuccess,
 }: TransactionActionsProps) {
-  const { toast } = useToast();
-  const { user } = useCurrentUser();
   const [showReverseDialog, setShowReverseDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [showApprovalDialog, setShowApprovalDialog] = useState(false);
   const [reverseReason, setReverseReason] = useState("");
-  const [deleteReason, setDeleteReason] = useState("");
-  const [approvalNotes, setApprovalNotes] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
-    null
-  );
-  const [showReceipt, setShowReceipt] = useState(false);
-  const [currentTransaction, setCurrentTransaction] = useState<any>(null);
+  const { toast } = useToast();
+  const { user } = useCurrentUser();
 
-  const canEdit =
-    userRole === "Admin" || userRole === "Manager" || userRole === "Finance";
+  // Permission checks
+  const canEdit = userRole === "Admin" || userRole === "Finance";
   const canDelete = userRole === "Admin" || userRole === "Finance";
   const canReverse =
     userRole === "Admin" || userRole === "Manager" || userRole === "Operations";
-  const canApprove =
+  const canComplete =
+    userRole === "Admin" || userRole === "Manager" || userRole === "Cashier";
+  const canDeliver =
     userRole === "Admin" || userRole === "Manager" || userRole === "Cashier";
 
   // Special handling for Jumia transactions
   const isJumiaPackageReceipt =
     sourceModule === "jumia" &&
-    transaction.transaction_type === "package_receipt";
-  const isJumiaPodCollection =
-    sourceModule === "jumia" &&
-    transaction.transaction_type === "pod_collection";
-  const isJumiaSettlement =
-    sourceModule === "jumia" && transaction.transaction_type === "settlement";
+    transaction.type?.toLowerCase().includes("package") &&
+    transaction.type?.toLowerCase().includes("receipt");
 
   // Package receipts cannot be reversed, but can be edited/deleted without GL posting
   const canReverseTransaction = canReverse && !isJumiaPackageReceipt;
+
+  // Define action handlers first
+  const handleComplete = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "complete",
+          transactionId: transaction.id,
+          sourceModule: sourceModule,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.firstName && user?.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Completed",
+          description:
+            result.message || "Transaction has been completed successfully",
+        });
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || "Failed to complete transaction");
+      }
+    } catch (error) {
+      toast({
+        title: "Completion Failed",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDeliver = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "deliver",
+          transactionId: transaction.id,
+          sourceModule: sourceModule,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.firstName && user?.lastName
+              ? `${user.firstName} ${user.lastName}`
+              : user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Delivered",
+          description:
+            result.message || "Transaction has been delivered successfully",
+        });
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || "Failed to deliver transaction");
+      }
+    } catch (error) {
+      toast({
+        title: "Delivery Failed",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Determine which action button to show based on transaction type and status
+  const getActionButton = () => {
+    console.log("🔍 Action button check:", {
+      sourceModule,
+      transactionType: transaction.type,
+      status: transaction.status,
+      transaction: transaction,
+    });
+    // Power transactions: Show Complete button when pending
+    if (sourceModule === "power" && transaction.status === "pending") {
+      return {
+        label: "Complete",
+        action: handleComplete,
+        canShow: canComplete,
+      };
+    }
+
+    // Jumia transactions: Show Deliver button when completed
+    if (sourceModule === "jumia" && transaction.status === "completed") {
+      return {
+        label: "Deliver",
+        action: handleDeliver,
+        canShow: canDeliver,
+      };
+    }
+
+    // MoMo transactions: Show Disburse button when completed
+    if (sourceModule === "momo" && transaction.status === "completed") {
+      return {
+        label: "Disburse",
+        action: onReverse, // Using existing disburse logic
+        canShow: canReverse,
+      };
+    }
+
+    // Agency Banking transactions: Show Disburse button when completed
+    if (
+      sourceModule === "agency_banking" &&
+      transaction.status === "completed"
+    ) {
+      return {
+        label: "Disburse",
+        action: onReverse, // Using existing disburse logic
+        canShow: canReverse,
+      };
+    }
+
+    // E-Zwich withdrawal transactions: Show Disburse button when pending
+    if (
+      sourceModule === "e_zwich" &&
+      transaction.type === "withdrawal" &&
+      transaction.status === "pending"
+    ) {
+      return {
+        label: "Disburse",
+        action: onReverse, // Using existing disburse logic
+        canShow: canReverse,
+      };
+    }
+
+    // E-Zwich card issuance transactions: Show Disburse button when completed
+    if (
+      sourceModule === "e_zwich" &&
+      transaction.type === "card_issuance" &&
+      transaction.status === "completed"
+    ) {
+      return {
+        label: "Disburse",
+        action: onReverse, // Using existing disburse logic
+        canShow: canReverse,
+      };
+    }
+
+    return null;
+  };
+
+  const actionButton = getActionButton();
+
   // POD collections and settlements can be edited/deleted with GL posting
   const canEditTransaction = canEdit;
   const canDeleteTransaction = canDelete;
@@ -166,8 +316,7 @@ export function TransactionActions({
       if (result.success) {
         toast({
           title: "Transaction Reversed",
-          description:
-            result.message || "Transaction has been reversed successfully",
+          description: "Transaction has been reversed successfully",
         });
         setShowReverseDialog(false);
         setReverseReason("");
@@ -188,18 +337,8 @@ export function TransactionActions({
   };
 
   const handleDelete = async () => {
-    if (!deleteReason.trim()) {
-      toast({
-        title: "Reason Required",
-        description: "Please provide a reason for the deletion",
-        variant: "destructive",
-      });
-      return;
-    }
-
     setIsProcessing(true);
     try {
-      // For Jumia transactions, use the Jumia-specific API
       let response;
       if (sourceModule === "jumia") {
         response = await fetch(
@@ -208,25 +347,28 @@ export function TransactionActions({
             method: "DELETE",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              reason: deleteReason,
               userId: user?.id,
               branchId: user?.branchId,
-              processedBy: user?.name || user?.username,
+              processedBy:
+                user?.first_name && user?.last_name
+                  ? `${user.first_name} ${user.last_name}`
+                  : user?.email,
             }),
           }
         );
       } else {
         response = await fetch("/api/transactions/unified", {
-          method: "PUT",
+          method: "DELETE",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "delete",
             transactionId: transaction.id,
             sourceModule: sourceModule,
-            reason: deleteReason,
             userId: user?.id,
             branchId: user?.branchId,
-            processedBy: user?.name || user?.username,
+            processedBy:
+              user?.first_name && user?.last_name
+                ? `${user.first_name} ${user.last_name}`
+                : user?.email,
           }),
         });
       }
@@ -236,11 +378,9 @@ export function TransactionActions({
       if (result.success) {
         toast({
           title: "Transaction Deleted",
-          description:
-            result.message || "Transaction has been deleted successfully",
+          description: "Transaction has been deleted successfully",
         });
         setShowDeleteDialog(false);
-        setDeleteReason("");
         onSuccess?.();
       } else {
         throw new Error(result.error || "Failed to delete transaction");
@@ -259,44 +399,33 @@ export function TransactionActions({
 
   const handleGenerateReceipt = async () => {
     try {
-      // Format transaction data for the shared receipt component
-      const formattedReceiptData: TransactionReceiptData = {
-        transactionId: transaction.id || transaction.transaction_id,
-        sourceModule: sourceModule as any,
-        transactionType:
-          transaction.type || transaction.transaction_type || "transaction",
-        amount: transaction.amount || 0,
-        fee: transaction.fee || 0,
-        customerName: transaction.customer_name || transaction.customerName,
-        customerPhone: transaction.customer_phone || transaction.customerPhone,
-        reference:
-          transaction.reference || transaction.id || transaction.transaction_id,
-        branchName: user?.branchName || "Main Branch",
-        date:
-          transaction.created_at ||
-          transaction.date ||
-          new Date().toISOString(),
-        additionalData: {
-          // Add any additional data specific to the transaction type
-          ...(transaction.meter_number && {
-            "Meter Number": transaction.meter_number,
-          }),
-          ...(transaction.provider && { Provider: transaction.provider }),
-          ...(transaction.tracking_id && {
-            "Tracking ID": transaction.tracking_id,
-          }),
-          ...(transaction.card_number && {
-            "Card Number": transaction.card_number,
-          }),
-          ...(transaction.partner_bank && {
-            "Partner Bank": transaction.partner_bank,
-          }),
-          ...(transaction.status && { Status: transaction.status }),
-        },
-      };
+      const response = await fetch("/api/transactions/receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactionId: transaction.id,
+          sourceModule: sourceModule,
+        }),
+      });
 
-      setReceiptData(formattedReceiptData);
-      setShowReceipt(true);
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `receipt-${transaction.reference || transaction.id}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+
+        toast({
+          title: "Receipt Generated",
+          description: "Receipt has been downloaded successfully",
+        });
+      } else {
+        throw new Error("Failed to generate receipt");
+      }
     } catch (error) {
       toast({
         title: "Receipt Generation Failed",
@@ -308,22 +437,24 @@ export function TransactionActions({
   };
 
   const handleEditSubmit = async (updated: any) => {
-    if (!currentTransaction) return;
     setIsProcessing(true);
     try {
-      // For Jumia transactions, use the Jumia-specific API
       let response;
       if (sourceModule === "jumia") {
         response = await fetch(
-          `/api/jumia/transactions/${currentTransaction.transaction_id}`,
+          `/api/jumia/transactions/${transaction.transaction_id}`,
           {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              ...updated,
+              action: "update",
+              updateData: updated,
               userId: user?.id,
               branchId: user?.branchId,
-              processedBy: user?.name || user?.username,
+              processedBy:
+                user?.first_name && user?.last_name
+                  ? `${user.first_name} ${user.last_name}`
+                  : user?.email,
             }),
           }
         );
@@ -332,13 +463,16 @@ export function TransactionActions({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            action: "edit",
-            transactionId: currentTransaction.id,
+            action: "update",
+            transactionId: transaction.id,
             sourceModule: sourceModule,
-            updates: updated,
+            updateData: updated,
             userId: user?.id,
             branchId: user?.branchId,
-            processedBy: user?.name || user?.username,
+            processedBy:
+              user?.first_name && user?.last_name
+                ? `${user.first_name} ${user.last_name}`
+                : user?.email,
           }),
         });
       }
@@ -348,11 +482,8 @@ export function TransactionActions({
       if (result.success) {
         toast({
           title: "Transaction Updated",
-          description:
-            result.message || "Transaction has been updated successfully",
+          description: "Transaction has been updated successfully",
         });
-        setShowEditDialog(false);
-        setCurrentTransaction(null);
         onSuccess?.();
       } else {
         throw new Error(result.error || "Failed to update transaction");
@@ -360,52 +491,6 @@ export function TransactionActions({
     } catch (error) {
       toast({
         title: "Update Failed",
-        description:
-          error instanceof Error ? error.message : "An unknown error occurred",
-        variant: "destructive",
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleApproval = async () => {
-    setIsProcessing(true);
-    try {
-      const response = await fetch("/api/transactions/unified", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "approve",
-          transactionId: transaction.id,
-          sourceModule: sourceModule,
-          notes: approvalNotes,
-          userId: user?.id,
-          branchId: user?.branchId,
-          processedBy:
-            user?.first_name && user?.last_name
-              ? `${user.first_name} ${user.last_name}`
-              : user?.email,
-        }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        toast({
-          title: "Transaction Approved",
-          description:
-            result.message || "Transaction has been approved successfully",
-        });
-        setShowApprovalDialog(false);
-        setApprovalNotes("");
-        onSuccess?.();
-      } else {
-        throw new Error(result.error || "Failed to approve transaction");
-      }
-    } catch (error) {
-      toast({
-        title: "Approval Failed",
         description:
           error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
@@ -431,68 +516,70 @@ export function TransactionActions({
             </DropdownMenuItem>
           )}
 
-          <DropdownMenuItem onClick={handleGenerateReceipt}>
-            <Receipt className="mr-2 h-4 w-4" />
-            Generate Receipt
-          </DropdownMenuItem>
-
-          {canApprove && transaction.status === "pending" && (
-            <DropdownMenuItem onClick={() => setShowApprovalDialog(true)}>
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Approve Transaction
+          {/* Dynamic Action Button */}
+          {actionButton && actionButton.canShow && (
+            <DropdownMenuItem onClick={actionButton.action}>
+              <DollarSign className="mr-2 h-4 w-4" />
+              {actionButton.label}
             </DropdownMenuItem>
           )}
 
           {canEditTransaction && onEdit && (
-            <DropdownMenuItem
-              onClick={() => {
-                setCurrentTransaction(transaction);
-                setShowEditDialog(true);
-              }}
-            >
+            <DropdownMenuItem onClick={() => onEdit(transaction)}>
               <Edit className="mr-2 h-4 w-4" />
-              Edit Transaction
+              Edit
             </DropdownMenuItem>
           )}
+
+          {onPrint && (
+            <DropdownMenuItem onClick={handleGenerateReceipt}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print Receipt
+            </DropdownMenuItem>
+          )}
+
+          <DropdownMenuSeparator />
 
           {canReverseTransaction && (
-            <DropdownMenuItem onClick={() => setShowReverseDialog(true)}>
+            <DropdownMenuItem
+              onClick={() => setShowReverseDialog(true)}
+              className="text-red-600"
+            >
               <RotateCcw className="mr-2 h-4 w-4" />
-              Reverse Transaction
+              Reverse
             </DropdownMenuItem>
           )}
 
-          {canDeleteTransaction && (
+          {canDeleteTransaction && onDelete && (
             <DropdownMenuItem
               onClick={() => setShowDeleteDialog(true)}
               className="text-red-600"
             >
               <Trash2 className="mr-2 h-4 w-4" />
-              Delete Transaction
+              Delete
             </DropdownMenuItem>
           )}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Reverse Transaction Dialog */}
+      {/* Reverse Dialog */}
       <Dialog open={showReverseDialog} onOpenChange={setShowReverseDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Reverse Transaction</DialogTitle>
             <DialogDescription>
-              {isJumiaPackageReceipt
-                ? "Package receipts cannot be reversed as they don't affect GL accounts."
-                : "This will create a reversal transaction and update float balances. Please provide a reason for the reversal."}
+              Are you sure you want to reverse this transaction? This action
+              cannot be undone and will affect the general ledger.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label htmlFor="reverse-reason">Reason for Reversal *</Label>
+              <Label htmlFor="reverse-reason">Reason for Reversal</Label>
               <Textarea
                 id="reverse-reason"
                 value={reverseReason}
                 onChange={(e) => setReverseReason(e.target.value)}
-                placeholder="Enter reason for reversal..."
+                placeholder="Enter the reason for reversing this transaction..."
                 rows={3}
               />
             </div>
@@ -506,7 +593,8 @@ export function TransactionActions({
               </Button>
               <Button
                 onClick={handleReverse}
-                disabled={isProcessing || !reverseReason.trim()}
+                disabled={isProcessing}
+                variant="destructive"
               >
                 {isProcessing ? "Reversing..." : "Reverse Transaction"}
               </Button>
@@ -515,190 +603,31 @@ export function TransactionActions({
         </DialogContent>
       </Dialog>
 
-      {/* Delete Transaction Dialog */}
+      {/* Delete Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Transaction</DialogTitle>
             <DialogDescription>
-              {isJumiaPackageReceipt
-                ? "This will permanently delete the package receipt. Package receipts don't affect GL accounts, so no GL entries will be reversed."
-                : "This will permanently delete the transaction and update float balances. This action cannot be undone. Please provide a reason for the deletion."}
+              Are you sure you want to delete this transaction? This action
+              cannot be undone.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="delete-reason">Reason for Deletion *</Label>
-              <Textarea
-                id="delete-reason"
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="Enter reason for deletion..."
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowDeleteDialog(false)}
-                disabled={isProcessing}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={handleDelete}
-                disabled={isProcessing || !deleteReason.trim()}
-              >
-                {isProcessing ? "Deleting..." : "Delete Transaction"}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Receipt Dialog */}
-      <TransactionReceipt
-        data={receiptData}
-        open={showReceipt}
-        onOpenChange={setShowReceipt}
-      />
-
-      {/* Edit Transaction Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="sm:max-w-[425px]">
-          <DialogHeader>
-            <DialogTitle>Edit Jumia Transaction</DialogTitle>
-            <DialogDescription>
-              {isJumiaPackageReceipt
-                ? "Update package receipt details. Package receipts don't affect GL accounts."
-                : "Update transaction details. This will update GL entries if applicable."}
-            </DialogDescription>
-          </DialogHeader>
-          {currentTransaction && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const formData = new FormData(e.currentTarget);
-                const updated = {
-                  tracking_id: formData.get("tracking_id"),
-                  customer_name: formData.get("customer_name"),
-                  customer_phone: formData.get("customer_phone"),
-                  amount: Number(formData.get("amount")),
-                  status: formData.get("status"),
-                  delivery_status: formData.get("delivery_status"),
-                  payment_method: formData.get("payment_method"),
-                  notes: formData.get("notes"),
-                };
-                handleEditSubmit(updated);
-              }}
-              className="space-y-4"
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDeleteDialog(false)}
+              disabled={isProcessing}
             >
-              <div>
-                <Label>Tracking ID</Label>
-                <Input
-                  name="tracking_id"
-                  defaultValue={currentTransaction.tracking_id}
-                />
-              </div>
-              <div>
-                <Label>Customer Name</Label>
-                <Input
-                  name="customer_name"
-                  defaultValue={currentTransaction.customer_name}
-                />
-              </div>
-              <div>
-                <Label>Customer Phone</Label>
-                <Input
-                  name="customer_phone"
-                  defaultValue={currentTransaction.customer_phone}
-                />
-              </div>
-              <div>
-                <Label>Amount</Label>
-                <Input
-                  name="amount"
-                  type="number"
-                  step="0.01"
-                  defaultValue={currentTransaction.amount}
-                />
-              </div>
-              <div>
-                <Label>Status</Label>
-                <Input name="status" defaultValue={currentTransaction.status} />
-              </div>
-              <div>
-                <Label>Delivery Status</Label>
-                <Input
-                  name="delivery_status"
-                  defaultValue={currentTransaction.delivery_status}
-                />
-              </div>
-              <div>
-                <Label>Payment Method</Label>
-                <Input
-                  name="payment_method"
-                  defaultValue={currentTransaction.payment_method}
-                />
-              </div>
-              <div>
-                <Label>Notes</Label>
-                <Textarea
-                  name="notes"
-                  defaultValue={currentTransaction.notes}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowEditDialog(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" disabled={isProcessing}>
-                  {isProcessing ? "Updating..." : "Update Transaction"}
-                </Button>
-              </div>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Approval Dialog */}
-      <Dialog open={showApprovalDialog} onOpenChange={setShowApprovalDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Approve Transaction</DialogTitle>
-            <DialogDescription>
-              Approve this transaction. This will mark it as completed and
-              update any pending balances.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="approval-notes">Approval Notes (Optional)</Label>
-              <Textarea
-                id="approval-notes"
-                value={approvalNotes}
-                onChange={(e) => setApprovalNotes(e.target.value)}
-                placeholder="Enter any notes for this approval..."
-                rows={3}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => setShowApprovalDialog(false)}
-                disabled={isProcessing}
-              >
-                Cancel
-              </Button>
-              <Button onClick={handleApproval} disabled={isProcessing}>
-                {isProcessing ? "Approving..." : "Approve Transaction"}
-              </Button>
-            </div>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleDelete}
+              disabled={isProcessing}
+              variant="destructive"
+            >
+              {isProcessing ? "Deleting..." : "Delete Transaction"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

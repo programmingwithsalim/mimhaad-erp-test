@@ -257,7 +257,19 @@ export default function PowerPageEnhancedFixed() {
 
         form.reset();
         setCalculatedFee(0);
-        refreshAccounts();
+        // Refresh accounts and transactions
+        await refreshAccounts();
+        // Refetch transactions to show the new transaction
+        const transactionResponse = await fetch(
+          `/api/transactions/unified?branchId=${user.branchId}&serviceType=power&orderBy=created_at&orderDirection=desc`
+        );
+        const transactionData = await transactionResponse.json();
+        if (
+          transactionData.success &&
+          Array.isArray(transactionData.transactions)
+        ) {
+          setTransactions(transactionData.transactions);
+        }
       } else {
         throw new Error(result.error || "Failed to process transaction");
       }
@@ -605,25 +617,106 @@ export default function PowerPageEnhancedFixed() {
 
             {/* Float Balances Sidebar */}
             <div className="space-y-4">
-              {(() => {
-                // Since the EnhancedPowerTransactionForm has its own form state,
-                // we'll show all power float accounts in the DynamicFloatDisplay
-                // without requiring a specific provider to be selected
-                const selectedProvider = undefined; // Don't require a specific provider selection
+              {/* Cash in Till Card */}
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <div>
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <DollarSign className="h-4 w-4" />
+                      Cash in Till
+                    </CardTitle>
+                    <CardDescription>
+                      Available cash for transactions
+                    </CardDescription>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={refreshAccounts}
+                    disabled={isLoadingAccounts}
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4 ${
+                        isLoadingAccounts ? "animate-spin" : ""
+                      }`}
+                    />
+                  </Button>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <div className="text-2xl font-bold text-green-600">
+                      {(() => {
+                        const cashAccount = floatAccounts.find(
+                          (acc) =>
+                            acc.account_type === "cash-in-till" && acc.is_active
+                        );
+                        return cashAccount
+                          ? `GHS ${cashAccount.current_balance.toFixed(2)}`
+                          : "GHS 0.00";
+                      })()}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-                return (
-                  <DynamicFloatDisplay
-                    selectedProvider={selectedProvider}
-                    floatAccounts={allRelevantFloats.map((acc) => ({
-                      ...acc,
-                      account_name: acc.account_number || acc.provider || "",
-                    }))}
-                    serviceType="power"
-                    onRefresh={refreshAccounts}
-                    isLoading={isLoadingAccounts}
-                  />
-                );
-              })()}
+              {/* Power Float Accounts */}
+              {powerFloats.length > 0 && (
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <div>
+                      <CardTitle className="text-sm font-medium flex items-center gap-2">
+                        <Zap className="h-4 w-4" />
+                        Power Float Accounts
+                      </CardTitle>
+                      <CardDescription>
+                        Available power provider floats
+                      </CardDescription>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-3">
+                      {powerFloats.map((float) => (
+                        <div
+                          key={float.id}
+                          className="flex justify-between items-center p-2 border rounded"
+                        >
+                          <div>
+                            <div className="font-medium text-sm">
+                              {float.provider}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {float.account_number}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-semibold text-green-600">
+                              GHS {float.current_balance.toFixed(2)}
+                            </div>
+                            <Badge
+                              variant={
+                                float.current_balance < float.min_threshold
+                                  ? "destructive"
+                                  : float.current_balance <
+                                    float.min_threshold * 1.5
+                                  ? "secondary"
+                                  : "default"
+                              }
+                              className="text-xs"
+                            >
+                              {float.current_balance < float.min_threshold
+                                ? "Low"
+                                : float.current_balance <
+                                  float.min_threshold * 1.5
+                                ? "Warning"
+                                : "Healthy"}
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           </div>
         </TabsContent>

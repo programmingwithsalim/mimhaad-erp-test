@@ -136,7 +136,9 @@ export function useFloatAccountsByBranch(branchId: string) {
         accountsData = [];
       }
 
-      console.log(`[useFloatAccountsByBranch] Setting ${accountsData.length} accounts`);
+      console.log(
+        `[useFloatAccountsByBranch] Setting ${accountsData.length} accounts`
+      );
       setAccounts(accountsData);
     } catch (err) {
       console.error("Error fetching float accounts:", err);

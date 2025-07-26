@@ -97,11 +97,13 @@ export async function GET(request: NextRequest) {
           if (momoCount[0]?.count > 0) {
             momoData = await sql`
               SELECT 
-                id, type, amount, fee, customer_name, phone_number, 
-                provider, status, created_at as date, branch_id, user_id, reference
-              FROM momo_transactions 
-              WHERE branch_id::text = ${effectiveBranchId}
-              ORDER BY created_at DESC 
+                mt.id, mt.type, mt.amount, mt.fee, mt.customer_name, mt.phone_number, 
+                mt.provider, mt.status, mt.created_at as date, mt.branch_id, mt.user_id, mt.reference,
+                b.name as branch_name
+              FROM momo_transactions mt
+              LEFT JOIN branches b ON mt.branch_id = b.id
+              WHERE mt.branch_id::text = ${effectiveBranchId}
+              ORDER BY mt.created_at DESC 
               LIMIT ${limit}
             `;
           }
@@ -111,10 +113,12 @@ export async function GET(request: NextRequest) {
           if (momoCount[0]?.count > 0) {
             momoData = await sql`
               SELECT 
-                id, type, amount, fee, customer_name, phone_number, 
-                provider, status, created_at as date, branch_id, user_id, reference
-              FROM momo_transactions 
-              ORDER BY created_at DESC 
+                mt.id, mt.type, mt.amount, mt.fee, mt.customer_name, mt.phone_number, 
+                mt.provider, mt.status, mt.created_at as date, mt.branch_id, mt.user_id, mt.reference,
+                b.name as branch_name
+              FROM momo_transactions mt
+              LEFT JOIN branches b ON mt.branch_id = b.id
+              ORDER BY mt.created_at DESC 
               LIMIT ${limit}
             `;
           }
@@ -141,11 +145,13 @@ export async function GET(request: NextRequest) {
           if (agencyCount[0]?.count > 0) {
             agencyData = await sql`
               SELECT 
-                id, type, amount, fee, customer_name, account_number as phone_number, 
-                partner_bank as provider, status, date, branch_id, user_id, reference
-              FROM agency_banking_transactions 
-              WHERE branch_id::text = ${effectiveBranchId}
-              ORDER BY date DESC 
+                abt.id, abt.type, abt.amount, abt.fee, abt.customer_name, abt.account_number as phone_number, 
+                abt.partner_bank as provider, abt.status, abt.date, abt.branch_id, abt.user_id, abt.reference,
+                b.name as branch_name
+              FROM agency_banking_transactions abt
+              LEFT JOIN branches b ON abt.branch_id = b.id
+              WHERE abt.branch_id::text = ${effectiveBranchId}
+              ORDER BY abt.date DESC 
               LIMIT ${limit}
             `;
           }
@@ -155,10 +161,12 @@ export async function GET(request: NextRequest) {
           if (agencyCount[0]?.count > 0) {
             agencyData = await sql`
               SELECT 
-                id, type, amount, fee, customer_name, account_number as phone_number, 
-                partner_bank as provider, status, date, branch_id, user_id, reference
-              FROM agency_banking_transactions 
-              ORDER BY date DESC 
+                abt.id, abt.type, abt.amount, abt.fee, abt.customer_name, abt.account_number as phone_number, 
+                abt.partner_bank as provider, abt.status, abt.date, abt.branch_id, abt.user_id, abt.reference,
+                b.name as branch_name
+              FROM agency_banking_transactions abt
+              LEFT JOIN branches b ON abt.branch_id = b.id
+              ORDER BY abt.date DESC 
               LIMIT ${limit}
             `;
           }
@@ -179,43 +187,93 @@ export async function GET(request: NextRequest) {
         console.warn("⚠️ Agency banking transactions query failed:", error);
       }
 
-      // 3. E-Zwich Transactions
+      // 3. E-Zwich Transactions (Withdrawals and Card Issuances)
       try {
         let ezwichCount, ezwichData;
+
+        // Count withdrawals and card issuances
         if (effectiveBranchId && effectiveBranchId !== "all") {
-          ezwichCount =
-            await sql`SELECT COUNT(*) as count FROM ezwich_transactions WHERE branch_id::text = ${effectiveBranchId}`;
-          if (ezwichCount[0]?.count > 0) {
-            ezwichData = await sql`
-              SELECT 
-                id, type, amount, fee, customer_name, customer_phone as phone_number, 
-                partner_bank as provider, status, created_at as date, branch_id, user_id, reference
-              FROM ezwich_transactions 
-              WHERE branch_id::text = ${effectiveBranchId}
-              ORDER BY created_at DESC 
-              LIMIT ${limit}
-            `;
-          }
+          ezwichCount = await sql`
+            SELECT 
+              (SELECT COUNT(*) FROM e_zwich_withdrawals WHERE branch_id::text = ${effectiveBranchId}) +
+              (SELECT COUNT(*) FROM e_zwich_card_issuances WHERE branch_id::text = ${effectiveBranchId}) as count
+          `;
         } else {
-          ezwichCount =
-            await sql`SELECT COUNT(*) as count FROM ezwich_transactions`;
-          if (ezwichCount[0]?.count > 0) {
-            ezwichData = await sql`
-              SELECT 
-                id, type, amount, fee, customer_name, customer_phone as phone_number, 
-                partner_bank as provider, status, created_at as date, branch_id, user_id, reference
-              FROM ezwich_transactions 
-              ORDER BY created_at DESC 
-              LIMIT ${limit}
-            `;
-          }
+          ezwichCount = await sql`
+            SELECT 
+              (SELECT COUNT(*) FROM e_zwich_withdrawals) +
+              (SELECT COUNT(*) FROM e_zwich_card_issuances) as count
+          `;
         }
 
         const ezwichCountNum = Number.parseInt(ezwichCount[0]?.count || "0");
+
+        if (ezwichCountNum > 0) {
+          // Get withdrawals
+          let withdrawals = [];
+          if (effectiveBranchId && effectiveBranchId !== "all") {
+            withdrawals = await sql`
+              SELECT 
+                ew.id, 'withdrawal' as type, ew.amount, ew.fee, ew.customer_name, ew.phone_number, 
+                ew.provider, ew.status, ew.created_at as date, ew.branch_id, ew.user_id, ew.reference,
+                b.name as branch_name
+              FROM e_zwich_withdrawals ew
+              LEFT JOIN branches b ON ew.branch_id = b.id
+              WHERE ew.branch_id::text = ${effectiveBranchId}
+              ORDER BY ew.created_at DESC
+            `;
+          } else {
+            withdrawals = await sql`
+              SELECT 
+                ew.id, 'withdrawal' as type, ew.amount, ew.fee, ew.customer_name, ew.phone_number, 
+                ew.provider, ew.status, ew.created_at as date, ew.branch_id, ew.user_id, ew.reference,
+                b.name as branch_name
+              FROM e_zwich_withdrawals ew
+              LEFT JOIN branches b ON ew.branch_id = b.id
+              ORDER BY ew.created_at DESC
+            `;
+          }
+
+          // Get card issuances
+          let cardIssuances = [];
+          if (effectiveBranchId && effectiveBranchId !== "all") {
+            cardIssuances = await sql`
+              SELECT 
+                eci.id, 'card_issuance' as type, eci.amount, eci.fee, eci.customer_name, eci.phone_number, 
+                eci.provider, eci.status, eci.created_at as date, eci.branch_id, eci.user_id, eci.reference,
+                b.name as branch_name
+              FROM e_zwich_card_issuances eci
+              LEFT JOIN branches b ON eci.branch_id = b.id
+              WHERE eci.branch_id::text = ${effectiveBranchId}
+              ORDER BY eci.created_at DESC
+            `;
+          } else {
+            cardIssuances = await sql`
+              SELECT 
+                eci.id, 'card_issuance' as type, eci.amount, eci.fee, eci.customer_name, eci.phone_number, 
+                eci.provider, eci.status, eci.created_at as date, eci.branch_id, eci.user_id, eci.reference,
+                b.name as branch_name
+              FROM e_zwich_card_issuances eci
+              LEFT JOIN branches b ON eci.branch_id = b.id
+              ORDER BY eci.created_at DESC
+            `;
+          }
+
+          // Combine and sort by date
+          ezwichData = [...withdrawals, ...cardIssuances]
+            .sort(
+              (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+            )
+            .slice(0, limit);
+        }
+
         totalCount += ezwichCountNum;
         if (ezwichData) {
           transactionsResult.push(
-            ...ezwichData.map((tx: any) => ({ ...tx, source_module: "ezwich" }))
+            ...ezwichData.map((tx: any) => ({
+              ...tx,
+              source_module: "e_zwich",
+            }))
           );
         }
         console.log(`📊 E-Zwich transactions: ${ezwichCountNum}`);
@@ -232,11 +290,13 @@ export async function GET(request: NextRequest) {
           if (powerCount[0]?.count > 0) {
             powerData = await sql`
               SELECT 
-                id, type, amount, commission as fee, customer_name, customer_phone as phone_number, 
-                provider, status, created_at as date, branch_id, user_id, reference
-              FROM power_transactions 
-              WHERE branch_id::text = ${effectiveBranchId}
-              ORDER BY created_at DESC 
+                pt.id, pt.type, pt.amount, pt.commission as fee, pt.customer_name, pt.customer_phone as phone_number, 
+                pt.provider, pt.status, pt.created_at as date, pt.branch_id, pt.user_id, pt.reference,
+                b.name as branch_name
+              FROM power_transactions pt
+              LEFT JOIN branches b ON pt.branch_id = b.id
+              WHERE pt.branch_id::text = ${effectiveBranchId}
+              ORDER BY pt.created_at DESC 
               LIMIT ${limit}
             `;
           }
@@ -246,10 +306,12 @@ export async function GET(request: NextRequest) {
           if (powerCount[0]?.count > 0) {
             powerData = await sql`
               SELECT 
-                id, type, amount, commission as fee, customer_name, customer_phone as phone_number, 
-                provider, status, created_at as date, branch_id, user_id, reference
-              FROM power_transactions 
-              ORDER BY created_at DESC 
+                pt.id, pt.type, pt.amount, pt.commission as fee, pt.customer_name, pt.customer_phone as phone_number, 
+                pt.provider, pt.status, pt.created_at as date, pt.branch_id, pt.user_id, pt.reference,
+                b.name as branch_name
+              FROM power_transactions pt
+              LEFT JOIN branches b ON pt.branch_id = b.id
+              ORDER BY pt.created_at DESC 
               LIMIT ${limit}
             `;
           }
@@ -276,11 +338,13 @@ export async function GET(request: NextRequest) {
           if (jumiaCount[0]?.count > 0) {
             jumiaData = await sql`
               SELECT 
-                id, transaction_type as type, amount, fee, customer_name, customer_phone as phone_number, 
-                'Jumia' as provider, status, created_at as date, branch_id, user_id, transaction_id as reference
-              FROM jumia_transactions 
-              WHERE branch_id::text = ${effectiveBranchId}
-              ORDER BY created_at DESC 
+                jt.id, jt.transaction_type as type, jt.amount, jt.fee, jt.customer_name, jt.customer_phone as phone_number, 
+                'Jumia' as provider, jt.status, jt.created_at as date, jt.branch_id, jt.user_id, jt.transaction_id as reference,
+                b.name as branch_name
+              FROM jumia_transactions jt
+              LEFT JOIN branches b ON jt.branch_id = b.id
+              WHERE jt.branch_id::text = ${effectiveBranchId}
+              ORDER BY jt.created_at DESC 
               LIMIT ${limit}
             `;
           }
@@ -290,10 +354,12 @@ export async function GET(request: NextRequest) {
           if (jumiaCount[0]?.count > 0) {
             jumiaData = await sql`
               SELECT 
-                id, transaction_type as type, amount, fee, customer_name, customer_phone as phone_number, 
-                'Jumia' as provider, status, created_at as date, branch_id, user_id, transaction_id as reference
-              FROM jumia_transactions 
-              ORDER BY created_at DESC 
+                jt.id, jt.transaction_type as type, jt.amount, jt.fee, jt.customer_name, jt.customer_phone as phone_number, 
+                'Jumia' as provider, jt.status, jt.created_at as date, jt.branch_id, jt.user_id, jt.transaction_id as reference,
+                b.name as branch_name
+              FROM jumia_transactions jt
+              LEFT JOIN branches b ON jt.branch_id = b.id
+              ORDER BY jt.created_at DESC 
               LIMIT ${limit}
             `;
           }

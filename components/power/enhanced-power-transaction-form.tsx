@@ -32,12 +32,8 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Zap, Calculator, Receipt } from "lucide-react";
+import { Loader2, Zap, Calculator } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
-import {
-  TransactionReceipt,
-  TransactionReceiptData,
-} from "@/components/shared/transaction-receipt";
 
 const formSchema = z.object({
   provider: z.string().min(1, "Provider is required"),
@@ -76,10 +72,6 @@ export function EnhancedPowerTransactionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedPowerAccount, setSelectedPowerAccount] = useState<any>(null);
   const [feeConfig, setFeeConfig] = useState<any>(null);
-  const [receiptData, setReceiptData] = useState<TransactionReceiptData | null>(
-    null
-  );
-  const [showReceipt, setShowReceipt] = useState(false);
   const [userModifiedFee, setUserModifiedFee] = useState(false);
   const [floatAccounts, setFloatAccounts] = useState<any[]>([]);
   const [loadingFloatAccounts, setLoadingFloatAccounts] = useState(false);
@@ -257,8 +249,6 @@ export function EnhancedPowerTransactionForm({
         processed_by: user.username || user.email || "Unknown User",
       };
 
-
-
       const response = await fetch("/api/power/transactions", {
         method: "POST",
         headers: {
@@ -292,36 +282,6 @@ export function EnhancedPowerTransactionForm({
             values.amount
           )} processed successfully`,
         });
-
-        // Set receipt data
-        setReceiptData({
-          transactionId: result.transaction.id,
-          sourceModule: "power",
-          transactionType: "sale",
-          amount: values.amount,
-          fee: values.fee ?? 0,
-          customerName: values.customerName,
-          customerPhone: values.customerPhone,
-          reference: result.transaction.reference,
-          branchName: user.branchName || "Main Branch",
-          date: new Date().toISOString(),
-          additionalData: {
-            provider: selectedPowerAccount.provider,
-            meterNumber: values.meterNumber,
-            paymentMethod: values.paymentMethod,
-            paymentAccount:
-              values.paymentMethod !== "cash"
-                ? floatAccounts.find(
-                    (acc) => acc.id === values.paymentAccountId
-                  )?.provider ||
-                  floatAccounts.find(
-                    (acc) => acc.id === values.paymentAccountId
-                  )?.account_name
-                : "Cash",
-          },
-        });
-        setShowReceipt(true);
-
         form.reset();
         setUserModifiedFee(false);
         if (onSuccess) {
@@ -405,15 +365,15 @@ export function EnhancedPowerTransactionForm({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Left Column */}
                 <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="meterNumber"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Meter Number</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Enter meter number" {...field} />
-                      </FormControl>
+                  <FormField
+                    control={form.control}
+                    name="meterNumber"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Meter Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Enter meter number" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -431,45 +391,45 @@ export function EnhancedPowerTransactionForm({
                             {...field}
                           />
                         </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="amount"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Amount (GHS)</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          placeholder="0.00"
-                          {...field}
-                          onChange={(e) =>
-                            field.onChange(Number(e.target.value))
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="amount"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Amount (GHS)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            placeholder="0.00"
+                            {...field}
+                            onChange={(e) =>
+                              field.onChange(Number(e.target.value))
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
+                  <FormField
+                    control={form.control}
                     name="fee"
-                  render={({ field }) => (
-                    <FormItem>
+                    render={({ field }) => (
+                      <FormItem>
                         <FormLabel className="flex items-center gap-2">
                           <Calculator className="h-4 w-4" />
                           Transaction Fee (GHS)
                         </FormLabel>
-                      <FormControl>
-                        <Input
+                        <FormControl>
+                          <Input
                             type="number"
                             step="0.01"
                             min="0"
@@ -483,8 +443,8 @@ export function EnhancedPowerTransactionForm({
                               field.onChange(value);
                               setUserModifiedFee(true);
                             }}
-                        />
-                      </FormControl>
+                          />
+                        </FormControl>
                         {feeConfig && (
                           <FormDescription>
                             {feeConfig.fee_type === "fixed"
@@ -502,57 +462,57 @@ export function EnhancedPowerTransactionForm({
                               )})`}
                           </FormDescription>
                         )}
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
 
                 {/* Right Column */}
                 <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="customerPhone"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone Number</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="0241234567"
-                          maxLength={10}
-                          {...field}
-                          onBlur={async () => {
-                            await form.trigger("customerPhone");
-                          }}
-                          onChange={(e) => {
-                            // Only allow digits
-                            const value = e.target.value.replace(/\D/g, "");
-                            // Limit to 10 digits
-                            const limitedValue = value.slice(0, 10);
-                            field.onChange(limitedValue);
-                          }}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  <FormField
+                    control={form.control}
+                    name="customerPhone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone Number</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="0241234567"
+                            maxLength={10}
+                            {...field}
+                            onBlur={async () => {
+                              await form.trigger("customerPhone");
+                            }}
+                            onChange={(e) => {
+                              // Only allow digits
+                              const value = e.target.value.replace(/\D/g, "");
+                              // Limit to 10 digits
+                              const limitedValue = value.slice(0, 10);
+                              field.onChange(limitedValue);
+                            }}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              <FormField
-                control={form.control}
+                  <FormField
+                    control={form.control}
                     name="paymentMethod"
-                render={({ field }) => (
-                  <FormItem>
+                    render={({ field }) => (
+                      <FormItem>
                         <FormLabel>Payment Method</FormLabel>
                         <Select
                           onValueChange={field.onChange}
                           defaultValue={field.value}
                         >
-                    <FormControl>
+                          <FormControl>
                             <SelectTrigger>
                               <SelectValue placeholder="Select payment method" />
                             </SelectTrigger>
-                    </FormControl>
+                          </FormControl>
                           <SelectContent>
                             <SelectItem value="cash">Cash</SelectItem>
                             <SelectItem value="momo">Mobile Money</SelectItem>
@@ -623,33 +583,33 @@ export function EnhancedPowerTransactionForm({
                                 ))}
                             </SelectContent>
                           </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                   )}
 
-              {/* Description */}
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description (Optional)</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Enter transaction description or notes"
-                        className="resize-none"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      Additional notes about this power transaction
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  {/* Description */}
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            placeholder="Enter transaction description or notes"
+                            className="resize-none"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Additional notes about this power transaction
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
                 </div>
               </div>
 
@@ -703,8 +663,7 @@ export function EnhancedPowerTransactionForm({
               {/* Transaction Summary */}
               {watchAmount > 0 && (
                 <div className="p-4 bg-green-50 rounded-lg border border-green-200">
-                  <h4 className="font-medium text-green-900 mb-2 flex items-center gap-2">
-                    <Receipt className="h-4 w-4" />
+                  <h4 className="font-medium text-green-900 mb-2">
                     Transaction Summary
                   </h4>
                   <div className="grid grid-cols-2 gap-2 text-sm">
@@ -776,13 +735,6 @@ export function EnhancedPowerTransactionForm({
           </Form>
         </CardContent>
       </Card>
-
-      {/* Receipt Dialog */}
-      <TransactionReceipt
-        data={receiptData}
-        open={showReceipt}
-        onOpenChange={setShowReceipt}
-      />
     </div>
   );
 }

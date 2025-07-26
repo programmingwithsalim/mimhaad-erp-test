@@ -5,7 +5,7 @@ import { UnifiedTransactionService } from "@/lib/services/unified-transaction-se
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id: transactionId } = await params;
@@ -184,17 +184,19 @@ export async function POST(
           }
           break;
         case "power":
+          // For Power transactions, complete them instead of disbursing
           updateResult = await sql`
             UPDATE power_transactions 
-            SET status = 'disbursed', updated_at = NOW()
+            SET status = 'completed', updated_at = NOW()
             WHERE id = ${transactionId}
             RETURNING *
           `;
           break;
         case "jumia":
+          // For Jumia transactions, deliver them instead of disbursing
           updateResult = await sql`
             UPDATE jumia_transactions 
-            SET status = 'disbursed', updated_at = NOW()
+            SET status = 'delivered', updated_at = NOW()
             WHERE transaction_id = ${transactionId}
             RETURNING *
           `;
@@ -217,7 +219,14 @@ export async function POST(
 
     const updatedTransaction = updateResult[0];
 
-    // Log the disbursement action
+    // Log the action (disburse, complete, or deliver)
+    const actionType =
+      sourceModule === "power"
+        ? "complete"
+        : sourceModule === "jumia"
+        ? "deliver"
+        : "disburse";
+
     try {
       await sql`
         INSERT INTO audit_logs (
@@ -233,7 +242,7 @@ export async function POST(
         ) VALUES (
           ${currentUser.id},
           ${currentUser.name || currentUser.username || "Unknown"},
-          'disburse',
+          ${actionType},
           ${sourceModule},
           ${transactionId},
           ${currentTransaction.amount || 0},

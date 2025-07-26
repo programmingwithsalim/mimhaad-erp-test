@@ -96,23 +96,11 @@ export async function GET(
       }
     }
 
-    // Return mock data if no record found or database error
-    const mockAccount = {
-      id: `cash-till-${branchId}`,
-      branch_id: branchId,
-      account_name: "Cash in Till",
-      account_type: "cash-in-till",
-      current_balance: 5000.0,
-      min_threshold: 1000,
-      max_threshold: 50000,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
+    // Return zero balance if no cash-in-till account found
     return NextResponse.json({
       success: true,
-      account: mockAccount,
+      account: null,
+      message: "No cash-in-till account found for this branch",
     });
   } catch (error) {
     console.error("Error fetching cash in till:", error);

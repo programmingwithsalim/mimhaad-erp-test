@@ -1,84 +1,62 @@
-"use client"
+"use client";
 
-import { useState, useEffect } from "react"
+import { useState, useEffect } from "react";
 
 export interface CurrentUser {
-  id: string
-  name: string
-  firstName?: string
-  lastName?: string
-  username?: string
-  email?: string
-  role: string
-  branchId: string
-  branchName?: string
+  id: string;
+  name: string;
+  firstName?: string;
+  lastName?: string;
+  username?: string;
+  email?: string;
+  role: string;
+  branchId: string;
+  branchName?: string;
 }
 
 export function useCurrentUser() {
-  const [user, setUser] = useState<CurrentUser | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        setLoading(true)
-        setError(null)
+        setLoading(true);
+        setError(null);
 
-        // Try to get user from localStorage first
-        const storedUser = localStorage.getItem("currentUser")
-        if (storedUser) {
-          try {
-            const userData = JSON.parse(storedUser)
-            // Validate that we have proper UUIDs, not "System"
-            const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-            if (
-              userData.id &&
-              userData.branchId &&
-              userData.id !== "System" &&
-              userData.branchId !== "System" &&
-              uuidRegex.test(userData.id) &&
-              uuidRegex.test(userData.branchId)
-            ) {
-              console.log("Got valid user from localStorage:", userData)
-              setUser(userData)
-              setLoading(false)
-              return
-            } else {
-              console.warn("Invalid user data in localStorage, clearing:", userData)
-              localStorage.removeItem("currentUser")
-            }
-          } catch (parseError) {
-            console.error("Error parsing stored user:", parseError)
-            localStorage.removeItem("currentUser")
-          }
-        }
+        // Clear any potentially outdated localStorage data first
+        localStorage.removeItem("currentUser");
 
         // Try to get user from session API
         const response = await fetch("/api/auth/session", {
           credentials: "include",
-        })
+        });
 
         if (response.ok) {
-          const sessionData = await response.json()
+          const sessionData = await response.json();
           if (sessionData.user && sessionData.user.id !== "System") {
-            console.log("Got valid user from session API:", sessionData.user)
-            setUser(sessionData.user)
-            // Store in localStorage for future use
-            localStorage.setItem("currentUser", JSON.stringify(sessionData.user))
+            console.log("Got valid user from session API:", sessionData.user);
+            setUser(sessionData.user);
+            // Store in localStorage for future use (only after successful validation)
+            localStorage.setItem(
+              "currentUser",
+              JSON.stringify(sessionData.user)
+            );
           } else {
-            throw new Error("Invalid user session")
+            throw new Error("Invalid user session");
           }
         } else {
-          throw new Error("No valid session found")
+          throw new Error("No valid session found");
         }
       } catch (err) {
-        console.error("Error fetching current user:", err)
-        setError(err instanceof Error ? err.message : "Failed to get user info")
+        console.error("Error fetching current user:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to get user info"
+        );
 
         // Clear any invalid stored data
-        localStorage.removeItem("currentUser")
+        localStorage.removeItem("currentUser");
 
         // Set a default user for development (remove in production)
         if (process.env.NODE_ENV === "development") {
@@ -92,17 +70,17 @@ export function useCurrentUser() {
             role: "manager",
             branchId: "635844ab-029a-43f8-8523-d7882915266a", // Valid UUID
             branchName: "Main Branch",
-          }
-          console.log("Using default development user:", defaultUser)
-          setUser(defaultUser)
+          };
+          console.log("Using default development user:", defaultUser);
+          setUser(defaultUser);
         }
       } finally {
-        setLoading(false)
+        setLoading(false);
       }
-    }
+    };
 
-    fetchUser()
-  }, [])
+    fetchUser();
+  }, []);
 
-  return { user, loading, error }
+  return { user, loading, error };
 }

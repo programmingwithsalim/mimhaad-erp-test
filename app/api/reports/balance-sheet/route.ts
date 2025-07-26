@@ -62,6 +62,39 @@ export async function GET(request: Request) {
     const totalReceivables =
       Number(receivablesResult[0].total_receivables) || 0;
 
+    // Inventory Assets (E-Zwich Card Inventory)
+    const inventoryResult = await sql`
+      SELECT COALESCE(SUM(quantity_available * unit_cost), 0) as total_inventory_value
+      FROM ezwich_card_batches 
+      WHERE quantity_available > 0 ${branchFilter}
+    `;
+    const totalInventory =
+      Number(inventoryResult[0].total_inventory_value) || 0;
+
+    // GL-based Inventory Assets (from GL transactions)
+    const glInventoryResult = await sql`
+      SELECT COALESCE(SUM(
+        CASE 
+          WHEN gje.debit > 0 AND gje.credit = 0 THEN gje.debit
+          WHEN gje.credit > 0 AND gje.debit = 0 THEN gje.credit
+          ELSE 0
+        END
+      ), 0) as total_gl_inventory_value
+      FROM gl_transactions gt
+      JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
+      JOIN gl_accounts ga ON gje.account_id = ga.id
+      WHERE gt.source_module = 'e-zwich-inventory'
+      AND gt.source_transaction_type = 'inventory_purchase'
+      AND gt.status = 'posted'
+      AND ga.type = 'Asset'
+      ${branchFilter}
+    `;
+    const totalGLInventory =
+      Number(glInventoryResult[0].total_gl_inventory_value) || 0;
+
+    // Use the higher of the two values (direct calculation vs GL-based)
+    const finalInventoryValue = Math.max(totalInventory, totalGLInventory);
+
     // 2. Fixed Assets
     const fixedAssetsResult = await sql`
       SELECT 
@@ -114,7 +147,8 @@ export async function GET(request: Request) {
     const retainedEarnings = totalRevenue - totalExpenses;
 
     // Calculate totals
-    const totalAssets = totalCash + totalReceivables + netFixedAssets;
+    const totalAssets =
+      totalCash + totalReceivables + finalInventoryValue + netFixedAssets;
     const totalLiabilities = totalPayables;
     const totalEquity = retainedEarnings;
 
@@ -126,7 +160,8 @@ export async function GET(request: Request) {
           current: {
             cashAndCashEquivalents: totalCash,
             accountsReceivable: totalReceivables,
-            totalCurrent: totalCash + totalReceivables,
+            inventory: finalInventoryValue,
+            totalCurrent: totalCash + totalReceivables + finalInventoryValue,
           },
           fixed: {
             grossFixedAssets: totalFixedAssets,

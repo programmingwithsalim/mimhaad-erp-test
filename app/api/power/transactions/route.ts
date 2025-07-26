@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
           customer_phone VARCHAR(20),
           provider VARCHAR(100) NOT NULL,
           reference VARCHAR(100),
-          status VARCHAR(20) DEFAULT 'completed',
+          status VARCHAR(20) DEFAULT 'pending',
           date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
           branch_id VARCHAR(255) NOT NULL,
           user_id VARCHAR(255) NOT NULL,
@@ -53,27 +53,29 @@ export async function GET(request: NextRequest) {
     try {
       transactions = await sql`
         SELECT 
-          id,
-          meter_number,
-          amount,
-          customer_name,
-          customer_phone,
-          provider,
-          reference,
-          status,
-          date,
-          branch_id,
-          user_id,
-          gl_entry_id,
-          notes,
-          payment_method,
-          payment_account_id,
-          float_account_id,
-          created_at,
-          updated_at
-        FROM power_transactions 
-        WHERE branch_id = ${branchId}
-        ORDER BY created_at DESC 
+          pt.id,
+          pt.meter_number,
+          pt.amount,
+          pt.customer_name,
+          pt.customer_phone,
+          pt.provider,
+          pt.reference,
+          pt.status,
+          pt.date,
+          pt.branch_id,
+          pt.user_id,
+          pt.gl_entry_id,
+          pt.notes,
+          pt.payment_method,
+          pt.payment_account_id,
+          pt.float_account_id,
+          pt.created_at,
+          pt.updated_at,
+          b.name as branch_name
+        FROM power_transactions pt
+        LEFT JOIN branches b ON pt.branch_id = b.id
+        WHERE pt.branch_id = ${branchId}
+        ORDER BY pt.created_at DESC 
         LIMIT ${Number.parseInt(limit)}
         OFFSET ${Number.parseInt(offset)}
       `;
@@ -206,6 +208,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if cash-in-till account exists for cash payments
+    if (body.payment_method === "cash") {
+      const cashInTillAccount = await sql`
+        SELECT id FROM float_accounts 
+        WHERE branch_id = ${body.branchId}
+          AND account_type = 'cash-in-till'
+          AND is_active = true
+        LIMIT 1
+      `;
+
+      if (cashInTillAccount.length === 0) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              "No cash-in-till account found for this branch. Please contact your administrator.",
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // Create the transaction record and get the UUID
     const reference = `POWER-${Date.now()}`;
     const insertResult = await sql`
@@ -216,7 +240,7 @@ export async function POST(request: NextRequest) {
       ) VALUES (
         ${body.meter_number}, ${body.amount}, ${body.customer_name},
         ${body.customer_phone || null}, ${body.provider}, ${reference},
-        'completed', NOW(), ${body.branchId}, ${body.userId}, ${
+                 'pending', NOW(), ${body.branchId}, ${body.userId}, ${
       body.notes || null
     }, ${body.payment_method || "cash"}, ${
       body.payment_account_id || null
@@ -271,12 +295,37 @@ export async function POST(request: NextRequest) {
       fee,
       paymentMethod: body.payment_method,
       paymentAccountId: body.payment_account_id,
-      floatAccountId: body.floatAccountId || body.float_account_id,
+      provider: body.provider,
     });
 
-    // Determine which float account to credit based on payment method
-    let floatAccountIdToCredit = null;
+    // First, debit the power provider's float account by the amount
+    console.log(
+      "🔍 [POWER TRANSACTION] Debiting power provider float account:",
+      body.provider
+    );
+    const powerProviderDebit = await sql`
+      UPDATE float_accounts
+      SET current_balance = current_balance - ${amount},
+          updated_at = NOW()
+      WHERE branch_id = ${body.branchId}
+        AND account_type = 'power'
+        AND provider = ${body.provider}
+        AND is_active = true
+      RETURNING id, current_balance
+    `;
 
+    if (powerProviderDebit.length === 0) {
+      throw new Error(
+        `No active power float account found for provider: ${body.provider}`
+      );
+    }
+
+    console.log(
+      "🔍 [POWER TRANSACTION] Power provider float debited:",
+      powerProviderDebit[0]
+    );
+
+    // Then credit the payment method
     if (body.payment_method === "cash") {
       // For cash payments, credit both amount and fee to cash-in-till
       console.log(
@@ -309,42 +358,23 @@ export async function POST(request: NextRequest) {
         console.log(
           "🔍 [POWER TRANSACTION] Non-cash payment - crediting fee to cash-in-till"
         );
-    await sql`
-      UPDATE float_accounts
+        await sql`
+          UPDATE float_accounts
           SET current_balance = current_balance + ${fee},
-          updated_at = NOW()
-      WHERE branch_id = ${body.branchId}
-        AND account_type = 'cash-in-till'
-        AND is_active = true
-    `;
+              updated_at = NOW()
+          WHERE branch_id = ${body.branchId}
+            AND account_type = 'cash-in-till'
+            AND is_active = true
+        `;
       }
     }
 
-    // Update the transaction record to store the float_account_id
-    if (body.payment_method === "cash") {
-      // For cash payments, store the cash-in-till account ID
-      const cashInTillAccount = await sql`
-        SELECT id FROM float_accounts 
-        WHERE branch_id = ${body.branchId}
-          AND account_type = 'cash-in-till'
-          AND is_active = true
-        LIMIT 1
-      `;
-      if (cashInTillAccount.length > 0) {
-        await sql`
-          UPDATE power_transactions 
-          SET float_account_id = ${cashInTillAccount[0].id}
-          WHERE id = ${transactionUUID}
-        `;
-      }
-    } else if (body.payment_account_id) {
-      // For non-cash payments, store the selected payment account ID
-      await sql`
-        UPDATE power_transactions 
-        SET float_account_id = ${body.payment_account_id}
-        WHERE id = ${transactionUUID}
-      `;
-    }
+    // Update the transaction record to store the power provider's float_account_id
+    await sql`
+      UPDATE power_transactions 
+      SET float_account_id = ${powerProviderDebit[0].id}
+      WHERE id = ${transactionUUID}
+    `;
 
     return NextResponse.json({
       success: true,

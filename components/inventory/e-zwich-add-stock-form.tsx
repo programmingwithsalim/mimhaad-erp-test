@@ -42,6 +42,7 @@ const formSchema = z.object({
   unit_cost: z.number().min(0, "Unit cost must be 0 or greater"),
   partner_bank_id: z.string().min(1, "Partner bank is required"),
   partner_bank_name: z.string().min(1, "Partner bank name is required"),
+  payment_method_id: z.string().min(1, "Payment method is required"),
   expiry_date: z.date().optional(),
   branch_id: z.string().min(1, "Branch is required"),
   branch_name: z.string().min(1, "Branch name is required"),
@@ -59,8 +60,10 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
   const [loading, setLoading] = useState(false);
   const [loadingBanks, setLoadingBanks] = useState(false);
   const [loadingBranches, setLoadingBranches] = useState(false);
+  const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
   const [partnerBanks, setPartnerBanks] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -70,11 +73,51 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
       unit_cost: 0,
       partner_bank_id: "",
       partner_bank_name: "",
+      payment_method_id: "",
       branch_id: user?.branchId || "",
       branch_name: user?.branchName || "",
       notes: "",
     },
   });
+
+  // Fetch payment methods (float accounts) on component mount
+  useEffect(() => {
+    const fetchPaymentMethods = async () => {
+      try {
+        setLoadingPaymentMethods(true);
+
+        const response = await fetch(
+          `/api/float-accounts?branchId=${user?.branchId || ""}&isActive=true`
+        );
+        const data = await response.json();
+
+        if (data.success) {
+          setPaymentMethods(data.accounts || []);
+        } else {
+          console.error("Failed to fetch payment methods:", data.error);
+          toast({
+            title: "Error",
+            description: "Failed to load payment methods",
+            variant: "destructive",
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching payment methods:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load payment methods",
+          variant: "destructive",
+        });
+      } finally {
+        setLoadingPaymentMethods(false);
+      }
+    };
+
+    // Only fetch if user is available
+    if (user?.branchId) {
+      fetchPaymentMethods();
+    }
+  }, [user?.branchId, toast]);
 
   // Fetch partner banks on component mount
   useEffect(() => {
@@ -169,6 +212,7 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
         unit_cost: values.unit_cost,
         partner_bank_id: values.partner_bank_id,
         partner_bank_name: values.partner_bank_name,
+        payment_method_id: values.payment_method_id,
         expiry_date: values.expiry_date
           ? format(values.expiry_date, "yyyy-MM-dd")
           : undefined,
@@ -315,6 +359,42 @@ export function EZwichAddStockForm({ onSuccess }: EZwichAddStockFormProps) {
                     {partnerBanks.map((bank) => (
                       <SelectItem key={bank.id} value={bank.id}>
                         {bank.provider} - {bank.account_number}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          {/* Payment Method */}
+          <FormField
+            control={form.control}
+            name="payment_method_id"
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>Payment Method</FormLabel>
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  disabled={loadingPaymentMethods}
+                >
+                  <FormControl>
+                    <SelectTrigger>
+                      <SelectValue
+                        placeholder={
+                          loadingPaymentMethods
+                            ? "Loading..."
+                            : "Select payment method"
+                        }
+                      />
+                    </SelectTrigger>
+                  </FormControl>
+                  <SelectContent>
+                    {paymentMethods.map((method) => (
+                      <SelectItem key={method.id} value={method.id}>
+                        {method.name} - {method.account_number}
                       </SelectItem>
                     ))}
                   </SelectContent>

@@ -385,30 +385,54 @@ async function handleFloatAccountUpdates(
       Array.isArray(jumiaFloatResult) && jumiaFloatResult.length > 0
         ? jumiaFloatResult[0].id
         : null;
+
+    // For POD collections, we need a Jumia float account to record liability
+    if (transaction.transaction_type === "pod_collection") {
+      // Jumia float account existence is validated at API level
+      // POD Collection: Credit the cash-in-till account AND credit the Jumia float account (liability)
+      const cashInTillId = await findCashInTillAccount(transaction.branch_id);
+      if (!cashInTillId) {
+        throw new Error(
+          `No active cash-in-till account found for branch ${transaction.branch_id}`
+        );
+      }
+
+      let cashAmount = 0;
+      let jumiaAmount = 0;
+      if (operation === "create") {
+        cashAmount = transaction.amount; // Credit cash-in-till
+        jumiaAmount = transaction.amount; // Credit Jumia float (increase liability)
+      } else if (operation === "delete" || operation === "reverse") {
+        cashAmount = -transaction.amount; // Debit cash-in-till
+        jumiaAmount = -transaction.amount; // Debit Jumia float (decrease liability)
+      }
+
+      // Update cash-in-till account
+      await updateFloatAccountBalance(
+        cashInTillId,
+        cashAmount,
+        transaction.transaction_type,
+        `Jumia POD collection - ${transaction.transaction_id}`
+      );
+
+      // Update Jumia float account (liability)
+      await updateFloatAccountBalance(
+        jumiaFloatId,
+        jumiaAmount,
+        transaction.transaction_type,
+        `Jumia POD liability - ${transaction.transaction_id}`
+      );
+      return; // Exit early for POD collections
+    }
+
+    // For other transaction types, we need a Jumia float account
     if (!jumiaFloatId) {
       throw new Error(
-        `No active Jumia float account found for branch ${transaction.branch_id}`
+        `No active Jumia float account found for branch ${transaction.branch_id}. Please create a Jumia float account to record liability.`
       );
     }
 
     if (
-      transaction.transaction_type === "pod_collection" &&
-      transaction.amount > 0
-    ) {
-      // POD Collection: Credit the Jumia float account only
-      let amount = 0;
-      if (operation === "create") {
-        amount = transaction.amount;
-      } else if (operation === "delete" || operation === "reverse") {
-        amount = -transaction.amount; // Debit the float account after reversal or deletion
-      }
-      await updateFloatAccountBalance(
-        jumiaFloatId,
-        amount,
-        transaction.transaction_type,
-        `Jumia POD collection - ${transaction.transaction_id}`
-      );
-    } else if (
       transaction.transaction_type === "settlement" &&
       transaction.amount > 0
     ) {
