@@ -1,7 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { cookies } from "next/headers";
 import type { NextRequest } from "next/server";
-import crypto from "crypto";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -30,7 +29,16 @@ export interface DatabaseSession {
 
 // Generate a secure session token
 function generateSessionToken(): string {
-  return crypto.randomBytes(32).toString("hex");
+  // Use Web Crypto API for Edge Runtime compatibility
+  const array = new Uint8Array(32);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    crypto.getRandomValues(array);
+  } else {
+    // Fallback for Node.js environment
+    const { randomBytes } = require('crypto');
+    return randomBytes(32).toString("hex");
+  }
+  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 // Create a new session in the database

@@ -195,6 +195,9 @@ export class ExpenseService {
     }
   }
 
+  // Export the getExpenses function
+  export { getExpenses };
+
   static async getExpenseStatistics(branchId?: string): Promise<any> {
     try {
       let whereClause = "";

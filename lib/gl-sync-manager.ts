@@ -1,7 +1,7 @@
 import { GLDatabase, type GLTransactionEntry } from "./gl-database";
 import { getMoMoTransactions } from "./momo-service";
-import { filterCommissions } from "./commission-service";
-import { getExpenses } from "./expense-service";
+import { CommissionService } from "./commission-service";
+import { ExpenseService } from "./expense-service";
 import { neon } from "@neondatabase/serverless";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -475,7 +475,7 @@ export async function syncCommissionTransactions(): Promise<SyncStatus> {
 
   try {
     // Get all paid commissions
-    const commissions = await filterCommissions({ status: ["paid"] });
+    const commissions = await CommissionService.filterCommissions({ status: ["paid"] });
 
     syncStatus.recordsProcessed = commissions.length;
 
@@ -628,7 +628,7 @@ export async function syncExpenseTransactions(): Promise<SyncStatus> {
 
   try {
     // Get all paid expenses
-    const expenses = await getExpenses({ status: "paid" });
+    const expenses = await ExpenseService.getExpenses({ status: "paid" });
 
     syncStatus.recordsProcessed = expenses.length;
 

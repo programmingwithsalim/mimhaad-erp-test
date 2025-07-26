@@ -383,6 +383,68 @@ export class CommissionService {
     }
   }
 
+  static async filterCommissions(
+    filters: {
+      status?: string[];
+      source?: string[];
+      branchId?: string;
+      startDate?: string;
+      endDate?: string;
+    } = {}
+  ): Promise<any[]> {
+    try {
+      let whereConditions: string[] = [];
+      let params: any[] = [];
+      let paramIndex = 1;
+
+      if (filters.status && filters.status.length > 0) {
+        whereConditions.push(`status = ANY($${paramIndex})`);
+        params.push(filters.status);
+        paramIndex++;
+      }
+
+      if (filters.source && filters.source.length > 0) {
+        whereConditions.push(`source = ANY($${paramIndex})`);
+        params.push(filters.source);
+        paramIndex++;
+      }
+
+      if (filters.branchId) {
+        whereConditions.push(`branch_id = $${paramIndex}`);
+        params.push(filters.branchId);
+        paramIndex++;
+      }
+
+      if (filters.startDate) {
+        whereConditions.push(`created_at >= $${paramIndex}`);
+        params.push(filters.startDate);
+        paramIndex++;
+      }
+
+      if (filters.endDate) {
+        whereConditions.push(`created_at <= $${paramIndex}`);
+        params.push(filters.endDate);
+        paramIndex++;
+      }
+
+      const whereClause = whereConditions.length > 0 
+        ? `WHERE ${whereConditions.join(" AND ")}` 
+        : "";
+
+      const query = `
+        SELECT * FROM commissions 
+        ${whereClause}
+        ORDER BY created_at DESC
+      `;
+
+      const result = await sql.unsafe(query, params);
+      return result || [];
+    } catch (error) {
+      console.error("Error filtering commissions:", error);
+      return [];
+    }
+  }
+
   static async autoCreateCommission(
     transactionId: string,
     transactionAmount: number,
