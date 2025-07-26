@@ -56,11 +56,11 @@ export async function GET(request: Request) {
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
         LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.source_transaction_type = ${type}
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
-          AND gt.branch_id = ${session.user.branchId}
+          AND gt.branch_id = ${session.user.branchId}::uuid
         ORDER BY gt.date DESC, gt.created_at DESC 
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -89,7 +89,7 @@ export async function GET(request: Request) {
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
         LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.source_transaction_type = ${type}
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
@@ -121,7 +121,7 @@ export async function GET(request: Request) {
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
         LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
         ORDER BY gt.date DESC, gt.created_at DESC 
@@ -152,7 +152,7 @@ export async function GET(request: Request) {
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
         LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.source_transaction_type = ${type}
         ORDER BY gt.date DESC, gt.created_at DESC 
         LIMIT ${limit} OFFSET ${offset}
@@ -182,7 +182,7 @@ export async function GET(request: Request) {
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
         LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
         ORDER BY gt.date DESC, gt.created_at DESC 
         LIMIT ${limit} OFFSET ${offset}
       `;
@@ -198,11 +198,11 @@ export async function GET(request: Request) {
         FROM gl_transactions gt
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.source_transaction_type = ${type}
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
-          AND gt.branch_id = ${session.user.branchId}
+          AND gt.branch_id = ${session.user.branchId}::uuid
       `;
     } else if (type && startDate && endDate) {
       // Type, startDate, endDate
@@ -211,7 +211,7 @@ export async function GET(request: Request) {
         FROM gl_transactions gt
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.source_transaction_type = ${type}
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
@@ -223,7 +223,7 @@ export async function GET(request: Request) {
         FROM gl_transactions gt
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
       `;
@@ -234,7 +234,7 @@ export async function GET(request: Request) {
         FROM gl_transactions gt
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
           AND gt.source_transaction_type = ${type}
       `;
     } else {
@@ -244,7 +244,7 @@ export async function GET(request: Request) {
         FROM gl_transactions gt
         JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
         JOIN float_accounts fa ON gm.float_account_id = fa.id
-        WHERE gm.float_account_id = ${accountId}
+        WHERE gm.float_account_id = ${accountId}::uuid
       `;
     }
     const total = countResult[0]?.total || 0;
