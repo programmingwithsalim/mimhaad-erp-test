@@ -26,12 +26,16 @@ export async function GET(request: Request) {
       );
     }
 
-
-
     // Build the main query using GL system with simple template literals
     let transactions;
-    
-    if (type && startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+
+    if (
+      type &&
+      startDate &&
+      endDate &&
+      session.user.role !== "Admin" &&
+      session.user.branchId
+    ) {
       // All conditions
       transactions = await sql`
         SELECT 
@@ -96,8 +100,40 @@ export async function GET(request: Request) {
         ORDER BY gt.date DESC, gt.created_at DESC 
         LIMIT ${limit} OFFSET ${offset}
       `;
+    } else if (startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+      // startDate, endDate, with branch filter
+      transactions = await sql`
+        SELECT 
+          gt.id,
+          gt.date as transaction_date,
+          gt.source_module,
+          gt.source_transaction_type as type,
+          gt.source_transaction_id as reference_id,
+          gt.amount,
+          gt.description,
+          gt.status,
+          gt.reference,
+          gt.created_at,
+          gt.branch_id,
+          gt.branch_name,
+          gm.mapping_type,
+          fa.account_type as float_account_type,
+          fa.provider as float_account_provider,
+          fa.account_number as float_account_number,
+          u.first_name || ' ' || u.last_name as created_by_name
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        LEFT JOIN users u ON gt.created_by = u.id
+        WHERE gm.float_account_id = ${accountId}::uuid
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          AND gt.branch_id = ${session.user.branchId}::uuid
+        ORDER BY gt.date DESC, gt.created_at DESC 
+        LIMIT ${limit} OFFSET ${offset}
+      `;
     } else if (startDate && endDate) {
-      // startDate, endDate
+      // startDate, endDate (Admin or no branch filter needed)
       transactions = await sql`
         SELECT 
           gt.id,
@@ -190,8 +226,14 @@ export async function GET(request: Request) {
 
     // Get total count for pagination using template literals
     let countResult;
-    
-    if (type && startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+
+    if (
+      type &&
+      startDate &&
+      endDate &&
+      session.user.role !== "Admin" &&
+      session.user.branchId
+    ) {
       // All conditions
       countResult = await sql`
         SELECT COUNT(*) as total
@@ -216,8 +258,20 @@ export async function GET(request: Request) {
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
       `;
+    } else if (startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+      // startDate, endDate, with branch filter
+      countResult = await sql`
+        SELECT COUNT(*) as total
+        FROM gl_transactions gt
+        JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+        JOIN float_accounts fa ON gm.float_account_id = fa.id
+        WHERE gm.float_account_id = ${accountId}::uuid
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          AND gt.branch_id = ${session.user.branchId}::uuid
+      `;
     } else if (startDate && endDate) {
-      // startDate, endDate
+      // startDate, endDate (Admin or no branch filter needed)
       countResult = await sql`
         SELECT COUNT(*) as total
         FROM gl_transactions gt
