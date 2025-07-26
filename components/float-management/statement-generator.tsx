@@ -345,8 +345,8 @@ export function StatementGenerator({
           const type = transaction.type;
           const amount = formatCurrencyForPDF(transaction.amount);
           const balance = formatCurrencyForPDF(transaction.balance_after);
-          const description = transaction.description.substring(0, 20);
-          const reference = transaction.reference.substring(0, 15);
+          const description = (transaction.description || "").substring(0, 20);
+          const reference = (transaction.reference || "").substring(0, 15);
 
           page.drawText(date, {
             x: headerX[0],

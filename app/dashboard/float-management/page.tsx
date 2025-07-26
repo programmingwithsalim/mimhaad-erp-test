@@ -816,10 +816,10 @@ export default function FloatManagementPage() {
                               </CardTitle>
                               <CardDescription>
                                 {isAdmin && account.branch_name ? (
-                                  <div className="flex items-center gap-1">
+                                  <span className="flex items-center gap-1">
                                     <Building2 className="h-3 w-3" />
                                     {account.branch_name}
-                                  </div>
+                                  </span>
                                 ) : (
                                   account.branch_name || "Branch"
                                 )}
