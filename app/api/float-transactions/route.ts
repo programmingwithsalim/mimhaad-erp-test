@@ -49,9 +49,8 @@ export async function GET(request: Request) {
       params.push(session.user.branchId);
     }
 
-    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
-
-    const query = sql.unsafe(`
+    // Build the query with proper parameter substitution
+    let queryString = `
       SELECT 
         ft.id,
         ft.account_id,
@@ -69,15 +68,19 @@ export async function GET(request: Request) {
       FROM float_transactions ft
       LEFT JOIN float_accounts fa ON ft.account_id = fa.id
       LEFT JOIN users u ON ft.created_by = u.id
-      ${whereClause}
-      ORDER BY ft.created_at DESC
-      LIMIT $${paramIndex++}
-      OFFSET $${paramIndex++}
-    `);
+    `;
 
+    // Add WHERE clause if conditions exist
+    if (whereConditions.length > 0) {
+      queryString += ` WHERE ${whereConditions.join(' AND ')}`;
+    }
+
+    // Add ORDER BY, LIMIT, and OFFSET
+    queryString += ` ORDER BY ft.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
     params.push(limit, offset);
 
-    const transactions = await query(params);
+    // Execute the query using the neon client directly
+    const transactions = await sql(queryString, ...params);
 
     // Get total count for pagination
     let countWhereConditions: string[] = [];
@@ -109,16 +112,20 @@ export async function GET(request: Request) {
       countParams.push(session.user.branchId);
     }
 
-    const countWhereClause = countWhereConditions.length > 0 ? `WHERE ${countWhereConditions.join(' AND ')}` : '';
-
-    const countQuery = sql.unsafe(`
+    // Build the count query with proper parameter substitution
+    let countQueryString = `
       SELECT COUNT(*) as total
       FROM float_transactions ft
       LEFT JOIN float_accounts fa ON ft.account_id = fa.id
-      ${countWhereClause}
-    `);
+    `;
 
-    const countResult = await countQuery(countParams);
+    // Add WHERE clause if conditions exist
+    if (countWhereConditions.length > 0) {
+      countQueryString += ` WHERE ${countWhereConditions.join(' AND ')}`;
+    }
+
+    // Execute the count query using the neon client directly
+    const countResult = await sql(countQueryString, ...countParams);
     const total = countResult[0]?.total || 0;
 
     return NextResponse.json({
