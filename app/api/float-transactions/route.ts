@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import { getSession } from "@/lib/auth-service";
+import { getDatabaseSession } from "@/lib/database-session-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: Request) {
   try {
-    const session = await getSession();
+    const session = await getDatabaseSession();
     if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -19,7 +19,39 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "50");
     const offset = parseInt(searchParams.get("offset") || "0");
 
-    let query = sql`
+    let whereConditions: string[] = [];
+    let params: any[] = [];
+    let paramIndex = 1;
+
+    if (accountId) {
+      whereConditions.push(`ft.account_id = $${paramIndex++}`);
+      params.push(accountId);
+    }
+
+    if (type) {
+      whereConditions.push(`ft.type = $${paramIndex++}`);
+      params.push(type);
+    }
+
+    if (startDate) {
+      whereConditions.push(`ft.created_at >= $${paramIndex++}`);
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      whereConditions.push(`ft.created_at <= $${paramIndex++}`);
+      params.push(endDate);
+    }
+
+    // Add branch filter for non-admin users (filter by float account branch instead)
+    if (session.user.role !== "Admin" && session.user.branchId) {
+      whereConditions.push(`fa.branch_id = $${paramIndex++}`);
+      params.push(session.user.branchId);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    const query = sql.unsafe(`
       SELECT 
         ft.id,
         ft.account_id,
@@ -37,69 +69,56 @@ export async function GET(request: Request) {
       FROM float_transactions ft
       LEFT JOIN float_accounts fa ON ft.account_id = fa.id
       LEFT JOIN users u ON ft.created_by = u.id
-      WHERE 1=1
-    `;
-
-    const params: any[] = [];
-
-    if (accountId) {
-      query = sql`${query} AND ft.account_id = ${accountId}`;
-    }
-
-    if (type) {
-      query = sql`${query} AND ft.type = ${type}`;
-    }
-
-    if (startDate) {
-      query = sql`${query} AND ft.created_at >= ${startDate}`;
-    }
-
-    if (endDate) {
-      query = sql`${query} AND ft.created_at <= ${endDate}`;
-    }
-
-    // Add branch filter for non-admin users
-    if (session.user.role !== "Admin" && session.user.branchId) {
-      query = sql`${query} AND ft.branch_id = ${session.user.branchId}`;
-    }
-
-    query = sql`
-      ${query}
+      ${whereClause}
       ORDER BY ft.created_at DESC
-      LIMIT ${limit}
-      OFFSET ${offset}
-    `;
+      LIMIT $${paramIndex++}
+      OFFSET $${paramIndex++}
+    `);
 
-    const transactions = await query;
+    params.push(limit, offset);
+
+    const transactions = await query(params);
 
     // Get total count for pagination
-    let countQuery = sql`
-      SELECT COUNT(*) as total
-      FROM float_transactions ft
-      WHERE 1=1
-    `;
+    let countWhereConditions: string[] = [];
+    let countParams: any[] = [];
+    let countParamIndex = 1;
 
     if (accountId) {
-      countQuery = sql`${countQuery} AND ft.account_id = ${accountId}`;
+      countWhereConditions.push(`ft.account_id = $${countParamIndex++}`);
+      countParams.push(accountId);
     }
 
     if (type) {
-      countQuery = sql`${countQuery} AND ft.type = ${type}`;
+      countWhereConditions.push(`ft.type = $${countParamIndex++}`);
+      countParams.push(type);
     }
 
     if (startDate) {
-      countQuery = sql`${countQuery} AND ft.created_at >= ${startDate}`;
+      countWhereConditions.push(`ft.created_at >= $${countParamIndex++}`);
+      countParams.push(startDate);
     }
 
     if (endDate) {
-      countQuery = sql`${countQuery} AND ft.created_at <= ${endDate}`;
+      countWhereConditions.push(`ft.created_at <= $${countParamIndex++}`);
+      countParams.push(endDate);
     }
 
     if (session.user.role !== "Admin" && session.user.branchId) {
-      countQuery = sql`${countQuery} AND ft.branch_id = ${session.user.branchId}`;
+      countWhereConditions.push(`fa.branch_id = $${countParamIndex++}`);
+      countParams.push(session.user.branchId);
     }
 
-    const countResult = await countQuery;
+    const countWhereClause = countWhereConditions.length > 0 ? `WHERE ${countWhereConditions.join(' AND ')}` : '';
+
+    const countQuery = sql.unsafe(`
+      SELECT COUNT(*) as total
+      FROM float_transactions ft
+      LEFT JOIN float_accounts fa ON ft.account_id = fa.id
+      ${countWhereClause}
+    `);
+
+    const countResult = await countQuery(countParams);
     const total = countResult[0]?.total || 0;
 
     return NextResponse.json({
@@ -117,7 +136,11 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Error fetching float transactions:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { 
+        success: false,
+        error: "Failed to fetch transaction history",
+        details: error instanceof Error ? error.message : "Unknown error"
+      },
       { status: 500 }
     );
   }
