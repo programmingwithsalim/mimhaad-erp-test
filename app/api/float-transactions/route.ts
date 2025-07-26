@@ -123,7 +123,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              LEFT JOIN users u ON gt.created_by = u.id
+              LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.date >= ${startDate}
               AND gt.date <= ${endDate}
               AND gt.branch_id = ${session.user.branchId}::uuid
@@ -155,7 +155,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              LEFT JOIN users u ON gt.created_by = u.id
+              LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.date >= ${startDate}
               AND gt.date <= ${endDate}
               ORDER BY gt.date DESC, gt.created_at DESC 
@@ -189,7 +189,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              LEFT JOIN users u ON gt.created_by = u.id
+              LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.branch_id = ${session.user.branchId}::uuid
               ORDER BY gt.date DESC, gt.created_at DESC 
               LIMIT ${limit} OFFSET ${offset}
@@ -219,7 +219,7 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
-              LEFT JOIN users u ON gt.created_by = u.id
+              LEFT JOIN users u ON gt.created_by::uuid = u.id
               ORDER BY gt.date DESC, gt.created_at DESC 
               LIMIT ${limit} OFFSET ${offset}
             `;
@@ -257,12 +257,12 @@ export async function GET(request: Request) {
             'system' as float_account_provider,
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
-          FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
-          WHERE gt.source_transaction_type = ${type}
-          AND gt.date >= ${startDate}
-          AND gt.date <= ${endDate}
-          AND gt.branch_id = ${session.user.branchId}::uuid
+                      FROM gl_transactions gt
+            LEFT JOIN users u ON gt.created_by::uuid = u.id
+            WHERE gt.source_transaction_type = ${type}
+            AND gt.date >= ${startDate}
+            AND gt.date <= ${endDate}
+            AND gt.branch_id = ${session.user.branchId}::uuid
           ORDER BY gt.date DESC, gt.created_at DESC 
           LIMIT ${limit} OFFSET ${offset}
         `;

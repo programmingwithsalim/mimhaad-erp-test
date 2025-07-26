@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { sql } from "@vercel/postgres";
-import { getServerSession } from "@/lib/auth";
+import { neon } from "@neondatabase/serverless";
+import { getDatabaseSession } from "@/lib/database-session-service";
+
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession();
-    if (!session) {
+    const session = await getDatabaseSession();
+    if (!session?.user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -13,34 +15,61 @@ export async function GET(request: NextRequest) {
     const accountId = searchParams.get("accountId");
     const branchId = searchParams.get("branchId");
 
-    let query = `
-      SELECT 
-        id,
-        account_id,
-        current_balance,
-        last_updated,
-        branch_id,
-        period_balances
-      FROM gl_account_balances
-      WHERE 1=1
-    `;
+    let balances: any[] = [];
 
-    const params: any[] = [];
-    let paramIndex = 1;
-
-    if (accountId) {
-      query += ` AND account_id = $${paramIndex++}`;
-      params.push(accountId);
+    if (accountId && branchId) {
+      balances = await sql`
+        SELECT 
+          id,
+          account_id,
+          current_balance,
+          last_updated,
+          branch_id,
+          period_balances
+        FROM gl_account_balances
+        WHERE account_id = ${accountId}
+        AND branch_id = ${branchId}::uuid
+        ORDER BY account_id
+      `;
+    } else if (accountId) {
+      balances = await sql`
+        SELECT 
+          id,
+          account_id,
+          current_balance,
+          last_updated,
+          branch_id,
+          period_balances
+        FROM gl_account_balances
+        WHERE account_id = ${accountId}
+        ORDER BY account_id
+      `;
+    } else if (branchId) {
+      balances = await sql`
+        SELECT 
+          id,
+          account_id,
+          current_balance,
+          last_updated,
+          branch_id,
+          period_balances
+        FROM gl_account_balances
+        WHERE branch_id = ${branchId}::uuid
+        ORDER BY account_id
+      `;
+    } else {
+      balances = await sql`
+        SELECT 
+          id,
+          account_id,
+          current_balance,
+          last_updated,
+          branch_id,
+          period_balances
+        FROM gl_account_balances
+        ORDER BY account_id
+      `;
     }
-
-    if (branchId) {
-      query += ` AND branch_id = $${paramIndex++}`;
-      params.push(branchId);
-    }
-
-    query += ` ORDER BY account_id`;
-
-    const balances = await sql.unsafe(query, ...params);
 
     return NextResponse.json({
       success: true,
