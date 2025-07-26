@@ -1,0 +1,30 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - echo "Setting up environment variables..."
+        - echo "DATABASE_URL=$DATABASE_URL" >> .env.local
+        - echo "CONNECTION_STRING=$DATABASE_URL" >> .env.local
+        - echo "NEXTAUTH_SECRET=$NEXTAUTH_SECRET" >> .env.local
+        - echo "NEXTAUTH_URL=$NEXTAUTH_URL" >> .env.local
+        - echo "NODE_ENV=production" >> .env.local
+        - echo "NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL" >> .env.local
+        - echo "NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL" >> .env.local
+        - echo "Environment variables set up complete"
+        - npm ci --cache .npm --prefer-offline
+    build:
+      commands:
+        - echo "Building application..."
+        - echo "Current directory: $(pwd)"
+        - echo "Environment check:"
+        - echo "DATABASE_URL exists: $([ -n \"$DATABASE_URL\" ] && echo 'YES' || echo 'NO')"
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - '.next/cache/**/*'
+      - '.npm/**/*' 
