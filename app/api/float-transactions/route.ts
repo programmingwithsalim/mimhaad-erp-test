@@ -34,10 +34,15 @@ export async function GET(request: Request) {
       SELECT DISTINCT transaction_type 
       FROM gl_mappings 
       WHERE float_account_id = ${accountId}::uuid
+      AND is_active = true
     `;
 
     const allowedTransactionTypes = mappingResult.map(
       (m: any) => m.transaction_type
+    );
+
+    console.log(
+      `🔍 Found ${allowedTransactionTypes.length} GL mappings for float account ${accountId}`
     );
 
     if (allowedTransactionTypes.length === 0) {
@@ -46,7 +51,7 @@ export async function GET(request: Request) {
 
       // Get the float account details to understand what type it is
       const floatAccountDetails = await sql`
-        SELECT account_type, branch_id, provider
+        SELECT account_type, branch_id, provider, account_name
         FROM float_accounts 
         WHERE id = ${accountId}::uuid
       `;
@@ -56,7 +61,13 @@ export async function GET(request: Request) {
         transactions = [];
       } else {
         const accountType = floatAccountDetails[0].account_type;
-        console.log(`Float account type: ${accountType}`);
+        const accountName = floatAccountDetails[0].account_name;
+        console.log(`Float account type: ${accountType}, name: ${accountName}`);
+
+        // Log a warning about missing GL mappings
+        console.warn(
+          `⚠️ Missing GL mappings for ${accountType} float account ${accountId}. Consider running the GL mapping fix endpoint.`
+        );
 
         // Get transactions that are related to this float account
         // We need to join with gl_journal_entries to find transactions affecting this float account
@@ -273,6 +284,7 @@ export async function GET(request: Request) {
         }
       }
     } else {
+      console.log(`✅ Using GL mappings for float account ${accountId}`);
       // Use a simple approach with basic template literals
       // Get all transactions first, then filter by allowed types
       if (
@@ -302,7 +314,7 @@ export async function GET(request: Request) {
             'system' as float_account_provider,
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
-                      FROM gl_transactions gt
+          FROM gl_transactions gt
             LEFT JOIN users u ON gt.created_by::uuid = u.id
             WHERE gt.source_transaction_type = ${type}
             AND gt.date >= ${startDate}
@@ -336,7 +348,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           WHERE gt.source_transaction_type = ${type}
           AND gt.date >= ${startDate}
           AND gt.date <= ${endDate}
@@ -373,7 +385,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           WHERE gt.date >= ${startDate}
           AND gt.date <= ${endDate}
           AND gt.branch_id = ${session.user.branchId}::uuid
@@ -405,7 +417,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           WHERE gt.date >= ${startDate}
           AND gt.date <= ${endDate}
           ORDER BY gt.date DESC, gt.created_at DESC 
@@ -440,7 +452,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           WHERE gt.source_transaction_type = ${type}
           AND gt.branch_id = ${session.user.branchId}::uuid
           ORDER BY gt.date DESC, gt.created_at DESC 
@@ -471,7 +483,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           WHERE gt.source_transaction_type = ${type}
           ORDER BY gt.date DESC, gt.created_at DESC 
           LIMIT ${limit} OFFSET ${offset}
@@ -501,7 +513,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           WHERE gt.branch_id = ${session.user.branchId}::uuid
           ORDER BY gt.date DESC, gt.created_at DESC 
           LIMIT ${limit} OFFSET ${offset}
@@ -531,7 +543,7 @@ export async function GET(request: Request) {
             'N/A' as float_account_number,
             u.first_name || ' ' || u.last_name as created_by_name
           FROM gl_transactions gt
-          LEFT JOIN users u ON gt.created_by = u.id
+          LEFT JOIN users u ON gt.created_by::uuid = u.id
           ORDER BY gt.date DESC, gt.created_at DESC 
           LIMIT ${limit} OFFSET ${offset}
         `;
@@ -689,7 +701,6 @@ export async function GET(request: Request) {
       },
     });
   } catch (error) {
-    console.error("Error fetching float transactions:", error);
     return NextResponse.json(
       {
         success: false,

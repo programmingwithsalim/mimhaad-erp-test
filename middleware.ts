@@ -78,20 +78,40 @@ export async function middleware(request: NextRequest) {
 
   // Public routes that don't require authentication
   const publicRoutes = ["/", "/setup"];
-  const publicApiRoutes = [
+  // Base public routes that are always available
+  const basePublicApiRoutes = [
     "/api/auth/login",
     "/api/auth/logout",
     "/api/auth/check-setup",
+    "/api/auth/session",
     "/api/seed",
     "/api/transactions/all",
-    "/api/debug/test-sql",
-    "/api/debug/check-ezwich-gl-mappings",
-    "/api/debug/fix-ezwich-mappings",
-    "/api/db/add-payment-source-to-fixed-assets",
-    "/api/db/add-payment-method-to-power-transactions",
-    "/api/db/fix-float-account-id-column",
-    "/api/db/add-system-config-table",
   ];
+
+  // Development-only routes (debug and db initialization)
+  const developmentApiRoutes = [
+    "/api/dev/debug/test-sql",
+    "/api/dev/debug/check-ezwich-gl-mappings",
+    "/api/dev/debug/fix-ezwich-mappings",
+    "/api/dev/db/add-payment-source-to-fixed-assets",
+    "/api/dev/db/add-payment-method-to-power-transactions",
+    "/api/dev/db/fix-float-account-id-column",
+    "/api/dev/db/add-system-config-table",
+    "/api/dev/db/check-float-gl-mappings",
+  ];
+
+  // Combine routes based on environment
+  const publicApiRoutes = [
+    ...basePublicApiRoutes,
+    ...(process.env.NODE_ENV === "development" ? developmentApiRoutes : []),
+  ];
+
+  // Log available routes for debugging
+  if (process.env.NODE_ENV === "development") {
+    console.log("🔧 Development mode: Debug and DB routes available");
+  } else {
+    console.log("🚀 Production mode: Debug and DB routes excluded");
+  }
 
   // Skip middleware for static files and Next.js internals
   if (
@@ -102,8 +122,6 @@ export async function middleware(request: NextRequest) {
   ) {
     return NextResponse.next();
   }
-
-  console.log("Middleware processing:", pathname);
 
   // Handle API routes
   if (pathname.startsWith("/api/")) {
@@ -121,7 +139,6 @@ export async function middleware(request: NextRequest) {
 
     // Skip auth check for public API routes
     if (publicApiRoutes.some((route) => pathname.startsWith(route))) {
-      console.log("Public API route, skipping auth");
       return response;
     }
 
@@ -129,7 +146,6 @@ export async function middleware(request: NextRequest) {
     try {
       const session = await getDatabaseSession(request);
       if (!session || !session.user) {
-        console.log("No session for protected API route");
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
       }
 
@@ -143,9 +159,6 @@ export async function middleware(request: NextRequest) {
           if (pathname.startsWith(route)) {
             // Check role restriction
             if (!restriction.roles.includes(userRole)) {
-              console.log(
-                `Access denied: ${userRole} cannot access ${pathname}`
-              );
               return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
 
@@ -155,9 +168,6 @@ export async function middleware(request: NextRequest) {
                 (permission) => hasPermission(userRole, permission)
               );
               if (!hasRequiredPermission) {
-                console.log(
-                  `Permission denied: ${userRole} lacks required permissions for ${pathname}`
-                );
                 return NextResponse.json(
                   { error: "Forbidden" },
                   { status: 403 }
@@ -169,10 +179,8 @@ export async function middleware(request: NextRequest) {
         }
       }
 
-      console.log("Authenticated API request");
       return response;
     } catch (error) {
-      console.error("Session check error in middleware:", error);
       return NextResponse.json(
         { error: "Authentication error" },
         { status: 500 }
@@ -183,31 +191,21 @@ export async function middleware(request: NextRequest) {
   // Handle page routes
   try {
     const session = await getDatabaseSession(request);
-    console.log("Session check result:", !!session);
 
     // Debug: Check what cookies are present
     const sessionCookie = request.cookies.get("session_token");
-    console.log("Session cookie present:", !!sessionCookie);
-    if (sessionCookie) {
-      console.log("Session token length:", sessionCookie.value.length);
-    }
 
     // If accessing public routes, allow access
     if (publicRoutes.includes(pathname)) {
       // If user is authenticated and trying to access login page, redirect to dashboard
       if (session && pathname === "/") {
-        console.log(
-          "Authenticated user accessing login, redirecting to dashboard"
-        );
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
-      console.log("Public route access allowed");
       return NextResponse.next();
     }
 
     // For protected routes, if no session, redirect to login
     if (!session || !session.user) {
-      console.log("No session for protected route, redirecting to login");
       return NextResponse.redirect(new URL("/", request.url));
     }
 
@@ -221,7 +219,6 @@ export async function middleware(request: NextRequest) {
         if (pathname.startsWith(route)) {
           // Check role restriction
           if (!restriction.roles.includes(userRole)) {
-            console.log(`Access denied: ${userRole} cannot access ${pathname}`);
             return NextResponse.redirect(new URL("/unauthorized", request.url));
           }
 
@@ -231,9 +228,6 @@ export async function middleware(request: NextRequest) {
               (permission) => hasPermission(userRole, permission)
             );
             if (!hasRequiredPermission) {
-              console.log(
-                `Permission denied: ${userRole} lacks required permissions for ${pathname}`
-              );
               return NextResponse.redirect(
                 new URL("/unauthorized", request.url)
               );
@@ -244,10 +238,8 @@ export async function middleware(request: NextRequest) {
       }
     }
 
-    console.log("Authenticated access to protected route");
     return NextResponse.next();
   } catch (error) {
-    console.error("Middleware error:", error);
     // On error, redirect to login for safety
     if (!publicRoutes.includes(pathname)) {
       return NextResponse.redirect(new URL("/", request.url));

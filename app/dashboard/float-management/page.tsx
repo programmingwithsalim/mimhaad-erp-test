@@ -127,7 +127,6 @@ export default function FloatManagementPage() {
             : [];
           setFloatAccounts(accounts);
         } else {
-          console.error("API error:", data.error);
           toast({
             title: "Error",
             description: data.error || "Failed to load float accounts",
@@ -138,7 +137,6 @@ export default function FloatManagementPage() {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (error) {
-      console.error("Error fetching float accounts:", error);
       toast({
         title: "Error",
         description: "Failed to load float accounts",
@@ -297,7 +295,6 @@ export default function FloatManagementPage() {
         });
       }
     } catch (error) {
-      console.error("Error reactivating account:", error);
       toast({
         title: "Reactivation Failed",
         description: "Failed to reactivate account",

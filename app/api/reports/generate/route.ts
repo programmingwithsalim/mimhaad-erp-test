@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getCurrentUser } from "@/lib/auth-utils";
-import * as XLSX from "xlsx";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -85,7 +84,7 @@ export async function POST(request: Request) {
     }
 
     if (format === "excel") {
-      return generateExcelReport(reportData, fileName);
+      return await generateExcelReport(reportData, fileName);
     } else if (format === "csv") {
       return generateCSVReport(reportData, fileName);
     } else {
@@ -273,7 +272,10 @@ async function generateBalanceSheetReport(branchFilter: any, dateFilter: any) {
   };
 }
 
-function generateExcelReport(data: any, fileName: string) {
+async function generateExcelReport(data: any, fileName: string) {
+  // Dynamic import to avoid server-side issues
+  const XLSX = await import("xlsx");
+
   const workbook = XLSX.utils.book_new();
 
   // Create summary sheet

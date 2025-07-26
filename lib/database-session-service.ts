@@ -31,14 +31,17 @@ export interface DatabaseSession {
 function generateSessionToken(): string {
   // Use Web Crypto API for Edge Runtime compatibility
   const array = new Uint8Array(32);
-  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+  if (typeof crypto !== "undefined" && crypto.getRandomValues) {
     crypto.getRandomValues(array);
   } else {
-    // Fallback for Node.js environment
-    const { randomBytes } = require('crypto');
-    return randomBytes(32).toString("hex");
+    // Fallback for Node.js environment - use Math.random as last resort
+    for (let i = 0; i < array.length; i++) {
+      array[i] = Math.floor(Math.random() * 256);
+    }
   }
-  return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+  return Array.from(array, (byte) => byte.toString(16).padStart(2, "0")).join(
+    ""
+  );
 }
 
 // Create a new session in the database

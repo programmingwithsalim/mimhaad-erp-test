@@ -169,6 +169,17 @@ export class FloatAccountService {
           "❌ [FLOAT] Failed to create GL accounts/mappings:",
           glError
         );
+        
+        // Fallback: Create basic GL mappings directly
+        try {
+          await this.createBasicGLMappingsForFloatAccount(floatAccount);
+          console.log("✅ [FLOAT] Created basic GL mappings as fallback");
+        } catch (fallbackError) {
+          console.error(
+            "❌ [FLOAT] Failed to create basic GL mappings:",
+            fallbackError
+          );
+        }
         // Don't fail the entire operation for GL mapping issues
       }
 
@@ -881,6 +892,70 @@ export class FloatAccountService {
           error instanceof Error ? error.message : String(error)
         }`
       );
+    }
+  }
+
+  /**
+   * Create basic GL mappings for a float account as fallback
+   */
+  private static async createBasicGLMappingsForFloatAccount(
+    floatAccount: any
+  ): Promise<void> {
+    try {
+      console.log(`🔧 [FLOAT] Creating basic GL mappings for ${floatAccount.account_type} float account`);
+
+      // Create basic GL account for this float account
+      const glAccountCode = this.generateGLAccountCode(floatAccount);
+      const glAccountName = `${floatAccount.account_type.replace(/_/g, ' ').toUpperCase()} Float Account`;
+
+      const glAccountResult = await sql`
+        INSERT INTO gl_accounts (id, code, name, type, branch_id, is_active, created_at, updated_at)
+        VALUES (
+          gen_random_uuid(),
+          ${glAccountCode},
+          ${glAccountName},
+          'Asset',
+          ${floatAccount.branch_id},
+          true,
+          NOW(),
+          NOW()
+        )
+        RETURNING id
+      `;
+
+      const glAccountId = glAccountResult[0].id;
+
+      // Create basic GL mapping
+      const transactionType = `${floatAccount.account_type.replace(/-/g, '_')}_float`;
+      
+      await sql`
+        INSERT INTO gl_mappings (
+          id,
+          float_account_id,
+          gl_account_id,
+          transaction_type,
+          mapping_type,
+          branch_id,
+          is_active,
+          created_at,
+          updated_at
+        ) VALUES (
+          gen_random_uuid(),
+          ${floatAccount.id},
+          ${glAccountId},
+          ${transactionType},
+          'main',
+          ${floatAccount.branch_id},
+          true,
+          NOW(),
+          NOW()
+        )
+      `;
+
+      console.log(`✅ [FLOAT] Created basic GL mapping for ${floatAccount.account_type}`);
+    } catch (error) {
+      console.error(`❌ [FLOAT] Error creating basic GL mappings:`, error);
+      throw error;
     }
   }
 }

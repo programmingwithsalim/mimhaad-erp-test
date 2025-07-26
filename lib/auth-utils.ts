@@ -51,14 +51,6 @@ export async function getCurrentUser(
       uuidRegex.test(userId) &&
       uuidRegex.test(userBranchId)
     ) {
-      console.log("Got valid user from headers:", {
-        id: userId,
-        name: userName,
-        role: userRole,
-        branchId: userBranchId,
-        branchName: userBranchName,
-      });
-
       return {
         id: userId,
         name: userName,
@@ -74,18 +66,9 @@ export async function getCurrentUser(
     const sessionToken = request.cookies?.get("session_token")?.value;
     if (sessionToken) {
       try {
-        console.log(
-          "🔍 [AUTH-UTILS] Found session token, validating with database..."
-        );
-
         const session = await getDatabaseSession(request);
 
         if (session && session.user) {
-          console.log(
-            "✅ [AUTH-UTILS] Valid database session found for user:",
-            session.user.email
-          );
-
           return {
             id: session.user.id,
             name: `${session.user.firstName} ${session.user.lastName}`,
@@ -97,7 +80,7 @@ export async function getCurrentUser(
             branchName: session.user.branchName || "Unknown Branch",
           };
         } else {
-          console.log("❌ [AUTH-UTILS] Invalid or expired session token");
+          console.log("🔍 [AUTH-UTILS] No session found in cookies");
         }
       } catch (error) {
         console.error("Error validating session token:", error);
@@ -109,11 +92,11 @@ export async function getCurrentUser(
     // Return a fallback user instead of throwing error
     console.warn("No valid user authentication found, using fallback");
     return {
-      id: "00000000-0000-0000-0000-000000000000", // Use a valid UUID format
+      id: "00000000-0000-0000-0000-000000000000",
       name: "System User",
       username: "system",
       role: "admin",
-      branchId: "635844ab-029a-43f8-8523-d7882915266a", // Use the actual branch ID from the error log
+      branchId: "635844ab-029a-43f8-8523-d7882915266a",
       branchName: "Main Branch",
     };
   } catch (error) {
@@ -124,7 +107,7 @@ export async function getCurrentUser(
       name: "System User",
       username: "system",
       role: "admin",
-      branchId: "635844ab-029a-43f8-8523-d7882915266a", // Use the actual branch ID
+      branchId: "635844ab-029a-43f8-8523-d7882915266a",
       branchName: "Main Branch",
     };
   }

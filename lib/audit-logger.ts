@@ -270,8 +270,7 @@ export class AuditLogger {
       this.logs = this.logs.slice(-this.MAX_LOGS_IN_MEMORY)
     }
 
-    // For demo purposes, log to console
-    console.log("Audit Log:", logEntry)
+
 
     return logEntry
   }

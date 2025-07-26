@@ -36,7 +36,6 @@ export function useCurrentUser() {
         if (response.ok) {
           const sessionData = await response.json();
           if (sessionData.user && sessionData.user.id !== "System") {
-            console.log("Got valid user from session API:", sessionData.user);
             setUser(sessionData.user);
             // Store in localStorage for future use (only after successful validation)
             localStorage.setItem(
@@ -71,7 +70,6 @@ export function useCurrentUser() {
             branchId: "635844ab-029a-43f8-8523-d7882915266a", // Valid UUID
             branchName: "Main Branch",
           };
-          console.log("Using default development user:", defaultUser);
           setUser(defaultUser);
         }
       } finally {

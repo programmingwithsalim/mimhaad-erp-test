@@ -64,7 +64,6 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     try {
-      console.log("Fetching branches...");
 
       // For admin users, include inactive branches
       const response = await fetch("/api/branches?includeInactive=true");
@@ -75,21 +74,17 @@ export function BranchProvider({ children }: { children: React.ReactNode }) {
 
       const data = await response.json();
 
-      console.log("Branches API response:", data);
 
       // Handle the API response format
       if (data.success && Array.isArray(data.data)) {
-        console.log("Setting branches from data.data:", data.data);
         setBranches(data.data);
       } else if (Array.isArray(data)) {
-        console.log("Setting branches from direct array:", data);
         setBranches(data);
       } else if (
         data &&
         typeof data === "object" &&
         Array.isArray(data.branches)
       ) {
-        console.log("Setting branches from data.branches:", data.branches);
         setBranches(data.branches);
       } else {
         console.error("Unexpected data format:", data);

@@ -37,6 +37,8 @@ gl_mappings.json
 float_accounts.json
 helpers
 
+/.next/
+
 # vercel
 .vercel
 
@@ -137,6 +139,8 @@ cleanup*.ts
 # Backup files
 *.bak
 *.backup
+backups/
+*.json.backup
 
 # Development utilities
 /utils/
@@ -195,6 +199,9 @@ pnpm-lock.yaml
 dist/
 build/
 out/
+
+# Development and debug routes (exclude from production builds)
+app/api/dev/
 
 # Documentation build
 docs/.vitepress/dist

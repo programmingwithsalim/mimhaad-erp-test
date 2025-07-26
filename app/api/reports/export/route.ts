@@ -2,7 +2,6 @@
 
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
-import * as XLSX from "xlsx";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -250,6 +249,7 @@ export async function GET(request: NextRequest) {
       contentType = "text/csv";
     } else if (exportFormat === "excel") {
       // Generate proper Excel file with multiple sheets
+      const XLSX = await import("xlsx");
       const workbook = XLSX.utils.book_new();
 
       // Summary sheet

@@ -135,7 +135,7 @@ export async function GET(
         END as transaction_details
       FROM gl_transactions gt
       JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
-      LEFT JOIN users u ON gt.created_by = u.id
+      LEFT JOIN users u ON gt.created_by::uuid = u.id
       WHERE ${whereConditions.join(" AND ")}
     `;
 
