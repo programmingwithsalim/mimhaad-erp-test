@@ -28,8 +28,37 @@ export async function GET(request: Request) {
 
 
 
-    // Build the main query using GL system with proper template literals
-    let baseQuery = sql`
+    // Build the main query using GL system with proper conditional logic
+    let whereConditions: string[] = [];
+    let queryParams: any[] = [];
+
+    // Base condition
+    whereConditions.push("gm.float_account_id = $1");
+    queryParams.push(accountId);
+
+    if (type) {
+      whereConditions.push("gt.source_transaction_type = $2");
+      queryParams.push(type);
+    }
+
+    if (startDate) {
+      whereConditions.push("gt.date >= $" + (queryParams.length + 1));
+      queryParams.push(startDate);
+    }
+
+    if (endDate) {
+      whereConditions.push("gt.date <= $" + (queryParams.length + 1));
+      queryParams.push(endDate);
+    }
+
+    // Add branch filter for non-admin users
+    if (session.user.role !== "Admin" && session.user.branchId) {
+      whereConditions.push("gt.branch_id = $" + (queryParams.length + 1));
+      queryParams.push(session.user.branchId);
+    }
+
+    // Build the complete query
+    let queryString = `
       SELECT 
         gt.id,
         gt.date as transaction_date,
@@ -52,59 +81,52 @@ export async function GET(request: Request) {
       JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
       JOIN float_accounts fa ON gm.float_account_id = fa.id
       LEFT JOIN users u ON gt.created_by = u.id
-      WHERE gm.float_account_id = ${accountId}
+      WHERE ${whereConditions.join(' AND ')}
+      ORDER BY gt.date DESC, gt.created_at DESC 
+      LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}
     `;
+    queryParams.push(limit, offset);
 
-    // Add additional conditions
+    const transactions = await sql.unsafe(queryString, ...queryParams);
+
+    // Get total count for pagination
+    let countWhereConditions: string[] = [];
+    let countParams: any[] = [];
+
+    // Base condition for count query
+    countWhereConditions.push("gm.float_account_id = $1");
+    countParams.push(accountId);
+
     if (type) {
-      baseQuery = sql`${baseQuery} AND gt.source_transaction_type = ${type}`;
+      countWhereConditions.push("gt.source_transaction_type = $2");
+      countParams.push(type);
     }
 
     if (startDate) {
-      baseQuery = sql`${baseQuery} AND gt.date >= ${startDate}`;
+      countWhereConditions.push("gt.date >= $" + (countParams.length + 1));
+      countParams.push(startDate);
     }
 
     if (endDate) {
-      baseQuery = sql`${baseQuery} AND gt.date <= ${endDate}`;
+      countWhereConditions.push("gt.date <= $" + (countParams.length + 1));
+      countParams.push(endDate);
     }
 
-    // Add branch filter for non-admin users
     if (session.user.role !== "Admin" && session.user.branchId) {
-      baseQuery = sql`${baseQuery} AND gt.branch_id = ${session.user.branchId}`;
+      countWhereConditions.push("gt.branch_id = $" + (countParams.length + 1));
+      countParams.push(session.user.branchId);
     }
 
-    // Add ORDER BY, LIMIT, and OFFSET
-    baseQuery = sql`${baseQuery} ORDER BY gt.date DESC, gt.created_at DESC LIMIT ${limit} OFFSET ${offset}`;
-
-    const transactions = await baseQuery;
-
-    // Get total count for pagination using template literals
-    let countQuery = sql`
+    // Build the count query
+    let countQueryString = `
       SELECT COUNT(*) as total
       FROM gl_transactions gt
       JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
       JOIN float_accounts fa ON gm.float_account_id = fa.id
-      WHERE gm.float_account_id = ${accountId}
+      WHERE ${countWhereConditions.join(' AND ')}
     `;
 
-    // Add additional conditions for count query
-    if (type) {
-      countQuery = sql`${countQuery} AND gt.source_transaction_type = ${type}`;
-    }
-
-    if (startDate) {
-      countQuery = sql`${countQuery} AND gt.date >= ${startDate}`;
-    }
-
-    if (endDate) {
-      countQuery = sql`${countQuery} AND gt.date <= ${endDate}`;
-    }
-
-    if (session.user.role !== "Admin" && session.user.branchId) {
-      countQuery = sql`${countQuery} AND gt.branch_id = ${session.user.branchId}`;
-    }
-
-    const countResult = await countQuery;
+    const countResult = await sql.unsafe(countQueryString, ...countParams);
     const total = countResult[0]?.total || 0;
 
     // Get float account details
