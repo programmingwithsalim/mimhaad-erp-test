@@ -27,286 +27,256 @@ export async function GET(request: Request) {
     }
 
     // Build the main query using GL system with simple template literals
-    let transactions;
+    let transactions: any[] = [];
 
-    // Execute using the sql function directly
-    // We need to use a different approach since sql.unsafe doesn't exist
-    // Let's use a simple approach with basic template literals
-    if (
-      type &&
-      startDate &&
-      endDate &&
-      session.user.role !== "Admin" &&
-      session.user.branchId
-    ) {
-      // All conditions
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.source_transaction_type = ${type}
-        AND gt.date >= ${startDate}
-        AND gt.date <= ${endDate}
-        AND gt.branch_id = ${session.user.branchId}::uuid
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (type && startDate && endDate) {
-      // Type, startDate, endDate
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.source_transaction_type = ${type}
-        AND gt.date >= ${startDate}
-        AND gt.date <= ${endDate}
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (
-      startDate &&
-      endDate &&
-      session.user.role !== "Admin" &&
-      session.user.branchId
-    ) {
-      // startDate, endDate, with branch filter
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.date >= ${startDate}
-        AND gt.date <= ${endDate}
-        AND gt.branch_id = ${session.user.branchId}::uuid
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (startDate && endDate) {
-      // startDate, endDate (Admin or no branch filter needed)
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.date >= ${startDate}
-        AND gt.date <= ${endDate}
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (type && session.user.role !== "Admin" && session.user.branchId) {
-      // Type only with branch filter
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.source_transaction_type = ${type}
-        AND gt.branch_id = ${session.user.branchId}::uuid
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (type) {
-      // Type only
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.source_transaction_type = ${type}
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
-    } else if (session.user.role !== "Admin" && session.user.branchId) {
-      // Basic query with branch filter
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        AND gt.branch_id = ${session.user.branchId}::uuid
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
+    // First, get the transaction types for this float account
+    const mappingResult = await sql`
+      SELECT DISTINCT transaction_type 
+      FROM gl_mappings 
+      WHERE float_account_id = ${accountId}::uuid
+    `;
+    
+    const allowedTransactionTypes = mappingResult.map((m: any) => m.transaction_type);
+    
+    if (allowedTransactionTypes.length === 0) {
+      // No mappings found for this float account
+      transactions = [];
     } else {
-      // Basic query - only accountId
-      transactions = await sql`
-        SELECT 
-          gt.id,
-          gt.date as transaction_date,
-          gt.source_module,
-          gt.source_transaction_type as type,
-          gt.source_transaction_id as reference_id,
-          gt.amount,
-          gt.description,
-          gt.status,
-          gt.reference,
-          gt.created_at,
-          gt.branch_id,
-          gt.branch_name,
-          'main' as mapping_type,
-          'float' as float_account_type,
-          'system' as float_account_provider,
-          'N/A' as float_account_number,
-          u.first_name || ' ' || u.last_name as created_by_name
-        FROM gl_transactions gt
-        LEFT JOIN users u ON gt.created_by = u.id
-        WHERE gt.source_transaction_type IN (
-          SELECT DISTINCT transaction_type 
-          FROM gl_mappings 
-          WHERE float_account_id = ${accountId}::uuid
-        )
-        ORDER BY gt.date DESC, gt.created_at DESC 
-        LIMIT ${limit} OFFSET ${offset}
-      `;
+      // Use a simple approach with basic template literals
+      // Get all transactions first, then filter by allowed types
+      if (type && startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+        // All conditions
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.source_transaction_type = ${type}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          AND gt.branch_id = ${session.user.branchId}::uuid
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else if (type && startDate && endDate) {
+        // Type, startDate, endDate
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.source_transaction_type = ${type}
+          AND gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else if (startDate && endDate && session.user.role !== "Admin" && session.user.branchId) {
+        // startDate, endDate, with branch filter
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          AND gt.branch_id = ${session.user.branchId}::uuid
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else if (startDate && endDate) {
+        // startDate, endDate (Admin or no branch filter needed)
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.date >= ${startDate}
+          AND gt.date <= ${endDate}
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else if (type && session.user.role !== "Admin" && session.user.branchId) {
+        // Type only with branch filter
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.source_transaction_type = ${type}
+          AND gt.branch_id = ${session.user.branchId}::uuid
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else if (type) {
+        // Type only
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.source_transaction_type = ${type}
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else if (session.user.role !== "Admin" && session.user.branchId) {
+        // Basic query with branch filter
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          WHERE gt.branch_id = ${session.user.branchId}::uuid
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      } else {
+        // Basic query - no filters
+        const allTransactions = await sql`
+          SELECT 
+            gt.id,
+            gt.date as transaction_date,
+            gt.source_module,
+            gt.source_transaction_type as type,
+            gt.source_transaction_id as reference_id,
+            gt.amount,
+            gt.description,
+            gt.status,
+            gt.reference,
+            gt.created_at,
+            gt.branch_id,
+            gt.branch_name,
+            'main' as mapping_type,
+            'float' as float_account_type,
+            'system' as float_account_provider,
+            'N/A' as float_account_number,
+            u.first_name || ' ' || u.last_name as created_by_name
+          FROM gl_transactions gt
+          LEFT JOIN users u ON gt.created_by = u.id
+          ORDER BY gt.date DESC, gt.created_at DESC 
+          LIMIT ${limit} OFFSET ${offset}
+        `;
+        transactions = allTransactions.filter((t: any) => allowedTransactionTypes.includes(t.type));
+      }
     }
 
     // Get total count for pagination using the same conditional logic
