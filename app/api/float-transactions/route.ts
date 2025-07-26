@@ -19,118 +19,136 @@ export async function GET(request: Request) {
     const limit = parseInt(searchParams.get("limit") || "50");
     const offset = parseInt(searchParams.get("offset") || "0");
 
-    let whereConditions: string[] = [];
-    let params: any[] = [];
-    let paramIndex = 1;
-
-    if (accountId) {
-      whereConditions.push(`ft.account_id = $${paramIndex++}`);
-      params.push(accountId);
+    if (!accountId) {
+      return NextResponse.json(
+        { error: "accountId is required" },
+        { status: 400 }
+      );
     }
 
+    // Build the GL-based query for float account transactions
+    let whereConditions: string[] = [];
+    let queryParams: any[] = [];
+    let paramIndex = 1;
+
+    // Base condition: filter by float account through GL mappings
+    whereConditions.push(`gm.float_account_id = $${paramIndex++}`);
+    queryParams.push(accountId);
+
     if (type) {
-      whereConditions.push(`ft.type = $${paramIndex++}`);
-      params.push(type);
+      whereConditions.push(`gt.source_transaction_type = $${paramIndex++}`);
+      queryParams.push(type);
     }
 
     if (startDate) {
-      whereConditions.push(`ft.created_at >= $${paramIndex++}`);
-      params.push(startDate);
+      whereConditions.push(`gt.date >= $${paramIndex++}`);
+      queryParams.push(startDate);
     }
 
     if (endDate) {
-      whereConditions.push(`ft.created_at <= $${paramIndex++}`);
-      params.push(endDate);
+      whereConditions.push(`gt.date <= $${paramIndex++}`);
+      queryParams.push(endDate);
     }
 
-    // Add branch filter for non-admin users (filter by float account branch instead)
+    // Add branch filter for non-admin users
     if (session.user.role !== "Admin" && session.user.branchId) {
-      whereConditions.push(`fa.branch_id = $${paramIndex++}`);
-      params.push(session.user.branchId);
+      whereConditions.push(`gt.branch_id = $${paramIndex++}`);
+      queryParams.push(session.user.branchId);
     }
 
-    // Build the query with proper parameter substitution
+    // Build the main query using GL system
     let queryString = `
       SELECT 
-        ft.id,
-        ft.account_id,
-        ft.type,
-        ft.amount,
-        ft.balance_before,
-        ft.balance_after,
-        ft.description,
-        ft.created_at,
-        ft.reference,
-        ft.recharge_method,
-        fa.provider,
-        fa.account_type,
-        u.name as created_by_name
-      FROM float_transactions ft
-      LEFT JOIN float_accounts fa ON ft.account_id = fa.id
-      LEFT JOIN users u ON ft.created_by = u.id
+        gt.id,
+        gt.date as transaction_date,
+        gt.source_module,
+        gt.source_transaction_type as type,
+        gt.source_transaction_id as reference_id,
+        gt.amount,
+        gt.description,
+        gt.status,
+        gt.reference,
+        gt.created_at,
+        gt.branch_id,
+        gt.branch_name,
+        gm.mapping_type,
+        fa.account_type as float_account_type,
+        fa.provider as float_account_provider,
+        fa.account_number as float_account_number,
+        u.first_name || ' ' || u.last_name as created_by_name
+      FROM gl_transactions gt
+      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+      JOIN float_accounts fa ON gm.float_account_id = fa.id
+      LEFT JOIN users u ON gt.created_by = u.id
+      WHERE ${whereConditions.join(" AND ")}
     `;
 
-    // Add WHERE clause if conditions exist
-    if (whereConditions.length > 0) {
-      queryString += ` WHERE ${whereConditions.join(' AND ')}`;
-    }
-
     // Add ORDER BY, LIMIT, and OFFSET
-    queryString += ` ORDER BY ft.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-    params.push(limit, offset);
+    queryString += ` ORDER BY gt.date DESC, gt.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    queryParams.push(limit, offset);
 
-    // Execute the query using the neon client directly
-    const transactions = await sql(queryString, ...params);
+    const transactions = await sql(queryString, ...queryParams);
 
     // Get total count for pagination
     let countWhereConditions: string[] = [];
     let countParams: any[] = [];
     let countParamIndex = 1;
 
-    if (accountId) {
-      countWhereConditions.push(`ft.account_id = $${countParamIndex++}`);
-      countParams.push(accountId);
-    }
+    // Base condition for count query
+    countWhereConditions.push(`gm.float_account_id = $${countParamIndex++}`);
+    countParams.push(accountId);
 
     if (type) {
-      countWhereConditions.push(`ft.type = $${countParamIndex++}`);
+      countWhereConditions.push(
+        `gt.source_transaction_type = $${countParamIndex++}`
+      );
       countParams.push(type);
     }
 
     if (startDate) {
-      countWhereConditions.push(`ft.created_at >= $${countParamIndex++}`);
+      countWhereConditions.push(`gt.date >= $${countParamIndex++}`);
       countParams.push(startDate);
     }
 
     if (endDate) {
-      countWhereConditions.push(`ft.created_at <= $${countParamIndex++}`);
+      countWhereConditions.push(`gt.date <= $${countParamIndex++}`);
       countParams.push(endDate);
     }
 
     if (session.user.role !== "Admin" && session.user.branchId) {
-      countWhereConditions.push(`fa.branch_id = $${countParamIndex++}`);
+      countWhereConditions.push(`gt.branch_id = $${countParamIndex++}`);
       countParams.push(session.user.branchId);
     }
 
-    // Build the count query with proper parameter substitution
+    // Build the count query
     let countQueryString = `
       SELECT COUNT(*) as total
-      FROM float_transactions ft
-      LEFT JOIN float_accounts fa ON ft.account_id = fa.id
+      FROM gl_transactions gt
+      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+      JOIN float_accounts fa ON gm.float_account_id = fa.id
+      WHERE ${countWhereConditions.join(" AND ")}
     `;
 
-    // Add WHERE clause if conditions exist
-    if (countWhereConditions.length > 0) {
-      countQueryString += ` WHERE ${countWhereConditions.join(' AND ')}`;
-    }
-
-    // Execute the count query using the neon client directly
     const countResult = await sql(countQueryString, ...countParams);
     const total = countResult[0]?.total || 0;
+
+    // Get float account details
+    const floatAccountDetails = await sql`
+      SELECT 
+        id,
+        account_type,
+        provider,
+        account_number,
+        current_balance,
+        account_name
+      FROM float_accounts 
+      WHERE id = ${accountId}
+    `;
 
     return NextResponse.json({
       success: true,
       data: {
+        floatAccount: floatAccountDetails[0] || null,
         transactions,
         pagination: {
           total,
@@ -143,10 +161,10 @@ export async function GET(request: Request) {
   } catch (error) {
     console.error("Error fetching float transactions:", error);
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: "Failed to fetch transaction history",
-        details: error instanceof Error ? error.message : "Unknown error"
+        details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );

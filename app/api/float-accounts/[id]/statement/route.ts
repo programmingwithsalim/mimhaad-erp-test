@@ -1,204 +1,283 @@
 import { NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { getDatabaseSession } from "@/lib/database-session-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
-    const { searchParams } = new URL(request.url);
+    const session = await getDatabaseSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
 
-    // Get date range parameters
+    const { id: floatAccountId } = await params;
+    const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
-    const format = searchParams.get("format") || "csv"; // csv or json
+    const limit = parseInt(searchParams.get("limit") || "1000");
+    const offset = parseInt(searchParams.get("offset") || "0");
 
-    // Default to last 30 days if no dates provided
-    const fromDate =
-      startDate ||
-      new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-        .toISOString()
-        .split("T")[0];
-    const toDate = endDate || new Date().toISOString().split("T")[0];
-
-    // Get account details
-    const account = await sql`
-      SELECT fa.*, b.name as branch_name 
-      FROM float_accounts fa
-      LEFT JOIN branches b ON fa.branch_id = b.id
-      WHERE fa.id = ${id}
+    // Get float account details
+    const floatAccount = await sql`
+      SELECT 
+        id,
+        account_type,
+        provider,
+        account_number,
+        current_balance,
+        account_name,
+        branch_id,
+        created_at
+      FROM float_accounts 
+      WHERE id = ${floatAccountId} AND is_active = true
     `;
 
-    if (account.length === 0) {
+    if (floatAccount.length === 0) {
       return NextResponse.json(
         { error: "Float account not found" },
         { status: 404 }
       );
     }
 
-    // Get transactions for the specified date range
-    const transactions = await sql`
-      SELECT 
-        ft.*,
-        CASE 
-          WHEN ft.transaction_type = 'recharge' THEN 'Recharge'
-          WHEN ft.transaction_type = 'deposit' THEN 'Deposit'
-          WHEN ft.transaction_type = 'withdrawal' THEN 'Withdrawal'
-          WHEN ft.transaction_type = 'transfer' THEN 'Transfer'
-          WHEN ft.transaction_type = 'adjustment' THEN 'Balance Adjustment'
-          WHEN ft.transaction_type = 'fee' THEN 'Service Fee'
-          ELSE ft.transaction_type
-        END as transaction_type_display
-      FROM float_transactions ft
-      WHERE ft.float_account_id = ${id}
-      AND ft.created_at >= ${fromDate}::date
-      AND ft.created_at <= ${toDate}::date + INTERVAL '1 day'
-      ORDER BY ft.created_at DESC
-    `;
+    const account = floatAccount[0];
 
-    // Get GL entries for this account in the date range
-    const glEntries = await sql`
-      SELECT 
-        gt.source_transaction_id,
-        gt.amount,
-        gt.created_at,
-        gje.account_id,
-        gje.debit,
-        gje.credit,
-        gje.description
-      FROM gl_transactions gt
-      JOIN gl_journal_entries gje ON gt.id = gje.transaction_id
-      WHERE gt.source_module IN ('momo', 'agency_banking', 'power', 'jumia', 'e_zwich')
-      AND gt.created_at >= ${fromDate}::date
-      AND gt.created_at <= ${toDate}::date + INTERVAL '1 day'
-      ORDER BY gt.created_at DESC
-    `;
-
-    const accountData = account[0];
-
-    // Calculate summary statistics
-    const totalTransactions = transactions.length;
-    const totalCredits = transactions
-      .filter((tx) => Number(tx.amount) > 0)
-      .reduce((sum, tx) => sum + Number(tx.amount), 0);
-    const totalDebits = transactions
-      .filter((tx) => Number(tx.amount) < 0)
-      .reduce((sum, tx) => sum + Math.abs(Number(tx.amount)), 0);
-    const netChange = totalCredits - totalDebits;
-
-    if (format === "json") {
-      return NextResponse.json({
-        success: true,
-        account: {
-          id: accountData.id,
-          accountType: accountData.account_type,
-          provider: accountData.provider,
-          branchName: accountData.branch_name,
-          currentBalance: Number(accountData.current_balance),
-          minThreshold: Number(accountData.min_threshold),
-          maxThreshold: Number(accountData.max_threshold),
-        },
-        statement: {
-          period: { fromDate, toDate },
-          generatedAt: new Date().toISOString(),
-          summary: {
-            totalTransactions,
-            totalCredits,
-            totalDebits,
-            netChange,
-          },
-          transactions: transactions.map((tx) => ({
-            id: tx.id,
-            date: tx.created_at,
-            type: tx.transaction_type_display,
-            amount: Number(tx.amount),
-            balanceBefore: Number(tx.balance_before),
-            balanceAfter: Number(tx.balance_after),
-            description: tx.description,
-            processedBy: tx.processed_by,
-            reference: tx.reference,
-          })),
-          glEntries: glEntries.map((entry) => ({
-            transactionId: entry.source_transaction_id,
-            date: entry.created_at,
-            accountId: entry.account_id,
-            debit: Number(entry.debit),
-            credit: Number(entry.credit),
-            description: entry.description,
-          })),
-        },
-      });
+    // Check branch access for non-admin users
+    if (
+      session.user.role !== "Admin" &&
+      session.user.branchId !== account.branch_id
+    ) {
+      return NextResponse.json(
+        { error: "Access denied to this float account" },
+        { status: 403 }
+      );
     }
 
-    // Generate CSV content
-    const headers = [
-      "Date",
-      "Transaction Type",
-      "Amount",
-      "Balance Before",
-      "Balance After",
-      "Description",
-      "Processed By",
-      "Reference",
-    ];
+    // Build the comprehensive GL-based query
+    let whereConditions: string[] = [];
+    let queryParams: any[] = [];
+    let paramIndex = 1;
 
-    const csvRows = transactions.map((tx) => [
-      new Date(tx.created_at).toLocaleDateString(),
-      tx.transaction_type_display,
-      Number(tx.amount).toFixed(2),
-      Number(tx.balance_before).toFixed(2),
-      Number(tx.balance_after).toFixed(2),
-      tx.description || "",
-      tx.processed_by || "",
-      tx.reference || "",
-    ]);
+    // Base condition: filter by float account through GL mappings
+    whereConditions.push(`gm.float_account_id = $${paramIndex++}`);
+    queryParams.push(floatAccountId);
 
-    const csvContent = [
-      [
-        `Float Account Statement - ${
-          accountData.provider || accountData.account_type
-        }`,
-      ],
-      [`Branch: ${accountData.branch_name || "Unknown"}`],
-      [`Account Type: ${accountData.account_type}`],
-      [
-        `Current Balance: GHS ${Number(accountData.current_balance).toFixed(
-          2
-        )}`,
-      ],
-      [`Min Threshold: GHS ${Number(accountData.min_threshold).toFixed(2)}`],
-      [`Max Threshold: GHS ${Number(accountData.max_threshold).toFixed(2)}`],
-      [`Statement Period: ${fromDate} to ${toDate}`],
-      [`Generated: ${new Date().toLocaleString()}`],
-      [`Total Transactions: ${totalTransactions}`],
-      [`Total Credits: GHS ${totalCredits.toFixed(2)}`],
-      [`Total Debits: GHS ${totalDebits.toFixed(2)}`],
-      [`Net Change: GHS ${netChange.toFixed(2)}`],
-      [],
-      headers,
-      ...csvRows,
-    ]
-      .map((row) => row.map((field) => `"${field}"`).join(","))
-      .join("\n");
+    if (startDate) {
+      whereConditions.push(`gt.date >= $${paramIndex++}`);
+      queryParams.push(startDate);
+    }
 
-    // Return as downloadable file
-    return new NextResponse(csvContent, {
-      headers: {
-        "Content-Type": "text/csv",
-        "Content-Disposition": `attachment; filename="${
-          accountData.provider || accountData.account_type
-        }-statement-${fromDate}-to-${toDate}.csv"`,
+    if (endDate) {
+      whereConditions.push(`gt.date <= $${paramIndex++}`);
+      queryParams.push(endDate);
+    }
+
+    // Add branch filter for non-admin users
+    if (session.user.role !== "Admin" && session.user.branchId) {
+      whereConditions.push(`gt.branch_id = $${paramIndex++}`);
+      queryParams.push(session.user.branchId);
+    }
+
+    // Build the main query using GL system
+    let queryString = `
+      SELECT 
+        gt.id,
+        gt.date as transaction_date,
+        gt.source_module,
+        gt.source_transaction_type as type,
+        gt.source_transaction_id as reference_id,
+        gt.amount,
+        gt.description,
+        gt.status,
+        gt.reference,
+        gt.created_at,
+        gt.branch_id,
+        gt.branch_name,
+        gm.mapping_type,
+        u.first_name || ' ' || u.last_name as created_by_name,
+        -- Additional context based on source module
+        CASE 
+          WHEN gt.source_module = 'momo' THEN (
+            SELECT mt.customer_name || ' (' || mt.phone_number || ')'
+            FROM momo_transactions mt 
+            WHERE mt.id::text = gt.source_transaction_id
+            LIMIT 1
+          )
+          WHEN gt.source_module = 'power' THEN (
+            SELECT pt.customer_name || ' (' || pt.meter_number || ')'
+            FROM power_transactions pt 
+            WHERE pt.id::text = gt.source_transaction_id
+            LIMIT 1
+          )
+          WHEN gt.source_module = 'jumia' THEN (
+            SELECT jt.customer_name || ' (' || jt.tracking_id || ')'
+            FROM jumia_transactions jt 
+            WHERE jt.id::text = gt.source_transaction_id
+            LIMIT 1
+          )
+          WHEN gt.source_module = 'expenses' THEN (
+            SELECT eh.name || ' - ' || e.reference_number
+            FROM expenses e
+            JOIN expense_heads eh ON e.expense_head_id = eh.id
+            WHERE e.id::text = gt.source_transaction_id
+            LIMIT 1
+          )
+          WHEN gt.source_module = 'agency_banking' THEN (
+            SELECT abt.customer_name || ' (' || abt.account_number || ')'
+            FROM agency_banking_transactions abt 
+            WHERE abt.id::text = gt.source_transaction_id
+            LIMIT 1
+          )
+          ELSE gt.description
+        END as transaction_details
+      FROM gl_transactions gt
+      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+      LEFT JOIN users u ON gt.created_by = u.id
+      WHERE ${whereConditions.join(" AND ")}
+    `;
+
+    // Add ORDER BY, LIMIT, and OFFSET
+    queryString += ` ORDER BY gt.date DESC, gt.created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+    queryParams.push(limit, offset);
+
+    const transactions = await sql(queryString, ...queryParams);
+
+    // Get total count for pagination
+    let countWhereConditions: string[] = [];
+    let countParams: any[] = [];
+    let countParamIndex = 1;
+
+    // Base condition for count query
+    countWhereConditions.push(`gm.float_account_id = $${countParamIndex++}`);
+    countParams.push(floatAccountId);
+
+    if (startDate) {
+      countWhereConditions.push(`gt.date >= $${countParamIndex++}`);
+      countParams.push(startDate);
+    }
+
+    if (endDate) {
+      countWhereConditions.push(`gt.date <= $${countParamIndex++}`);
+      countParams.push(endDate);
+    }
+
+    if (session.user.role !== "Admin" && session.user.branchId) {
+      countWhereConditions.push(`gt.branch_id = $${countParamIndex++}`);
+      countParams.push(session.user.branchId);
+    }
+
+    // Build the count query
+    let countQueryString = `
+      SELECT COUNT(*) as total
+      FROM gl_transactions gt
+      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+      WHERE ${countWhereConditions.join(" AND ")}
+    `;
+
+    const countResult = await sql(countQueryString, ...countParams);
+    const total = countResult[0]?.total || 0;
+
+    // Get summary statistics
+    const summaryStats = await sql`
+      SELECT 
+        COUNT(*) as total_transactions,
+        SUM(CASE WHEN gt.amount > 0 THEN gt.amount ELSE 0 END) as total_debits,
+        SUM(CASE WHEN gt.amount < 0 THEN ABS(gt.amount) ELSE 0 END) as total_credits,
+        COUNT(DISTINCT gt.source_module) as modules_involved
+      FROM gl_transactions gt
+      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+      WHERE gm.float_account_id = ${floatAccountId}
+      ${startDate ? sql`AND gt.date >= ${startDate}` : sql``}
+      ${endDate ? sql`AND gt.date <= ${endDate}` : sql``}
+      ${
+        session.user.role !== "Admin" && session.user.branchId
+          ? sql`AND gt.branch_id = ${session.user.branchId}`
+          : sql``
+      }
+    `;
+
+    // Get transactions by module
+    const moduleBreakdown = await sql`
+      SELECT 
+        gt.source_module,
+        COUNT(*) as transaction_count,
+        SUM(gt.amount) as total_amount
+      FROM gl_transactions gt
+      JOIN gl_mappings gm ON gt.source_transaction_type = gm.transaction_type
+      WHERE gm.float_account_id = ${floatAccountId}
+      ${startDate ? sql`AND gt.date >= ${startDate}` : sql``}
+      ${endDate ? sql`AND gt.date <= ${endDate}` : sql``}
+      ${
+        session.user.role !== "Admin" && session.user.branchId
+          ? sql`AND gt.branch_id = ${session.user.branchId}`
+          : sql``
+      }
+      GROUP BY gt.source_module
+      ORDER BY transaction_count DESC
+    `;
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        floatAccount: {
+          id: account.id,
+          accountType: account.account_type,
+          provider: account.provider,
+          accountNumber: account.account_number,
+          currentBalance: Number(account.current_balance),
+          accountName: account.account_name,
+          branchId: account.branch_id,
+          createdAt: account.created_at,
+        },
+        summary: {
+          totalTransactions: Number(summaryStats[0]?.total_transactions || 0),
+          totalDebits: Number(summaryStats[0]?.total_debits || 0),
+          totalCredits: Number(summaryStats[0]?.total_credits || 0),
+          modulesInvolved: Number(summaryStats[0]?.modules_involved || 0),
+          netMovement:
+            Number(summaryStats[0]?.total_debits || 0) -
+            Number(summaryStats[0]?.total_credits || 0),
+        },
+        moduleBreakdown: moduleBreakdown.map((module) => ({
+          module: module.source_module,
+          transactionCount: Number(module.transaction_count),
+          totalAmount: Number(module.total_amount),
+        })),
+        transactions: transactions.map((tx) => ({
+          id: tx.id,
+          transactionDate: tx.transaction_date,
+          sourceModule: tx.source_module,
+          type: tx.type,
+          referenceId: tx.reference_id,
+          amount: Number(tx.amount),
+          description: tx.description,
+          status: tx.status,
+          reference: tx.reference,
+          createdAt: tx.created_at,
+          branchId: tx.branch_id,
+          branchName: tx.branch_name,
+          mappingType: tx.mapping_type,
+          createdByName: tx.created_by_name,
+          transactionDetails: tx.transaction_details,
+        })),
+        pagination: {
+          total,
+          limit,
+          offset,
+          hasMore: offset + limit < total,
+        },
       },
     });
-  } catch (error: any) {
-    console.error("Error generating statement:", error);
+  } catch (error) {
+    console.error("Error fetching float account statement:", error);
     return NextResponse.json(
       {
         success: false,
-        error: error.message,
+        error: "Failed to fetch float account statement",
+        details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     );
