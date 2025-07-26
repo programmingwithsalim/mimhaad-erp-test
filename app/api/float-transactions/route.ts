@@ -58,8 +58,8 @@ export async function GET(request: Request) {
         const accountType = floatAccountDetails[0].account_type;
         console.log(`Float account type: ${accountType}`);
 
-        // For now, let's get all transactions and filter by account type logic
-        // This is a fallback approach when GL mappings are not set up
+        // Get transactions that are related to this float account
+        // We need to join with gl_journal_entries to find transactions affecting this float account
         if (
           startDate &&
           endDate &&
@@ -68,7 +68,7 @@ export async function GET(request: Request) {
         ) {
           // Date range with branch filter
           const allTransactions = await sql`
-            SELECT 
+            SELECT DISTINCT
               gt.id,
               gt.date as transaction_date,
               gt.source_module,
@@ -89,10 +89,19 @@ export async function GET(request: Request) {
               'N/A' as float_account_number,
               u.first_name || ' ' || u.last_name as created_by_name
             FROM gl_transactions gt
-            LEFT JOIN users u ON gt.created_by = u.id
+            INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
+            LEFT JOIN users u ON gt.created_by::uuid = u.id
             WHERE gt.date >= ${startDate}
             AND gt.date <= ${endDate}
             AND gt.branch_id = ${session.user.branchId}::uuid
+            AND (
+              gje.account_id = ${accountId}::uuid 
+              OR gje.account_id IN (
+                SELECT account_id 
+                FROM gl_accounts 
+                WHERE parent_id = ${accountId}::uuid
+              )
+            )
             ORDER BY gt.date DESC, gt.created_at DESC 
             LIMIT ${limit} OFFSET ${offset}
           `;
@@ -102,7 +111,7 @@ export async function GET(request: Request) {
           if (session.user.role !== "Admin" && session.user.branchId) {
             // With branch filter
             const allTransactions = await sql`
-              SELECT 
+              SELECT DISTINCT
                 gt.id,
                 gt.date as transaction_date,
                 gt.source_module,
@@ -123,10 +132,19 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.date >= ${startDate}
               AND gt.date <= ${endDate}
               AND gt.branch_id = ${session.user.branchId}::uuid
+              AND (
+                gje.account_id = ${accountId}::uuid 
+                OR gje.account_id IN (
+                  SELECT account_id 
+                  FROM gl_accounts 
+                  WHERE parent_id = ${accountId}::uuid
+                )
+              )
               ORDER BY gt.date DESC, gt.created_at DESC 
               LIMIT ${limit} OFFSET ${offset}
             `;
@@ -134,7 +152,7 @@ export async function GET(request: Request) {
           } else {
             // Without branch filter
             const allTransactions = await sql`
-              SELECT 
+              SELECT DISTINCT
                 gt.id,
                 gt.date as transaction_date,
                 gt.source_module,
@@ -155,9 +173,18 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.date >= ${startDate}
               AND gt.date <= ${endDate}
+              AND (
+                gje.account_id = ${accountId}::uuid 
+                OR gje.account_id IN (
+                  SELECT account_id 
+                  FROM gl_accounts 
+                  WHERE parent_id = ${accountId}::uuid
+                )
+              )
               ORDER BY gt.date DESC, gt.created_at DESC 
               LIMIT ${limit} OFFSET ${offset}
             `;
@@ -168,7 +195,7 @@ export async function GET(request: Request) {
           if (session.user.role !== "Admin" && session.user.branchId) {
             // With branch filter
             const allTransactions = await sql`
-              SELECT 
+              SELECT DISTINCT
                 gt.id,
                 gt.date as transaction_date,
                 gt.source_module,
@@ -189,8 +216,17 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
               WHERE gt.branch_id = ${session.user.branchId}::uuid
+              AND (
+                gje.account_id = ${accountId}::uuid 
+                OR gje.account_id IN (
+                  SELECT account_id 
+                  FROM gl_accounts 
+                  WHERE parent_id = ${accountId}::uuid
+                )
+              )
               ORDER BY gt.date DESC, gt.created_at DESC 
               LIMIT ${limit} OFFSET ${offset}
             `;
@@ -198,7 +234,7 @@ export async function GET(request: Request) {
           } else {
             // Without branch filter
             const allTransactions = await sql`
-              SELECT 
+              SELECT DISTINCT
                 gt.id,
                 gt.date as transaction_date,
                 gt.source_module,
@@ -219,7 +255,16 @@ export async function GET(request: Request) {
                 'N/A' as float_account_number,
                 u.first_name || ' ' || u.last_name as created_by_name
               FROM gl_transactions gt
+              INNER JOIN gl_journal_entries gje ON gt.id = gje.gl_transaction_id
               LEFT JOIN users u ON gt.created_by::uuid = u.id
+              WHERE (
+                gje.account_id = ${accountId}::uuid 
+                OR gje.account_id IN (
+                  SELECT account_id 
+                  FROM gl_accounts 
+                  WHERE parent_id = ${accountId}::uuid
+                )
+              )
               ORDER BY gt.date DESC, gt.created_at DESC 
               LIMIT ${limit} OFFSET ${offset}
             `;

@@ -209,17 +209,45 @@ export function StatementGenerator({
 
       let yPosition = height - 50;
 
+      // Draw header background
+      page.drawRectangle({
+        x: 0,
+        y: height - 80,
+        width: width,
+        height: 80,
+        color: rgb(0.1, 0.1, 0.1),
+      });
+
       // Header
       page.drawText("FLOAT ACCOUNT STATEMENT", {
         x: 50,
         y: yPosition,
-        size: 20,
+        size: 24,
         font: boldFont,
-        color: rgb(0, 0, 0),
+        color: rgb(1, 1, 1),
       });
       yPosition -= 30;
 
-      // Account details
+      // Account details section
+      page.drawRectangle({
+        x: 40,
+        y: yPosition - 10,
+        width: width - 80,
+        height: 60,
+        color: rgb(0.95, 0.95, 0.95),
+        borderColor: rgb(0.8, 0.8, 0.8),
+        borderWidth: 1,
+      });
+
+      page.drawText("ACCOUNT DETAILS", {
+        x: 50,
+        y: yPosition,
+        size: 14,
+        font: boldFont,
+        color: rgb(0.2, 0.2, 0.2),
+      });
+      yPosition -= 20;
+
       page.drawText(`Account: ${account.provider} (${account.account_type})`, {
         x: 50,
         y: yPosition,
@@ -250,17 +278,27 @@ export function StatementGenerator({
         font: font,
         color: rgb(0, 0, 0),
       });
-      yPosition -= 40;
+      yPosition -= 30;
 
       // Summary section
-      page.drawText("SUMMARY", {
+      page.drawRectangle({
+        x: 40,
+        y: yPosition - 10,
+        width: width - 80,
+        height: 120,
+        color: rgb(0.98, 0.98, 0.98),
+        borderColor: rgb(0.8, 0.8, 0.8),
+        borderWidth: 1,
+      });
+
+      page.drawText("FINANCIAL SUMMARY", {
         x: 50,
         y: yPosition,
-        size: 14,
+        size: 16,
         font: boldFont,
-        color: rgb(0, 0, 0),
+        color: rgb(0.2, 0.2, 0.2),
       });
-      yPosition -= 20;
+      yPosition -= 25;
 
       const summaryItems = [
         {
@@ -284,32 +322,42 @@ export function StatementGenerator({
         page.drawText(item.label, {
           x: 50,
           y: yPosition,
-          size: 10,
-          font: font,
-          color: rgb(0, 0, 0),
+          size: 11,
+          font: boldFont,
+          color: rgb(0.3, 0.3, 0.3),
         });
         page.drawText(item.value, {
           x: 200,
           y: yPosition,
-          size: 10,
+          size: 11,
           font: font,
           color: rgb(0, 0, 0),
         });
-        yPosition -= 15;
+        yPosition -= 18;
       });
 
       yPosition -= 20;
 
       // Transactions table header
       if (statementType === "detailed") {
+        page.drawRectangle({
+          x: 40,
+          y: yPosition - 10,
+          width: width - 80,
+          height: 30,
+          color: rgb(0.9, 0.9, 0.9),
+          borderColor: rgb(0.7, 0.7, 0.7),
+          borderWidth: 1,
+        });
+
         page.drawText("TRANSACTION DETAILS", {
           x: 50,
           y: yPosition,
-          size: 14,
+          size: 16,
           font: boldFont,
-          color: rgb(0, 0, 0),
+          color: rgb(0.2, 0.2, 0.2),
         });
-        yPosition -= 20;
+        yPosition -= 25;
 
         // Table headers
         const headers = [
@@ -322,23 +370,43 @@ export function StatementGenerator({
         ];
         const headerX = [50, 100, 150, 200, 280, 400];
 
+        // Draw header background
+        page.drawRectangle({
+          x: 40,
+          y: yPosition - 5,
+          width: width - 80,
+          height: 20,
+          color: rgb(0.2, 0.2, 0.2),
+        });
+
         headers.forEach((header, index) => {
           page.drawText(header, {
             x: headerX[index],
             y: yPosition,
-            size: 8,
+            size: 9,
             font: boldFont,
-            color: rgb(0, 0, 0),
+            color: rgb(1, 1, 1),
           });
         });
-        yPosition -= 15;
+        yPosition -= 20;
 
         // Transaction rows
-        transactions.slice(0, 30).forEach((transaction) => {
+        transactions.slice(0, 30).forEach((transaction, index) => {
           // Limit to first 30 for PDF
           if (yPosition < 50) {
             page = pdfDoc.addPage([595.28, 841.89]);
             yPosition = height - 50;
+          }
+
+          // Alternate row colors
+          if (index % 2 === 0) {
+            page.drawRectangle({
+              x: 40,
+              y: yPosition - 5,
+              width: width - 80,
+              height: 15,
+              color: rgb(0.98, 0.98, 0.98),
+            });
           }
 
           const date = new Date(transaction.created_at).toLocaleDateString();
@@ -367,7 +435,7 @@ export function StatementGenerator({
             y: yPosition,
             size: 7,
             font: font,
-            color: rgb(0, 0, 0),
+            color: transaction.amount > 0 ? rgb(0, 0.5, 0) : rgb(0.8, 0, 0),
           });
           page.drawText(balance, {
             x: headerX[3],
