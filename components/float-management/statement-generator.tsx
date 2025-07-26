@@ -81,6 +81,23 @@ export function StatementGenerator({
     "summary"
   );
   const [generatingPDF, setGeneratingPDF] = useState(false);
+  const [session, setSession] = useState<any>(null);
+
+  // Fetch session on component mount
+  useEffect(() => {
+    const fetchSession = async () => {
+      try {
+        const response = await fetch('/api/auth/session');
+        const data = await response.json();
+        if (data.user) {
+          setSession(data.user);
+        }
+      } catch (error) {
+        console.error('Error fetching session:', error);
+      }
+    };
+    fetchSession();
+  }, []);
 
   // Set default date range (last 30 days)
   useEffect(() => {
@@ -112,6 +129,11 @@ export function StatementGenerator({
         endDate: `${endDate}T23:59:59Z`,
         limit: "1000", // Get all transactions for the period
       });
+
+      // Add branch filter for non-admin users
+      if (session && session.role !== "Admin" && session.branchId) {
+        params.append("branchId", session.branchId);
+      }
 
       const response = await fetch(`/api/float-transactions?${params}`);
       const data = await response.json();
@@ -159,6 +181,15 @@ export function StatementGenerator({
     };
   };
 
+  // PDF-safe currency formatter (without ₵ symbol)
+  const formatCurrencyForPDF = (amount: number | undefined | null): string => {
+    if (amount === undefined || amount === null || isNaN(Number(amount))) {
+      return "GHS 0.00";
+    }
+    const formatted = Number(amount).toFixed(2);
+    return `GHS ${formatted}`;
+  };
+
   const generatePDF = async () => {
     if (!account || !transactions.length) return;
 
@@ -172,9 +203,9 @@ export function StatementGenerator({
       let page = pdfDoc.addPage([595.28, 841.89]); // A4 size
       const { width, height } = page.getSize();
 
-      // Load font
-      const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-      const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+      // Load font - use Times-Roman which has better Unicode support
+      const font = await pdfDoc.embedFont(StandardFonts.TimesRoman);
+      const boldFont = await pdfDoc.embedFont(StandardFonts.TimesRomanBold);
 
       let yPosition = height - 50;
 
@@ -234,14 +265,14 @@ export function StatementGenerator({
       const summaryItems = [
         {
           label: "Opening Balance",
-          value: formatCurrency(summary.openingBalance),
+          value: formatCurrencyForPDF(summary.openingBalance),
         },
-        { label: "Total Credits", value: formatCurrency(summary.totalCredits) },
-        { label: "Total Debits", value: formatCurrency(summary.totalDebits) },
-        { label: "Net Change", value: formatCurrency(summary.netChange) },
+        { label: "Total Credits", value: formatCurrencyForPDF(summary.totalCredits) },
+        { label: "Total Debits", value: formatCurrencyForPDF(summary.totalDebits) },
+        { label: "Net Change", value: formatCurrencyForPDF(summary.netChange) },
         {
           label: "Closing Balance",
-          value: formatCurrency(summary.closingBalance),
+          value: formatCurrencyForPDF(summary.closingBalance),
         },
         {
           label: "Transaction Count",
@@ -312,8 +343,8 @@ export function StatementGenerator({
 
           const date = new Date(transaction.created_at).toLocaleDateString();
           const type = transaction.type;
-          const amount = formatCurrency(transaction.amount);
-          const balance = formatCurrency(transaction.balance_after);
+          const amount = formatCurrencyForPDF(transaction.amount);
+          const balance = formatCurrencyForPDF(transaction.balance_after);
           const description = transaction.description.substring(0, 20);
           const reference = transaction.reference.substring(0, 15);
 
