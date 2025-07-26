@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getJournalEntriesByTransactionId } from "@/lib/gl-journal-service"
-import { getGLAccountById } from "@/lib/gl-account-service"
+import { GLServiceEnhanced } from "@/lib/gl-service-enhanced"
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string  }> }) {
   try {
@@ -18,7 +18,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
       journalEntries.map(async (entry) => {
         const enhancedLines = await Promise.all(
           entry.entries.map(async (line) => {
-            const account = await getGLAccountById(line.accountId)
+            const account = await GLServiceEnhanced.getGLAccountById(line.accountId)
             return {
               ...line,
               accountName: account ? `${account.code} - ${account.name}` : undefined,

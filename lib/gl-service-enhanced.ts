@@ -347,4 +347,32 @@ export class GLServiceEnhanced {
       return 0;
     }
   }
+
+  static async getGLAccountById(id: string): Promise<any | null> {
+    try {
+      const result = await sql`
+        SELECT 
+          id,
+          account_number,
+          account_name,
+          account_type,
+          description,
+          is_active,
+          branch_id,
+          created_at,
+          updated_at
+        FROM gl_accounts 
+        WHERE id = ${id}
+      `;
+
+      if (result.length === 0) {
+        return null;
+      }
+
+      return result[0];
+    } catch (error) {
+      console.error("Error getting GL account by ID:", error);
+      return null;
+    }
+  }
 }

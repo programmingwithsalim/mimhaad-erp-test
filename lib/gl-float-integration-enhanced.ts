@@ -427,4 +427,106 @@ export class GLFloatIntegrationEnhanced {
       };
     }
   }
+
+  // Get GL accounts with float balances
+  static async getGLAccountsWithFloatBalances(): Promise<any[]> {
+    try {
+      const accounts = await sql`
+        SELECT 
+          ga.id,
+          ga.account_number,
+          ga.account_name,
+          ga.account_type,
+          ga.current_balance as gl_balance,
+          COALESCE(fa.current_balance, 0) as float_balance,
+          (ga.current_balance - COALESCE(fa.current_balance, 0)) as difference
+        FROM gl_accounts ga
+        LEFT JOIN float_accounts fa ON fa.id = ga.id
+        WHERE ga.is_active = true
+        ORDER BY ga.account_number
+      `;
+      return accounts;
+    } catch (error) {
+      console.error("Error getting GL accounts with float balances:", error);
+      return [];
+    }
+  }
+
+  // Generate reconciliation report
+  static async generateReconciliationReport(): Promise<any> {
+    try {
+      const report = await sql`
+        SELECT 
+          COUNT(*) as total_accounts,
+          COUNT(CASE WHEN ABS(ga.current_balance - COALESCE(fa.current_balance, 0)) > 0.01 THEN 1 END) as mismatched_accounts,
+          SUM(ABS(ga.current_balance - COALESCE(fa.current_balance, 0))) as total_difference
+        FROM gl_accounts ga
+        LEFT JOIN float_accounts fa ON fa.id = ga.id
+        WHERE ga.is_active = true
+      `;
+      return report[0] || { total_accounts: 0, mismatched_accounts: 0, total_difference: 0 };
+    } catch (error) {
+      console.error("Error generating reconciliation report:", error);
+      return { total_accounts: 0, mismatched_accounts: 0, total_difference: 0 };
+    }
+  }
+
+  // Sync float balances to GL server
+  static async syncFloatBalancesToGLServer(): Promise<{ success: boolean; message: string }> {
+    try {
+      const result = await sql`
+        UPDATE gl_accounts ga
+        SET current_balance = COALESCE(fa.current_balance, 0),
+            updated_at = NOW()
+        FROM float_accounts fa
+        WHERE fa.id = ga.id
+        AND fa.is_active = true
+      `;
+      
+      return {
+        success: true,
+        message: "Float balances synced to GL accounts successfully"
+      };
+    } catch (error) {
+      console.error("Error syncing float balances to GL:", error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
+
+  // Enhance existing GL with float accounts
+  static async enhanceExistingGLWithFloatAccounts(): Promise<{ success: boolean; message: string }> {
+    try {
+      // Create GL accounts for float accounts that don't have them
+      const result = await sql`
+        INSERT INTO gl_accounts (id, account_number, account_name, account_type, current_balance, is_active, created_at, updated_at)
+        SELECT 
+          fa.id,
+          fa.account_number,
+          fa.account_name,
+          'Asset',
+          fa.current_balance,
+          fa.is_active,
+          NOW(),
+          NOW()
+        FROM float_accounts fa
+        LEFT JOIN gl_accounts ga ON fa.id = ga.id
+        WHERE ga.id IS NULL
+        AND fa.is_active = true
+      `;
+      
+      return {
+        success: true,
+        message: "GL accounts enhanced with float accounts successfully"
+      };
+    } catch (error) {
+      console.error("Error enhancing GL with float accounts:", error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+  }
 }
