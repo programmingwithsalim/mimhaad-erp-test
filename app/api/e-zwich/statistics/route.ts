@@ -17,54 +17,218 @@ export async function GET(request: NextRequest) {
 
     console.log("Fetching E-Zwich statistics for branch:", branchId);
 
-    // Use CURRENT_DATE instead of JavaScript date conversion to avoid timezone issues
-    // Get today's statistics from both withdrawals and card issuances
-    // Include both 'pending' and 'completed' statuses
-    const [todayWithdrawals, todayIssuances] = await Promise.all([
-      sql`
-        SELECT 
-          COUNT(*) as today_withdrawals,
-          COALESCE(SUM(amount), 0) as today_withdrawal_volume,
-          COALESCE(SUM(fee), 0) as today_withdrawal_fees
-        FROM e_zwich_withdrawals 
-        WHERE branch_id = ${branchId}
-        AND status IN ('pending', 'completed', 'disbursed')
-        AND DATE(transaction_date) = CURRENT_DATE
-        AND (is_reversal IS NULL OR is_reversal = false)
-      `,
-      sql`
-        SELECT 
-          COUNT(*) as today_issuances,
-          COALESCE(SUM(fee_charged), 0) as today_issuance_fees
-        FROM ezwich_card_issuance 
-        WHERE branch_id = ${branchId}
-        AND status IN ('pending', 'completed', 'disbursed')
-        AND DATE(created_at) = CURRENT_DATE
-      `,
-    ]);
+    // First, check if the tables exist
+    const tableCheck = await sql`
+      SELECT 
+        EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'e_zwich_withdrawals') as withdrawals_exist,
+        EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'ezwich_card_issuance') as issuances_exist
+    `;
 
-    // Get total statistics from both withdrawals and card issuances
-    // Include both 'pending' and 'completed' statuses
-    const [totalWithdrawals, totalIssuances] = await Promise.all([
-      sql`
-        SELECT 
-          COUNT(*) as total_withdrawals,
-          COALESCE(SUM(amount), 0) as total_withdrawal_volume,
-          COALESCE(SUM(fee), 0) as total_withdrawal_fees
-        FROM e_zwich_withdrawals 
-        WHERE branch_id = ${branchId}
-        AND status IN ('pending', 'completed', 'disbursed')
-        AND (is_reversal IS NULL OR is_reversal = false)
-      `,
-      sql`
-        SELECT 
-          COUNT(*) as total_issuances,
-          COALESCE(SUM(fee_charged), 0) as total_issuance_fees
-        FROM ezwich_card_issuance 
-        WHERE branch_id = ${branchId}
-        AND status IN ('pending', 'completed', 'disbursed')
-      `,
-    ]);
+    const tablesExist = tableCheck[0];
+    console.log("Table existence check:", tablesExist);
+
+    let todayWithdrawals = [
+      {
+        today_withdrawals: 0,
+        today_withdrawal_volume: 0,
+        today_withdrawal_fees: 0,
+      },
+    ];
+    let todayIssuances = [{ today_issuances: 0, today_issuance_fees: 0 }];
+    let totalWithdrawals = [
+      {
+        total_withdrawals: 0,
+        total_withdrawal_volume: 0,
+        total_withdrawal_fees: 0,
+      },
+    ];
+    let totalIssuances = [{ total_issuances: 0, total_issuance_fees: 0 }];
+
+    // Only query if tables exist
+    if (tablesExist.withdrawals_exist) {
+      // Check what columns exist in e_zwich_withdrawals
+      const withdrawalColumns = await sql`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'e_zwich_withdrawals'
+      `;
+
+      const hasStatus = withdrawalColumns.some(
+        (col) => col.column_name === "status"
+      );
+      const hasTransactionDate = withdrawalColumns.some(
+        (col) => col.column_name === "transaction_date"
+      );
+      const hasIsReversal = withdrawalColumns.some(
+        (col) => col.column_name === "is_reversal"
+      );
+
+      console.log(
+        "E-Zwich withdrawals columns:",
+        withdrawalColumns.map((col) => col.column_name)
+      );
+      console.log(
+        "Has status:",
+        hasStatus,
+        "Has transaction_date:",
+        hasTransactionDate,
+        "Has is_reversal:",
+        hasIsReversal
+      );
+
+      // Build withdrawal queries based on available columns
+      if (hasStatus && hasTransactionDate && hasIsReversal) {
+        [todayWithdrawals, totalWithdrawals] = await Promise.all([
+          sql`
+            SELECT 
+              COUNT(*) as today_withdrawals,
+              COALESCE(SUM(amount), 0) as today_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as today_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+            AND DATE(transaction_date) = CURRENT_DATE
+            AND (is_reversal IS NULL OR is_reversal = false)
+          `,
+          sql`
+            SELECT 
+              COUNT(*) as total_withdrawals,
+              COALESCE(SUM(amount), 0) as total_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as total_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+            AND (is_reversal IS NULL OR is_reversal = false)
+          `,
+        ]);
+      } else if (hasStatus && hasIsReversal) {
+        [todayWithdrawals, totalWithdrawals] = await Promise.all([
+          sql`
+            SELECT 
+              COUNT(*) as today_withdrawals,
+              COALESCE(SUM(amount), 0) as today_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as today_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+            AND DATE(created_at) = CURRENT_DATE
+            AND (is_reversal IS NULL OR is_reversal = false)
+          `,
+          sql`
+            SELECT 
+              COUNT(*) as total_withdrawals,
+              COALESCE(SUM(amount), 0) as total_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as total_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+            AND (is_reversal IS NULL OR is_reversal = false)
+          `,
+        ]);
+      } else if (hasStatus) {
+        [todayWithdrawals, totalWithdrawals] = await Promise.all([
+          sql`
+            SELECT 
+              COUNT(*) as today_withdrawals,
+              COALESCE(SUM(amount), 0) as today_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as today_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+            AND DATE(created_at) = CURRENT_DATE
+          `,
+          sql`
+            SELECT 
+              COUNT(*) as total_withdrawals,
+              COALESCE(SUM(amount), 0) as total_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as total_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+          `,
+        ]);
+      } else {
+        [todayWithdrawals, totalWithdrawals] = await Promise.all([
+          sql`
+            SELECT 
+              COUNT(*) as today_withdrawals,
+              COALESCE(SUM(amount), 0) as today_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as today_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+            AND DATE(created_at) = CURRENT_DATE
+          `,
+          sql`
+            SELECT 
+              COUNT(*) as total_withdrawals,
+              COALESCE(SUM(amount), 0) as total_withdrawal_volume,
+              COALESCE(SUM(fee), 0) as total_withdrawal_fees
+            FROM e_zwich_withdrawals 
+            WHERE branch_id = ${branchId}
+          `,
+        ]);
+      }
+    }
+
+    if (tablesExist.issuances_exist) {
+      // Check what columns exist in ezwich_card_issuance
+      const issuanceColumns = await sql`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'ezwich_card_issuance'
+      `;
+
+      const hasStatus = issuanceColumns.some(
+        (col) => col.column_name === "status"
+      );
+
+      console.log(
+        "E-Zwich card issuance columns:",
+        issuanceColumns.map((col) => col.column_name)
+      );
+      console.log("Has status:", hasStatus);
+
+      // Build issuance queries based on available columns
+      if (hasStatus) {
+        [todayIssuances, totalIssuances] = await Promise.all([
+          sql`
+            SELECT 
+              COUNT(*) as today_issuances,
+              COALESCE(SUM(fee_charged), 0) as today_issuance_fees
+            FROM ezwich_card_issuance 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+            AND DATE(created_at) = CURRENT_DATE
+          `,
+          sql`
+            SELECT 
+              COUNT(*) as total_issuances,
+              COALESCE(SUM(fee_charged), 0) as total_issuance_fees
+            FROM ezwich_card_issuance 
+            WHERE branch_id = ${branchId}
+            AND status IN ('pending', 'completed', 'disbursed')
+          `,
+        ]);
+      } else {
+        [todayIssuances, totalIssuances] = await Promise.all([
+          sql`
+            SELECT 
+              COUNT(*) as today_issuances,
+              COALESCE(SUM(fee_charged), 0) as today_issuance_fees
+            FROM ezwich_card_issuance 
+            WHERE branch_id = ${branchId}
+            AND DATE(created_at) = CURRENT_DATE
+          `,
+          sql`
+            SELECT 
+              COUNT(*) as total_issuances,
+              COALESCE(SUM(fee_charged), 0) as total_issuance_fees
+            FROM ezwich_card_issuance 
+            WHERE branch_id = ${branchId}
+          `,
+        ]);
+      }
+    }
 
     // Check if isezwichpartner column exists
     let hasIsezwichpartner = false;

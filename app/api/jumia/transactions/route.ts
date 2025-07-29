@@ -23,12 +23,23 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get("branchId");
     const limit = Number.parseInt(searchParams.get("limit") || "50");
+    const transactionType = searchParams.get("transactionType");
+    const page = Number.parseInt(searchParams.get("page") || "1");
+    const search = searchParams.get("search") || "";
+    const status = searchParams.get("status") || "";
+    const type = searchParams.get("type") || "";
 
     console.log(
       "GET transactions request - branchId:",
       branchId,
       "limit:",
-      limit
+      limit,
+      "transactionType:",
+      transactionType,
+      "page:",
+      page,
+      "search:",
+      search
     );
 
     let transactions;
@@ -38,6 +49,35 @@ export async function GET(request: NextRequest) {
       transactions = await getAllJumiaTransactions(limit);
     }
 
+    // Filter by transaction type if specified
+    if (transactionType) {
+      transactions = transactions.filter(
+        (tx) => tx.transaction_type === transactionType
+      );
+    }
+
+    // Filter by search term if specified
+    if (search) {
+      const searchLower = search.toLowerCase();
+      transactions = transactions.filter(
+        (tx) =>
+          tx.customer_name?.toLowerCase().includes(searchLower) ||
+          tx.tracking_id?.toLowerCase().includes(searchLower) ||
+          tx.reference?.toLowerCase().includes(searchLower) ||
+          tx.package_id?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Filter by status if specified
+    if (status && status !== "all") {
+      transactions = transactions.filter((tx) => tx.status === status);
+    }
+
+    // Filter by type if specified
+    if (type && type !== "all") {
+      transactions = transactions.filter((tx) => tx.transaction_type === type);
+    }
+
     // Sort transactions by created_at in descending order (latest first)
     transactions.sort((a, b) => {
       const dateA = new Date(a.created_at).getTime();
@@ -45,15 +85,24 @@ export async function GET(request: NextRequest) {
       return dateB - dateA;
     });
 
-    console.log(`Returning ${transactions.length} transactions`);
+    // Apply pagination
+    const total = transactions.length;
+    const offset = (page - 1) * limit;
+    const paginatedTransactions = transactions.slice(offset, offset + limit);
+
+    console.log(
+      `Returning ${paginatedTransactions.length} transactions out of ${total}`
+    );
 
     return NextResponse.json({
       success: true,
-      data: transactions.map((tx) => ({
+      transactions: paginatedTransactions.map((tx) => ({
         ...tx,
         payment_method: tx.payment_method || null,
       })),
-      total: transactions.length,
+      total: total,
+      page: page,
+      totalPages: Math.ceil(total / limit),
     });
   } catch (error) {
     console.error("Error getting Jumia transactions:", error);

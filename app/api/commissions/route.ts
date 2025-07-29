@@ -408,66 +408,251 @@ export async function GET(request: Request) {
     const effectiveBranchId =
       branchId || (userRole === "admin" ? null : userBranchId);
 
-    // Build the base query using tagged template literals
-    let baseQuery = sql`
-      SELECT 
-        id,
-        source,
-        source_name as "sourceName",
-        reference,
-        month,
-        amount,
-        transaction_volume as "transactionVolume",
-        commission_rate as "commissionRate",
-        description,
-        notes,
-        status,
-        created_by as "createdBy",
-        created_by_name as "createdByName",
-        branch_id as "branchId",
-        branch_name as "branchName",
-        created_at as "createdAt",
-        updated_at as "updatedAt",
-        receipt_filename,
-        receipt_size,
-        receipt_type
-      FROM commissions
-      WHERE 1=1
-    `;
-
-    // Add filters using conditional logic
-    if (source) {
-      const sources = source.split(",");
-      baseQuery = sql`${baseQuery} AND source = ANY(${sources})`;
-    }
-
-    if (status) {
-      const statuses = status.split(",");
-      baseQuery = sql`${baseQuery} AND status = ANY(${statuses})`;
-    }
-
-    if (startDate) {
-      baseQuery = sql`${baseQuery} AND month >= ${startDate}`;
-    }
-
-    if (endDate) {
-      baseQuery = sql`${baseQuery} AND month <= ${endDate}`;
-    }
-
-    // Branch filtering - only show commissions for user's branch unless admin
-    if (effectiveBranchId) {
-      baseQuery = sql`${baseQuery} AND branch_id = ${effectiveBranchId}`;
-    }
-
-    // Add ordering
-    const finalQuery = sql`${baseQuery} ORDER BY created_at DESC`;
-
     console.log(
       "📝 [COMMISSION] Executing query with branch filtering:",
       effectiveBranchId
     );
 
-    const commissions = await finalQuery;
+    // Build query based on conditions
+    let commissions;
+
+    if (source && status && startDate && endDate && effectiveBranchId) {
+      const sources = source.split(",");
+      const statuses = status.split(",");
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE source = ANY(${sources})
+        AND status = ANY(${statuses})
+        AND month >= ${startDate}
+        AND month <= ${endDate}
+        AND branch_id = ${effectiveBranchId}
+        ORDER BY created_at DESC
+      `;
+    } else if (source && status && startDate && endDate) {
+      const sources = source.split(",");
+      const statuses = status.split(",");
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE source = ANY(${sources})
+        AND status = ANY(${statuses})
+        AND month >= ${startDate}
+        AND month <= ${endDate}
+        ORDER BY created_at DESC
+      `;
+    } else if (source && status && effectiveBranchId) {
+      const sources = source.split(",");
+      const statuses = status.split(",");
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE source = ANY(${sources})
+        AND status = ANY(${statuses})
+        AND branch_id = ${effectiveBranchId}
+        ORDER BY created_at DESC
+      `;
+    } else if (source && status) {
+      const sources = source.split(",");
+      const statuses = status.split(",");
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE source = ANY(${sources})
+        AND status = ANY(${statuses})
+        ORDER BY created_at DESC
+      `;
+    } else if (startDate && endDate && effectiveBranchId) {
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE month >= ${startDate}
+        AND month <= ${endDate}
+        AND branch_id = ${effectiveBranchId}
+        ORDER BY created_at DESC
+      `;
+    } else if (startDate && endDate) {
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE month >= ${startDate}
+        AND month <= ${endDate}
+        ORDER BY created_at DESC
+      `;
+    } else if (effectiveBranchId) {
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        WHERE branch_id = ${effectiveBranchId}
+        ORDER BY created_at DESC
+      `;
+    } else {
+      commissions = await sql`
+        SELECT 
+          id,
+          source,
+          source_name as "sourceName",
+          reference,
+          month,
+          amount,
+          transaction_volume as "transactionVolume",
+          commission_rate as "commissionRate",
+          description,
+          notes,
+          status,
+          created_by as "createdBy",
+          created_by_name as "createdByName",
+          branch_id as "branchId",
+          branch_name as "branchName",
+          created_at as "createdAt",
+          updated_at as "updatedAt",
+          receipt_filename,
+          receipt_size,
+          receipt_type
+        FROM commissions
+        ORDER BY created_at DESC
+      `;
+    }
 
     return NextResponse.json(commissions);
   } catch (error: any) {

@@ -50,6 +50,9 @@ import {
   Printer,
   Eye,
   AlertCircle,
+  Loader2,
+  Search,
+  Wallet,
 } from "lucide-react";
 import { format } from "date-fns";
 import {
@@ -73,6 +76,16 @@ import {
   TransactionReceipt,
   TransactionReceiptData,
 } from "@/components/shared/transaction-receipt";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function JumiaPage() {
   const { toast } = useToast();
@@ -92,6 +105,9 @@ export default function JumiaPage() {
   const [loadingPackages, setLoadingPackages] = useState(false);
   const [loadingFloats, setLoadingFloats] = useState(false);
   const [activeTab, setActiveTab] = useState("packages");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
 
   const [packageForm, setPackageForm] = useState({
     tracking_id: "",
@@ -298,8 +314,8 @@ export default function JumiaPage() {
 
       if (result.success) {
         toast({
-          title: "Package Recorded",
-          description: "Package has been successfully recorded",
+          title: "Package Received",
+          description: `Package with tracking ID ${packageForm.tracking_id} has been received from Jumia and is ready for pickup.`,
         });
 
         // Reset form
@@ -764,61 +780,32 @@ export default function JumiaPage() {
   };
 
   const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "received":
-        return (
-          <Badge variant="outline" className="bg-blue-50 text-blue-700">
-            Received
-          </Badge>
-        );
-      case "active":
-        return (
-          <Badge variant="outline" className="bg-green-50 text-green-700">
-            Active
-          </Badge>
-        );
-      case "delivered":
-        return (
-          <Badge variant="outline" className="bg-green-50 text-green-700">
-            Delivered
-          </Badge>
-        );
-      case "returned":
-        return (
-          <Badge variant="outline" className="bg-red-50 text-red-700">
-            Returned
-          </Badge>
-        );
-      case "partial":
-        return (
-          <Badge variant="outline" className="bg-yellow-50 text-yellow-700">
-            Partial
-          </Badge>
-        );
-      case "completed":
-        return (
-          <Badge variant="outline" className="bg-green-50 text-green-700">
-            Completed
-          </Badge>
-        );
-      case "reversed":
-        return (
-          <Badge variant="outline" className="bg-red-100 text-red-800">
-            Reversed
-          </Badge>
-        );
-      case "deleted":
-        return (
-          <Badge
-            variant="outline"
-            className="bg-gray-200 text-gray-700 line-through"
-          >
-            Deleted
-          </Badge>
-        );
-      default:
-        return <Badge variant="outline">Unknown</Badge>;
-    }
+    const statusConfig = {
+      pending: { variant: "secondary" as const, text: "Pending" },
+      completed: { variant: "default" as const, text: "Completed" },
+      delivered: { variant: "default" as const, text: "Delivered" },
+      settled: { variant: "default" as const, text: "Settled" },
+      failed: { variant: "destructive" as const, text: "Failed" },
+      active: { variant: "default" as const, text: "Active" },
+    };
+    const config = statusConfig[status as keyof typeof statusConfig] || {
+      variant: "outline" as const,
+      text: status,
+    };
+    return <Badge variant={config.variant}>{config.text}</Badge>;
+  };
+
+  const getTypeBadge = (type: string) => {
+    const typeConfig = {
+      package_receipt: { variant: "default" as const, text: "Package Receipt" },
+      pod_collection: { variant: "secondary" as const, text: "POD Collection" },
+      settlement: { variant: "outline" as const, text: "Settlement" },
+    };
+    const config = typeConfig[type as keyof typeof typeConfig] || {
+      variant: "outline" as const,
+      text: type,
+    };
+    return <Badge variant={config.variant}>{config.text}</Badge>;
   };
 
   const getSelectedProvider = () => {
@@ -1029,20 +1016,21 @@ export default function JumiaPage() {
       )}
 
       {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
-              Today's Packages
+              Today's Delivered Packages
             </CardTitle>
             <Package className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {statistics.todayTransactions}
+              {statistics.todayPackages || statistics.todayTransactions || 0}
             </div>
             <p className="text-xs text-muted-foreground">
-              Total: {statistics.totalTransactions}
+              Total:{" "}
+              {statistics.totalPackages || statistics.totalTransactions || 0}
             </p>
           </CardContent>
         </Card>
@@ -1056,26 +1044,16 @@ export default function JumiaPage() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {formatCurrency(statistics.todayVolume)}
+              {formatCurrency(
+                statistics.todayCollectionAmount || statistics.todayVolume || 0
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
-              Total: {formatCurrency(statistics.totalVolume)}
+              Total:{" "}
+              {formatCurrency(
+                statistics.totalCollectionAmount || statistics.totalVolume || 0
+              )}
             </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">
-              Total Collections
-            </CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {formatCurrency(statistics.totalCommission || 0)}
-            </div>
-            <p className="text-xs text-muted-foreground">All POD collections</p>
           </CardContent>
         </Card>
 
@@ -1089,7 +1067,8 @@ export default function JumiaPage() {
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCurrency(
-                statistics.summary?.settlementAmount ||
+                statistics.totalSettlementAmount ||
+                  statistics.summary?.settlementAmount ||
                   statistics.total_settlement_amount ||
                   0
               )}
@@ -1100,7 +1079,7 @@ export default function JumiaPage() {
           </CardContent>
         </Card>
 
-        {/* Jumia Liability Card (was: Float Balance) */}
+        {/* Jumia Liability Card */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">
@@ -1111,865 +1090,422 @@ export default function JumiaPage() {
           <CardContent>
             <div className="text-2xl font-bold">
               {formatCurrency(
-                statistics.liability ??
+                (statistics.unsettledAmount || statistics.liability) ??
                   statistics.float_balance ??
                   statistics.floatBalance ??
                   0
               )}
             </div>
             <p className="text-xs text-muted-foreground">
-              True Jumia liability (POD collections minus settlements)
+              Unsettled POD collections
             </p>
           </CardContent>
         </Card>
       </div>
 
       {/* Main Content Tabs */}
-      <Tabs defaultValue="transaction" className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
-          <TabsTrigger value="transaction">New Transaction</TabsTrigger>
-          <TabsTrigger value="history">Transaction History</TabsTrigger>
+      <Tabs defaultValue="package_delivery" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="package_delivery">Package Delivery</TabsTrigger>
+          <TabsTrigger value="settlement">Settlement</TabsTrigger>
+          <TabsTrigger value="transaction_history">
+            Transaction History
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="transaction" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Transaction Form - 2 columns */}
-            <div className="lg:col-span-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+          {/* Main Content - 2 columns */}
+          <div className="lg:col-span-2">
+            <TabsContent value="package_delivery" className="space-y-4 mt-0">
               <Card>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Package className="h-5 w-5" />
-                    Jumia Operations
+                    Package Delivery
+                  </CardTitle>
+                  <CardDescription>Create new package receipts</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handlePackageSubmit} className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="package_tracking_id">Tracking ID</Label>
+                        <Input
+                          id="package_tracking_id"
+                          value={packageForm.tracking_id}
+                          onChange={(e) =>
+                            setPackageForm({
+                              ...packageForm,
+                              tracking_id: e.target.value,
+                            })
+                          }
+                          placeholder="Enter tracking ID"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="package_customer_name">
+                          Customer Name
+                        </Label>
+                        <Input
+                          id="package_customer_name"
+                          value={packageForm.customer_name}
+                          onChange={(e) =>
+                            setPackageForm({
+                              ...packageForm,
+                              customer_name: e.target.value,
+                            })
+                          }
+                          placeholder="Enter customer name"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="package_customer_phone">
+                          Customer Phone
+                        </Label>
+                        <Input
+                          id="package_customer_phone"
+                          maxLength={10}
+                          value={packageForm.customer_phone}
+                          onChange={(e) => {
+                            // Only allow digits
+                            const value = e.target.value.replace(/\D/g, "");
+                            // Limit to 10 digits
+                            const limitedValue = value.slice(0, 10);
+                            setPackageForm({
+                              ...packageForm,
+                              customer_phone: limitedValue,
+                            });
+                          }}
+                          placeholder="0241234567"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="package_notes">Notes (Optional)</Label>
+                      <Textarea
+                        id="package_notes"
+                        value={packageForm.notes}
+                        onChange={(e) =>
+                          setPackageForm({
+                            ...packageForm,
+                            notes: e.target.value,
+                          })
+                        }
+                        placeholder="Additional notes..."
+                        rows={3}
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      disabled={submitting}
+                      className="w-full"
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Creating Package...
+                        </>
+                      ) : (
+                        "Create Package"
+                      )}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="settlement" className="space-y-4 mt-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5" />
+                    Settlement
                   </CardTitle>
                   <CardDescription>
-                    Manage packages, collections, and settlements
+                    Process settlements to Jumia
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Tabs
-                    value={activeTab}
-                    onValueChange={setActiveTab}
-                    className="w-full"
-                  >
-                    <TabsList className="grid w-full grid-cols-3">
-                      <TabsTrigger value="packages">Packages</TabsTrigger>
-                      <TabsTrigger value="pod_collection">
-                        Collections
-                      </TabsTrigger>
-                      <TabsTrigger value="settlement">Settlements</TabsTrigger>
-                    </TabsList>
+                  <form onSubmit={handleSettlementSubmit} className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor="settlement_amount">
+                          Settlement Amount
+                        </Label>
+                        <Input
+                          id="settlement_amount"
+                          type="number"
+                          step="0.01"
+                          value={settlementForm.amount}
+                          onChange={(e) =>
+                            setSettlementForm({
+                              ...settlementForm,
+                              amount: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          placeholder="0.00"
+                          required
+                        />
+                      </div>
 
-                    <TabsContent value="packages" className="space-y-4 mt-4">
-                      <form
-                        onSubmit={handlePackageSubmit}
-                        className="space-y-4"
-                      >
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="package_tracking_id">
-                              Tracking ID
-                            </Label>
-                            <Input
-                              id="package_tracking_id"
-                              value={packageForm.tracking_id}
-                              onChange={(e) =>
-                                setPackageForm({
-                                  ...packageForm,
-                                  tracking_id: e.target.value,
-                                })
-                              }
-                              placeholder="Enter tracking ID"
-                              required
-                            />
-                          </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="settlement_reference">
+                          Settlement Reference
+                        </Label>
+                        <Input
+                          id="settlement_reference"
+                          value={settlementForm.reference}
+                          onChange={(e) =>
+                            setSettlementForm({
+                              ...settlementForm,
+                              reference: e.target.value,
+                            })
+                          }
+                          placeholder="Enter settlement reference"
+                          required
+                        />
+                      </div>
 
-                          <div className="space-y-2">
-                            <Label htmlFor="package_customer_name">
-                              Customer Name
-                            </Label>
-                            <Input
-                              id="package_customer_name"
-                              value={packageForm.customer_name}
-                              onChange={(e) =>
-                                setPackageForm({
-                                  ...packageForm,
-                                  customer_name: e.target.value,
-                                })
-                              }
-                              placeholder="Enter customer name"
-                              required
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="package_customer_phone">
-                              Customer Phone
-                            </Label>
-                            <Input
-                              id="package_customer_phone"
-                              maxLength={10}
-                              value={packageForm.customer_phone}
-                              onChange={(e) => {
-                                // Only allow digits
-                                const value = e.target.value.replace(/\D/g, "");
-                                // Limit to 10 digits
-                                const limitedValue = value.slice(0, 10);
-                                setPackageForm({
-                                  ...packageForm,
-                                  customer_phone: limitedValue,
-                                });
-                              }}
-                              placeholder="0241234567"
-                              required
-                            />
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="package_notes">
-                            Notes (Optional)
-                          </Label>
-                          <Textarea
-                            id="package_notes"
-                            value={packageForm.notes}
-                            onChange={(e) =>
-                              setPackageForm({
-                                ...packageForm,
-                                notes: e.target.value,
-                              })
-                            }
-                            placeholder="Additional notes..."
-                            rows={3}
-                          />
-                        </div>
-
-                        <Button
-                          type="submit"
-                          disabled={submitting}
-                          className="w-full"
+                      <div className="space-y-2">
+                        <Label htmlFor="settlement_float_account">
+                          Float Account
+                        </Label>
+                        <Select
+                          value={settlementForm.float_account_id}
+                          onValueChange={(value) =>
+                            setSettlementForm({
+                              ...settlementForm,
+                              float_account_id: value,
+                            })
+                          }
                         >
-                          {submitting ? (
-                            <>
-                              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                              Recording...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="mr-2 h-4 w-4" />
-                              Record Package Receipt
-                            </>
-                          )}
-                        </Button>
-                      </form>
-                    </TabsContent>
-
-                    <TabsContent
-                      value="pod_collection"
-                      className="space-y-4 mt-4"
-                    >
-                      <form onSubmit={handlePodSubmit} className="space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <Label htmlFor="pod_tracking_id">Tracking ID</Label>
-                            <div className="flex gap-2">
-                              <Input
-                                id="pod_tracking_id"
-                                value={podForm.tracking_id}
-                                onChange={(e) =>
-                                  setPodForm({
-                                    ...podForm,
-                                    tracking_id: e.target.value,
-                                  })
-                                }
-                                onBlur={(e) => {
-                                  if (e.target.value.trim()) {
-                                    searchPackageForCollection(e.target.value);
-                                  }
-                                }}
-                                placeholder="Enter tracking ID"
-                                required
-                              />
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() =>
-                                  searchPackageForCollection(
-                                    podForm.tracking_id
-                                  )
-                                }
-                                disabled={!podForm.tracking_id.trim()}
-                              >
-                                Search
-                              </Button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="pod_amount">
-                              Amount to Collect (GHS)
-                            </Label>
-                            <Input
-                              id="pod_amount"
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={podForm.amount}
-                              onChange={(e) =>
-                                setPodForm({
-                                  ...podForm,
-                                  amount: e.target.value,
-                                })
-                              }
-                              placeholder="0.00"
-                              disabled={!podForm.is_pod}
-                              required={podForm.is_pod}
-                            />
-                            <div className="text-xs text-muted-foreground">
-                              {podForm.is_pod
-                                ? "Required for POD packages"
-                                : "Not required for free packages"}
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="is_pod">Package Type</Label>
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id="is_pod"
-                                checked={podForm.is_pod}
-                                onChange={(e) =>
-                                  setPodForm({
-                                    ...podForm,
-                                    is_pod: e.target.checked,
-                                    amount: e.target.checked
-                                      ? podForm.amount
-                                      : "0",
-                                  })
-                                }
-                                className="rounded"
-                              />
-                              <Label htmlFor="is_pod" className="text-sm">
-                                Pay on Delivery (POD)
-                              </Label>
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              Check if customer needs to pay for this package
-                            </div>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="pod_customer_name">
-                              Customer Name
-                            </Label>
-                            <Input
-                              id="pod_customer_name"
-                              value={podForm.customer_name}
-                              onChange={(e) =>
-                                setPodForm({
-                                  ...podForm,
-                                  customer_name: e.target.value,
-                                })
-                              }
-                              placeholder="Enter customer name"
-                              required
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="pod_customer_phone">
-                              Customer Phone
-                            </Label>
-                            <Input
-                              id="pod_customer_phone"
-                              maxLength={10}
-                              value={podForm.customer_phone}
-                              onChange={(e) => {
-                                // Only allow digits
-                                const value = e.target.value.replace(/\D/g, "");
-                                // Limit to 10 digits
-                                const limitedValue = value.slice(0, 10);
-                                setPodForm({
-                                  ...podForm,
-                                  customer_phone: limitedValue,
-                                });
-                              }}
-                              placeholder="0241234567"
-                              required
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="delivery_status">
-                              Delivery Status
-                            </Label>
-                            <Select
-                              value={podForm.delivery_status}
-                              onValueChange={(value) =>
-                                setPodForm({
-                                  ...podForm,
-                                  delivery_status: value,
-                                })
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select delivery status" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="delivered">
-                                  Delivered
-                                </SelectItem>
-                                <SelectItem value="partial">
-                                  Partial Delivery
-                                </SelectItem>
-                                <SelectItem value="returned">
-                                  Returned
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="pod_payment_method">
-                              Payment Method
-                            </Label>
-                            <Select
-                              value={podForm.payment_method}
-                              onValueChange={(value) => {
-                                setPodForm({
-                                  ...podForm,
-                                  payment_method: value,
-                                  float_account_id: "",
-                                });
-                              }}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select payment method" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="cash">Cash</SelectItem>
-                                <SelectItem value="momo">MoMo</SelectItem>
-                                <SelectItem value="agency-banking">
-                                  Agency Banking
-                                </SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor="pod_float_account_id">
-                              Float Account
-                            </Label>
-                            <Select
-                              value={podForm.float_account_id}
-                              onValueChange={(value) =>
-                                setPodForm({
-                                  ...podForm,
-                                  float_account_id: value,
-                                })
-                              }
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select float account" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {floatAccounts
-                                  .filter((account) => {
-                                    if (podForm.payment_method === "")
-                                      return true;
-                                    if (podForm.payment_method === "cash") {
-                                      return (
-                                        account.account_type === "cash-in-till"
-                                      );
-                                    }
-                                    if (podForm.payment_method === "momo") {
-                                      return account.account_type === "momo";
-                                    }
-                                    if (
-                                      podForm.payment_method ===
-                                      "agency-banking"
-                                    ) {
-                                      return (
-                                        account.account_type ===
-                                        "agency-banking"
-                                      );
-                                    }
-                                    if (podForm.payment_method === "jumia") {
-                                      return account.account_type === "jumia";
-                                    }
-                                    return false;
-                                  })
-                                  .map((account) => (
-                                    <SelectItem
-                                      key={account.id}
-                                      value={account.id}
-                                    >
-                                      {account.provider} -{" "}
-                                      {account.account_number} (GHS{" "}
-                                      {Number(
-                                        account.current_balance || 0
-                                      ).toFixed(2)}
-                                      )
-                                    </SelectItem>
-                                  ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-
-                        <div className="space-y-2">
-                          <Label htmlFor="pod_notes">Notes (Optional)</Label>
-                          <Textarea
-                            id="pod_notes"
-                            value={podForm.notes}
-                            onChange={(e) =>
-                              setPodForm({ ...podForm, notes: e.target.value })
-                            }
-                            placeholder="Additional notes..."
-                            rows={3}
-                          />
-                        </div>
-
-                        <Button
-                          type="submit"
-                          disabled={submitting}
-                          className="w-full"
-                        >
-                          {submitting ? (
-                            <>
-                              <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                              Recording...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="mr-2 h-4 w-4" />
-                              Record Payment Collection
-                            </>
-                          )}
-                        </Button>
-                      </form>
-                    </TabsContent>
-
-                    <TabsContent value="settlement" className="space-y-4 mt-4">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            <DollarSign className="h-5 w-5" />
-                            Settlement
-                          </CardTitle>
-                          <CardDescription>
-                            Record payments to Jumia for collected amounts
-                          </CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                          {/* Settlement Calculator */}
-                          <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                            <h4 className="font-semibold text-blue-900 mb-2">
-                              Settlement Calculator
-                            </h4>
-                            <p className="text-sm text-blue-700 mb-3">
-                              Shows total POD collections available for
-                              settlement. Enter any amount you want to settle
-                              below.
-                            </p>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                              <div>
-                                <span className="text-gray-600">
-                                  Collections:
-                                </span>
-                                <div className="font-semibold">
-                                  {settlementCalculator.collectionCount}
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-gray-600">
-                                  Available for Settlement:
-                                </span>
-                                <div className="font-semibold text-blue-900">
-                                  {formatCurrency(
-                                    settlementCalculator.settlementAmount
-                                  )}
-                                </div>
-                                {settlementCalculator.settlementAmount > 0 && (
-                                  <div className="text-xs text-green-600 mt-1">
-                                    ✓ Ready to settle
-                                  </div>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select float account" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {floatAccounts.map((account) => (
+                              <SelectItem key={account.id} value={account.id}>
+                                {account.account_name ||
+                                  account.provider ||
+                                  account.account_type}{" "}
+                                - GHS{" "}
+                                {Number(account.current_balance || 0).toFixed(
+                                  2
                                 )}
-                              </div>
-                              <div>
-                                <span className="text-gray-600">
-                                  Unsettled Packages:
-                                </span>
-                                <div className="font-semibold">
-                                  {settlementCalculator.unsettledPackageCount}
-                                </div>
-                              </div>
-                              <div>
-                                <span className="text-gray-600">
-                                  Last Settlement:
-                                </span>
-                                <div className="font-semibold text-xs">
-                                  {settlementCalculator.lastSettlementDate
-                                    ? format(
-                                        new Date(
-                                          settlementCalculator.lastSettlementDate
-                                        ),
-                                        "MMM dd, yyyy"
-                                      )
-                                    : "Never"}
-                                </div>
-                              </div>
-                            </div>
-                            <Button
-                              onClick={calculateSettlementAmount}
-                              variant="outline"
-                              size="sm"
-                              className="mt-3"
-                            >
-                              <RefreshCw className="h-4 w-4 mr-2" />
-                              Refresh Calculator
-                            </Button>
-                          </div>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
 
-                          <form
-                            onSubmit={handleSettlementSubmit}
-                            className="space-y-4"
-                          >
-                            <div className="grid gap-4 md:grid-cols-2">
-                              <div className="space-y-2">
-                                <Label htmlFor="settlement_amount">
-                                  Settlement Amount
-                                </Label>
-                                <div className="flex gap-2">
-                                  <Input
-                                    id="settlement_amount"
-                                    type="number"
-                                    step="0.01"
-                                    value={settlementForm.amount}
-                                    onChange={(e) =>
-                                      setSettlementForm({
-                                        ...settlementForm,
-                                        amount: e.target.value,
-                                      })
-                                    }
-                                    placeholder={`Enter amount to settle (max: ${formatCurrency(
-                                      settlementCalculator.settlementAmount
-                                    )})`}
-                                    required
-                                  />
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() =>
-                                      setSettlementForm({
-                                        ...settlementForm,
-                                        amount:
-                                          settlementCalculator.settlementAmount.toString(),
-                                      })
-                                    }
-                                    disabled={
-                                      settlementCalculator.settlementAmount <= 0
-                                    }
-                                    className="whitespace-nowrap"
-                                  >
-                                    Settle All
-                                  </Button>
-                                </div>
-                                <p className="text-xs text-gray-500">
-                                  You can settle any amount up to the total
-                                  available. Partial settlements are allowed.
-                                </p>
-                              </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="settlement_notes">
+                          Notes (Optional)
+                        </Label>
+                        <Input
+                          id="settlement_notes"
+                          value={settlementForm.notes}
+                          onChange={(e) =>
+                            setSettlementForm({
+                              ...settlementForm,
+                              notes: e.target.value,
+                            })
+                          }
+                          placeholder="Additional notes..."
+                        />
+                      </div>
+                    </div>
 
-                              <div className="space-y-2">
-                                <Label htmlFor="settlement_reference">
-                                  Reference
-                                </Label>
-                                <Input
-                                  id="settlement_reference"
-                                  value={settlementForm.reference}
-                                  onChange={(e) =>
-                                    setSettlementForm({
-                                      ...settlementForm,
-                                      reference: e.target.value,
-                                    })
-                                  }
-                                  placeholder="Settlement reference"
-                                  required
-                                />
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label htmlFor="settlement_tracking_id">
-                                  Tracking ID (Optional)
-                                </Label>
-                                <div className="flex gap-2">
-                                  <Input
-                                    id="settlement_tracking_id"
-                                    value={settlementForm.tracking_id}
-                                    onChange={(e) =>
-                                      setSettlementForm({
-                                        ...settlementForm,
-                                        tracking_id: e.target.value,
-                                      })
-                                    }
-                                    placeholder="Enter tracking ID"
-                                  />
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    onClick={() =>
-                                      searchPackageByTracking(
-                                        settlementForm.tracking_id
-                                      )
-                                    }
-                                    disabled={
-                                      !settlementForm.tracking_id.trim()
-                                    }
-                                  >
-                                    Search
-                                  </Button>
-                                </div>
-                              </div>
-
-                              <div className="space-y-2">
-                                <Label htmlFor="settlement_float_account">
-                                  Float Account
-                                </Label>
-                                <Select
-                                  value={settlementForm.float_account_id}
-                                  onValueChange={(value) =>
-                                    setSettlementForm({
-                                      ...settlementForm,
-                                      float_account_id: value,
-                                    })
-                                  }
-                                >
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select float account" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">
-                                      No float account
-                                    </SelectItem>
-                                    {floatAccounts.map((account) => (
-                                      <SelectItem
-                                        key={account.id}
-                                        value={account.id}
-                                      >
-                                        {account.account_type} -{" "}
-                                        {formatCurrency(
-                                          account.current_balance
-                                        )}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              <Label htmlFor="settlement_notes">
-                                Notes (Optional)
-                              </Label>
-                              <Textarea
-                                id="settlement_notes"
-                                value={settlementForm.notes}
-                                onChange={(e) =>
-                                  setSettlementForm({
-                                    ...settlementForm,
-                                    notes: e.target.value,
-                                  })
-                                }
-                                placeholder="Additional notes"
-                              />
-                            </div>
-
-                            <Button
-                              type="submit"
-                              disabled={submitting}
-                              className="w-full"
-                            >
-                              {submitting ? (
-                                <>
-                                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                                  Processing...
-                                </>
-                              ) : (
-                                <>
-                                  <DollarSign className="h-4 w-4 mr-2" />
-                                  Record Settlement
-                                </>
-                              )}
-                            </Button>
-                          </form>
-                        </CardContent>
-                      </Card>
-                    </TabsContent>
-                  </Tabs>
+                    <Button
+                      type="submit"
+                      disabled={submitting}
+                      className="w-full"
+                    >
+                      {submitting ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Processing Settlement...
+                        </>
+                      ) : (
+                        "Process Settlement"
+                      )}
+                    </Button>
+                  </form>
                 </CardContent>
               </Card>
-            </div>
+            </TabsContent>
 
-            {/* Float Display - 1 column */}
-            <div className="lg:col-span-1">
-              <DynamicFloatDisplay
-                selectedProvider={getSelectedProvider()}
-                floatAccounts={floatAccounts}
-                serviceType="Jumia"
-                onRefresh={loadFloatAccounts}
-                isLoading={loadingFloats}
-              />
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="history" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Packages List */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-5 w-5" />
-                  Packages
-                </CardTitle>
-                <CardDescription>
-                  Recorded packages and their status
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loadingPackages ? (
-                  <div className="flex items-center justify-center py-8">
-                    <RefreshCw className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : packages.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No packages recorded yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {packages.map((pkg: any) => (
-                      <div
-                        key={pkg.id}
-                        className="p-3 border rounded-lg bg-gray-50"
-                      >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-medium text-sm">
-                            {pkg.tracking_id}
-                          </div>
-                          <Badge
-                            variant={
-                              pkg.status === "received"
-                                ? "default"
-                                : pkg.status === "delivered"
-                                ? "secondary"
-                                : "outline"
-                            }
-                            className="text-xs"
-                          >
-                            {pkg.status}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          <div>{pkg.customer_name}</div>
-                          {pkg.customer_phone && (
-                            <div>{pkg.customer_phone}</div>
-                          )}
-                          <div className="text-xs text-gray-500 mt-1">
-                            Received:{" "}
-                            {format(new Date(pkg.received_at), "MMM dd, yyyy")}
-                          </div>
-                          {pkg.delivered_at && (
-                            <div className="text-xs text-gray-500">
-                              Delivered:{" "}
-                              {format(
-                                new Date(pkg.delivered_at),
-                                "MMM dd, yyyy"
-                              )}
-                            </div>
-                          )}
-                          {pkg.settled_at && (
-                            <div className="text-xs text-gray-500">
-                              Settled:{" "}
-                              {format(new Date(pkg.settled_at), "MMM dd, yyyy")}
-                            </div>
-                          )}
-                        </div>
+            <TabsContent value="transaction_history" className="space-y-4 mt-0">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="h-5 w-5" />
+                    Transaction History
+                  </CardTitle>
+                  <CardDescription>View all Jumia transactions</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between mb-4">
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+                      <div className="relative">
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search transactions..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-8 w-full lg:w-64"
+                        />
                       </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Transactions List */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <DollarSign className="h-5 w-5" />
-                  Transactions
-                </CardTitle>
-                <CardDescription>Collections and settlements</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {loadingTransactions ? (
-                  <div className="flex items-center justify-center py-8">
-                    <RefreshCw className="h-6 w-6 animate-spin" />
-                  </div>
-                ) : transactions.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    <DollarSign className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                    <p>No transactions recorded yet</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-96 overflow-y-auto">
-                    {transactions.map((tx: any) => (
-                      <div
-                        key={tx.id}
-                        className="p-3 border rounded-lg bg-gray-50"
+                      <Select
+                        value={statusFilter}
+                        onValueChange={setStatusFilter}
                       >
-                        <div className="flex justify-between items-start mb-2">
-                          <div className="font-medium text-sm">
-                            {tx.transaction_type === "pod_collection"
-                              ? "Collection"
-                              : "Settlement"}
-                          </div>
-                          <Badge
-                            variant={getStatusBadge(tx.status)}
-                            className="text-xs"
-                          >
-                            {tx.status}
-                          </Badge>
-                        </div>
-                        <div className="text-sm text-gray-600">
-                          <div className="font-semibold">
-                            {formatCurrency(tx.amount)}
-                          </div>
-                          {tx.tracking_id && (
-                            <div>Tracking: {tx.tracking_id}</div>
-                          )}
-                          {tx.customer_name && (
-                            <div>Customer: {tx.customer_name}</div>
-                          )}
-                          {tx.settlement_reference && (
-                            <div>Ref: {tx.settlement_reference}</div>
-                          )}
-                          <div className="text-xs text-gray-500 mt-1">
-                            {format(
-                              new Date(tx.created_at),
-                              "MMM dd, yyyy HH:mm"
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                        <SelectTrigger className="w-full lg:w-32">
+                          <SelectValue placeholder="Status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Status</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="delivered">Delivered</SelectItem>
+                          <SelectItem value="settled">Settled</SelectItem>
+                          <SelectItem value="failed">Failed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Select value={typeFilter} onValueChange={setTypeFilter}>
+                        <SelectTrigger className="w-full lg:w-40">
+                          <SelectValue placeholder="Type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Types</SelectItem>
+                          <SelectItem value="package_receipt">
+                            Package Receipt
+                          </SelectItem>
+                          <SelectItem value="pod_collection">
+                            POD Collection
+                          </SelectItem>
+                          <SelectItem value="settlement">Settlement</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={exportToCSV} variant="outline">
+                        <Download className="mr-2 h-4 w-4" />
+                        Export
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          window.open("/dashboard/jumia/packages", "_blank")
+                        }
+                        variant="outline"
+                      >
+                        <Package className="mr-2 h-4 w-4" />
+                        View All Packages
+                      </Button>
+                    </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
+
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Customer</TableHead>
+                          <TableHead>Phone</TableHead>
+                          <TableHead>Tracking</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Reference</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {loadingTransactions ? (
+                          <TableRow>
+                            <TableCell colSpan={9} className="text-center py-8">
+                              Loading transactions...
+                            </TableCell>
+                          </TableRow>
+                        ) : transactions.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={9} className="text-center py-8">
+                              No transactions found
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          transactions.map((tx) => (
+                            <TableRow key={tx.id}>
+                              <TableCell>
+                                {new Date(tx.created_at).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell>
+                                {getTypeBadge(tx.transaction_type)}
+                              </TableCell>
+                              <TableCell>GHS {tx.amount.toFixed(2)}</TableCell>
+                              <TableCell>{tx.customer_name}</TableCell>
+                              <TableCell>{tx.customer_phone}</TableCell>
+                              <TableCell className="font-mono text-sm">
+                                {tx.tracking_id}
+                              </TableCell>
+                              <TableCell>{getStatusBadge(tx.status)}</TableCell>
+                              <TableCell className="font-mono text-sm">
+                                {tx.reference}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleEdit(tx)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handlePrint(tx)}
+                                  >
+                                    Print
+                                  </Button>
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => handleDelete(tx)}
+                                  >
+                                    Delete
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
           </div>
-        </TabsContent>
+
+          {/* Float Display - 1 column */}
+          <div className="lg:col-span-1">
+            <DynamicFloatDisplay
+              selectedProvider={getSelectedProvider()}
+              floatAccounts={floatAccounts}
+              serviceType="Jumia"
+              onRefresh={loadFloatAccounts}
+              isLoading={loadingFloats}
+            />
+          </div>
+        </div>
       </Tabs>
 
       {/* Edit Dialog */}

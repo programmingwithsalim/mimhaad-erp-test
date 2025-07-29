@@ -114,20 +114,37 @@ export async function GET(request: NextRequest) {
     }
 
     // Get summary statistics with branch filtering
-    const stats = await sql`
-      SELECT 
-        COUNT(*) as total_expenses,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-        COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
-        COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
-        COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
-        COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount
-      FROM expenses 
-      ${effectiveBranchId ? sql`WHERE branch_id = ${effectiveBranchId}` : sql``}
-    `;
+    let stats;
+    if (effectiveBranchId) {
+      stats = await sql`
+        SELECT 
+          COUNT(*) as total_expenses,
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+          COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
+          COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
+          COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount
+        FROM expenses 
+        WHERE branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      stats = await sql`
+        SELECT 
+          COUNT(*) as total_expenses,
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+          COUNT(CASE WHEN status = 'approved' THEN 1 END) as approved_count,
+          COUNT(CASE WHEN status = 'rejected' THEN 1 END) as rejected_count,
+          COUNT(CASE WHEN status = 'paid' THEN 1 END) as paid_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(CASE WHEN status = 'approved' THEN amount ELSE 0 END), 0) as approved_amount,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
+          COALESCE(SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END), 0) as paid_amount
+        FROM expenses 
+      `;
+    }
 
     const statsResult = stats[0] || {};
 

@@ -44,12 +44,13 @@ export interface JumiaStatistics {
 async function tablesExist(): Promise<boolean> {
   try {
     const result = await sql`
-      SELECT table_name 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
-      AND table_name = 'jumia_transactions'
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'jumia_transactions'
+      ) as table_exists
     `;
-    return Array.isArray(result) && result.length === 1;
+    return result[0]?.table_exists || false;
   } catch (error) {
     console.error("Error checking Jumia tables:", error);
     return false;
@@ -515,9 +516,8 @@ export async function getJumiaTransactions(
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error(
-      "Jumia database tables not found. Please initialize the database first."
-    );
+    console.log("Jumia database tables not found, returning empty array");
+    return [];
   }
 
   try {
@@ -541,7 +541,7 @@ export async function getJumiaTransactions(
     return [];
   } catch (error) {
     console.error("Error getting Jumia transactions from database:", error);
-    throw error;
+    return [];
   }
 }
 
@@ -552,9 +552,8 @@ export async function getAllJumiaTransactions(
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error(
-      "Jumia database tables not found. Please initialize the database first."
-    );
+    console.log("Jumia database tables not found, returning empty array");
+    return [];
   }
 
   try {
@@ -577,7 +576,7 @@ export async function getAllJumiaTransactions(
     return [];
   } catch (error) {
     console.error("Error getting all Jumia transactions from database:", error);
-    throw error;
+    return [];
   }
 }
 
@@ -588,9 +587,8 @@ export async function getJumiaTransactionById(
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error(
-      "Jumia database tables not found. Please initialize the database first."
-    );
+    console.log("Jumia database tables not found, returning null");
+    return null;
   }
 
   try {
@@ -606,7 +604,7 @@ export async function getJumiaTransactionById(
     return null;
   } catch (error) {
     console.error("Error getting Jumia transaction by ID:", error);
-    throw error;
+    return null;
   }
 }
 
@@ -618,6 +616,7 @@ export async function updateJumiaTransaction(
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
+    console.log("Jumia database tables not found, cannot update transaction");
     throw new Error(
       "Jumia database tables not found. Please initialize the database first."
     );
@@ -709,12 +708,21 @@ export async function deleteJumiaTransaction(
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
+    console.log("Jumia database tables not found, cannot delete transaction");
     throw new Error(
       "Jumia database tables not found. Please initialize the database first."
     );
   }
 
   try {
+    // Get current transaction for comparison
+    const currentTransaction = await getJumiaTransactionById(transactionId);
+    if (!currentTransaction) {
+      throw new Error("Transaction not found");
+    }
+
+    console.log("Deleting transaction:", transactionId);
+
     const result = await sql`
       DELETE FROM jumia_transactions 
       WHERE transaction_id = ${transactionId}
@@ -723,8 +731,9 @@ export async function deleteJumiaTransaction(
 
     if (Array.isArray(result) && result.length > 0) {
       const deletedTransaction = result[0] as JumiaTransaction;
+      console.log("Transaction deleted successfully:", deletedTransaction);
 
-      // Reverse float account updates
+      // Handle float account updates for deleted transaction
       await handleFloatAccountUpdates(deletedTransaction, "delete");
 
       return deletedTransaction;
@@ -744,9 +753,19 @@ export async function getJumiaStatistics(
   const useDatabase = await tablesExist();
 
   if (!useDatabase) {
-    throw new Error(
-      "Jumia database tables not found. Please initialize the database first."
+    console.log(
+      "Jumia database tables not found, returning default statistics"
     );
+    return {
+      total_packages: 0,
+      packages_collected: 0,
+      total_pod_amount: 0,
+      unsettled_amount: 0,
+      total_settlements: 0,
+      total_settlement_amount: 0,
+      float_balance: 0,
+      liability: 0,
+    };
   }
 
   try {
@@ -821,6 +840,15 @@ export async function getJumiaStatistics(
     };
   } catch (error) {
     console.error("Error getting Jumia statistics from database:", error);
-    throw error;
+    return {
+      total_packages: 0,
+      packages_collected: 0,
+      total_pod_amount: 0,
+      unsettled_amount: 0,
+      total_settlements: 0,
+      total_settlement_amount: 0,
+      float_balance: 0,
+      liability: 0,
+    };
   }
 }

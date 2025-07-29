@@ -5,7 +5,7 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = request.nextUrl;
+    const { searchParams } = new URL(request.nextUrl);
     const branchId = searchParams.get("branchId");
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
@@ -16,53 +16,79 @@ export async function GET(request: NextRequest) {
       dateTo,
     });
 
-    // Build WHERE conditions as template literals
-    let whereConditions = [];
-
-    if (branchId && branchId !== "all") {
-      whereConditions.push(sql`branch_id::text = ${branchId}`);
+    // Get overall transaction statistics
+    let statsResult;
+    if (branchId && branchId !== "all" && dateFrom && dateTo) {
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as package_count,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as pod_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount ELSE 0 END), 0) as pod_amount,
+          COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as settlement_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount ELSE 0 END), 0) as settlement_amount
+        FROM jumia_transactions 
+        WHERE branch_id::text = ${branchId}
+        AND created_at >= ${dateFrom}
+        AND created_at <= ${dateTo}
+        AND deleted = false
+      `;
+    } else if (branchId && branchId !== "all") {
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as package_count,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as pod_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount ELSE 0 END), 0) as pod_amount,
+          COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as settlement_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount ELSE 0 END), 0) as settlement_amount
+        FROM jumia_transactions 
+        WHERE branch_id::text = ${branchId}
+        AND deleted = false
+      `;
+    } else if (dateFrom && dateTo) {
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as package_count,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as pod_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount ELSE 0 END), 0) as pod_amount,
+          COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as settlement_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount ELSE 0 END), 0) as settlement_amount
+        FROM jumia_transactions 
+        WHERE created_at >= ${dateFrom}
+        AND created_at <= ${dateTo}
+        AND deleted = false
+      `;
+    } else {
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as package_count,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as pod_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount ELSE 0 END), 0) as pod_amount,
+          COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as settlement_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount ELSE 0 END), 0) as settlement_amount
+        FROM jumia_transactions 
+        WHERE deleted = false
+      `;
     }
-
-    whereConditions.push(sql`deleted = false`);
-
-    if (dateFrom) {
-      whereConditions.push(sql`created_at >= ${dateFrom}`);
-    }
-
-    if (dateTo) {
-      whereConditions.push(sql`created_at <= ${dateTo}`);
-    }
-
-    const whereClause =
-      whereConditions.length > 0
-        ? sql`WHERE ${whereConditions.reduce(
-            (acc, condition) => sql`${acc} AND ${condition}`
-          )}`
-        : sql``;
-
-    // Get transaction statistics
-    const statsResult = await sql`
-      SELECT 
-        COUNT(*) as total_count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COUNT(CASE WHEN deleted = false THEN 1 END) as active_count,
-        COALESCE(SUM(CASE WHEN deleted = false THEN amount ELSE 0 END), 0) as active_amount,
-        COUNT(CASE WHEN deleted = true THEN 1 END) as deleted_count,
-        COALESCE(SUM(CASE WHEN deleted = true THEN amount ELSE 0 END), 0) as deleted_amount
-      FROM jumia_transactions 
-      ${whereClause}
-    `;
     const stats = statsResult[0] || {};
 
-    // Get today's statistics (exclude settlements)
+    // Get today's statistics
     let todayStats;
     if (branchId && branchId !== "all") {
       todayStats = await sql`
         SELECT 
-          COUNT(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN 1 END) as today_count,
-          COALESCE(SUM(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_amount,
-          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_pod_count,
-          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_pod_amount
+          COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as today_packages,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_collections,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount ELSE 0 END), 0) as today_collection_amount,
+          COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as today_settlements,
+          COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount ELSE 0 END), 0) as today_settlement_amount
         FROM jumia_transactions
         WHERE created_at >= CURRENT_DATE 
         AND deleted = false
@@ -71,16 +97,43 @@ export async function GET(request: NextRequest) {
     } else {
       todayStats = await sql`
         SELECT 
-          COUNT(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN 1 END) as today_count,
-          COALESCE(SUM(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_amount,
-          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_pod_count,
-          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_pod_amount
+          COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as today_packages,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_collections,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN amount ELSE 0 END), 0) as today_collection_amount,
+          COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as today_settlements,
+          COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN amount ELSE 0 END), 0) as today_settlement_amount
         FROM jumia_transactions
         WHERE created_at >= CURRENT_DATE 
         AND deleted = false
       `;
     }
     const todayData = todayStats[0] || {};
+
+    // Get unsettled POD collections (collections that haven't been settled)
+    let unsettledStats;
+    if (branchId && branchId !== "all") {
+      unsettledStats = await sql`
+        SELECT 
+          COUNT(*) as unsettled_count,
+          COALESCE(SUM(amount), 0) as unsettled_amount
+        FROM jumia_transactions
+        WHERE transaction_type = 'pod_collection' 
+        AND status != 'settled'
+        AND deleted = false
+        AND branch_id::text = ${branchId}
+      `;
+    } else {
+      unsettledStats = await sql`
+        SELECT 
+          COUNT(*) as unsettled_count,
+          COALESCE(SUM(amount), 0) as unsettled_amount
+        FROM jumia_transactions
+        WHERE transaction_type = 'pod_collection' 
+        AND status != 'settled'
+        AND deleted = false
+      `;
+    }
+    const unsettledData = unsettledStats[0] || {};
 
     // Get daily breakdown for the last 30 days
     let dailyStats;
@@ -89,7 +142,9 @@ export async function GET(request: NextRequest) {
         SELECT 
           DATE(created_at) as date,
           COUNT(*) as count,
-          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as collections,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as collection_amount
         FROM jumia_transactions
         WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
         AND deleted = false
@@ -102,7 +157,9 @@ export async function GET(request: NextRequest) {
         SELECT 
           DATE(created_at) as date,
           COUNT(*) as count,
-          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as collections,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as collection_amount
         FROM jumia_transactions
         WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
         AND deleted = false
@@ -112,16 +169,58 @@ export async function GET(request: NextRequest) {
     }
 
     // Get transaction type breakdown
-    const typeStats = await sql`
-      SELECT 
-        transaction_type,
-        COUNT(*) as count,
-        COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
-      FROM jumia_transactions
-      ${whereClause}
-      GROUP BY transaction_type
-      ORDER BY total_amount DESC
-    `;
+    let typeStats;
+    if (branchId && branchId !== "all" && dateFrom && dateTo) {
+      typeStats = await sql`
+        SELECT 
+          transaction_type,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+        FROM jumia_transactions
+        WHERE branch_id::text = ${branchId}
+        AND created_at >= ${dateFrom}
+        AND created_at <= ${dateTo}
+        AND deleted = false
+        GROUP BY transaction_type
+        ORDER BY total_amount DESC
+      `;
+    } else if (branchId && branchId !== "all") {
+      typeStats = await sql`
+        SELECT 
+          transaction_type,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+        FROM jumia_transactions
+        WHERE branch_id::text = ${branchId}
+        AND deleted = false
+        GROUP BY transaction_type
+        ORDER BY total_amount DESC
+      `;
+    } else if (dateFrom && dateTo) {
+      typeStats = await sql`
+        SELECT 
+          transaction_type,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+        FROM jumia_transactions
+        WHERE created_at >= ${dateFrom}
+        AND created_at <= ${dateTo}
+        AND deleted = false
+        GROUP BY transaction_type
+        ORDER BY total_amount DESC
+      `;
+    } else {
+      typeStats = await sql`
+        SELECT 
+          transaction_type,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+        FROM jumia_transactions
+        WHERE deleted = false
+        GROUP BY transaction_type
+        ORDER BY total_amount DESC
+      `;
+    }
 
     // Get Jumia float account balance for this branch
     let float_balance = 0;
@@ -135,17 +234,31 @@ export async function GET(request: NextRequest) {
     }
 
     const statistics = {
-      // Main statistics for frontend cards
-      todayTransactions: Number(todayData.today_count || 0),
-      totalTransactions: Number(stats.total_count || 0),
-      todayVolume: Number(todayData.today_amount || 0),
-      totalVolume: Number(stats.total_amount || 0),
-      todayCommission: Number(todayData.today_pod_amount || 0), // POD collections as commission
-      totalCommission: Number(stats.pod_amount || 0), // Total POD collections
-      activeProviders: 1, // Jumia is always active
-      floatBalance: float_balance, // Use backend-calculated float balance
-      lowFloatAlerts: 0, // Will be calculated by frontend
-      float_balance, // Also expose as float_balance for compatibility
+      // Main statistics for frontend cards - Clear naming
+      todayPackages: Number(todayData.today_packages || 0),
+      totalPackages: Number(stats.package_count || 0),
+      todayCollections: Number(todayData.today_collections || 0),
+      totalCollections: Number(stats.pod_count || 0),
+      todayCollectionAmount: Number(todayData.today_collection_amount || 0),
+      totalCollectionAmount: Number(stats.pod_amount || 0),
+      todaySettlements: Number(todayData.today_settlements || 0),
+      totalSettlements: Number(stats.settlement_count || 0),
+      todaySettlementAmount: Number(todayData.today_settlement_amount || 0),
+      totalSettlementAmount: Number(stats.settlement_amount || 0),
+      unsettledCollections: Number(unsettledData.unsettled_count || 0),
+      unsettledAmount: Number(unsettledData.unsettled_amount || 0),
+      floatBalance: float_balance,
+
+      // Legacy compatibility fields
+      todayTransactions: Number(todayData.today_collections || 0),
+      totalTransactions: Number(stats.pod_count || 0),
+      todayVolume: Number(todayData.today_collection_amount || 0),
+      totalVolume: Number(stats.pod_amount || 0),
+      todayCommission: Number(todayData.today_collection_amount || 0),
+      totalCommission: Number(stats.pod_amount || 0),
+      activeProviders: 1,
+      lowFloatAlerts: 0,
+      float_balance,
 
       // Additional detailed data
       summary: {
@@ -156,37 +269,41 @@ export async function GET(request: NextRequest) {
         podAmount: Number(stats.pod_amount || 0),
         settlementCount: Number(stats.settlement_count || 0),
         settlementAmount: Number(stats.settlement_amount || 0),
-        todayCount: Number(todayData.today_count || 0),
-        todayAmount: Number(todayData.today_amount || 0),
-        todayPodCount: Number(todayData.today_pod_count || 0),
-        todayPodAmount: Number(todayData.today_pod_amount || 0),
+        todayPackages: Number(todayData.today_packages || 0),
+        todayCollections: Number(todayData.today_collections || 0),
+        todayCollectionAmount: Number(todayData.today_collection_amount || 0),
+        todaySettlements: Number(todayData.today_settlements || 0),
+        todaySettlementAmount: Number(todayData.today_settlement_amount || 0),
+        unsettledCollections: Number(unsettledData.unsettled_count || 0),
+        unsettledAmount: Number(unsettledData.unsettled_amount || 0),
       },
-      byType: typeStats.map((t: any) => ({
-        type: t.transaction_type || "Unknown",
-        count: Number(t.count || 0),
-        amount: Number(t.total_amount || 0),
+
+      // Daily breakdown
+      dailyBreakdown: dailyStats.map((row: any) => ({
+        date: row.date,
+        transactions: Number(row.count || 0),
+        volume: Number(row.total_amount || 0),
+        collections: Number(row.collections || 0),
+        collectionAmount: Number(row.collection_amount || 0),
+        commission: Number(row.collection_amount || 0) * 0.01, // 1% commission
       })),
-      daily: dailyStats.map((d: any) => ({
-        date: d.date,
-        count: Number(d.count || 0),
-        amount: Number(d.total_amount || 0),
+
+      // Transaction type breakdown
+      typeBreakdown: typeStats.map((row: any) => ({
+        type: row.transaction_type,
+        count: Number(row.count || 0),
+        amount: Number(row.total_amount || 0),
       })),
     };
-
-    console.log("✅ Jumia statistics fetched successfully");
 
     return NextResponse.json({
       success: true,
       data: statistics,
     });
   } catch (error) {
-    console.error("❌ Error fetching Jumia statistics:", error);
+    console.error("Error fetching Jumia statistics:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch Jumia statistics",
-        details: error instanceof Error ? error.message : "Unknown error",
-      },
+      { success: false, error: "Failed to fetch Jumia statistics" },
       { status: 500 }
     );
   }

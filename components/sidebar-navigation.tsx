@@ -145,6 +145,12 @@ const menuItems = [
         icon: Building2,
         roles: ["Admin", "Manager", "Finance"],
       },
+      {
+        title: "Jumia Packages",
+        href: "/dashboard/jumia/packages",
+        icon: ShoppingCart,
+        roles: ["Admin", "Manager", "Operations"],
+      },
     ],
   },
   {

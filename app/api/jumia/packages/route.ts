@@ -25,8 +25,6 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const branchId = searchParams.get("branchId");
-    const status = searchParams.get("status");
-    const limit = Number.parseInt(searchParams.get("limit") || "50");
 
     let user;
     try {
@@ -38,31 +36,11 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const isAdmin = user.role === "Admin" || user.role === "admin";
-    const userBranchId = user.branchId;
-
-    let whereConditions = [];
-
-    if (branchId && branchId !== "undefined") {
-      whereConditions.push(`branch_id = '${branchId}'`);
-    } else if (!isAdmin) {
-      whereConditions.push(`branch_id = '${userBranchId}'`);
-    }
-
-    if (status) {
-      whereConditions.push(`status = '${status}'`);
-    }
-
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(" AND ")}`
-        : "";
-
+    // Simple query to get all packages for the branch
     const packages = await sql`
       SELECT * FROM jumia_packages 
-      ${sql.unsafe(whereClause)}
-      ORDER BY created_at DESC 
-      LIMIT ${limit}
+      WHERE branch_id = ${branchId || user.branchId}
+      ORDER BY created_at DESC
     `;
 
     return NextResponse.json({
@@ -153,6 +131,36 @@ export async function POST(request: NextRequest) {
         NOW(),
         NOW()
       ) RETURNING *
+    `;
+
+    // Create notification for package ready for pickup
+    await sql`
+      INSERT INTO notifications (
+        user_id,
+        branch_id,
+        type,
+        title,
+        message,
+        metadata,
+        priority,
+        status,
+        created_at
+      ) VALUES (
+        ${user.id},
+        ${user.branchId},
+        'package_received',
+        'Package Ready for Pickup',
+        ${`Package with tracking ID ${packageData.tracking_id} has been received from Jumia and is ready for pickup. Customer: ${packageData.customer_name}`},
+        ${JSON.stringify({
+          package_id: newPackage[0].id,
+          tracking_id: packageData.tracking_id,
+          customer_name: packageData.customer_name,
+          customer_phone: packageData.customer_phone,
+        })},
+        'medium',
+        'unread',
+        NOW()
+      )
     `;
 
     return NextResponse.json({

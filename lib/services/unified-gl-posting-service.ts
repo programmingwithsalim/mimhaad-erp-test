@@ -2,6 +2,7 @@ import { neon } from "@neondatabase/serverless";
 import { v4 as uuidv4 } from "uuid";
 import { AuditLoggerService } from "./audit-logger-service";
 import { AutoGLMappingService } from "./auto-gl-mapping-service";
+import crypto from "crypto";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -53,10 +54,24 @@ export class UnifiedGLPostingService {
         data.transactionId
       );
 
+      // Validate transactionId format - if it's not a UUID, generate one
+      let validTransactionId = data.transactionId;
+      if (
+        !data.transactionId.match(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        )
+      ) {
+        validTransactionId = crypto.randomUUID();
+        console.log(
+          "🔷 [GL] Generated new UUID for transaction:",
+          validTransactionId
+        );
+      }
+
       // Check if GL entries already exist for this transaction
       const existingTransaction = await sql`
         SELECT id FROM gl_transactions 
-        WHERE source_transaction_id = ${data.transactionId} 
+        WHERE source_transaction_id = ${validTransactionId} 
         AND source_module = ${data.sourceModule}
         AND source_transaction_type = ${data.transactionType}
       `;
@@ -122,11 +137,11 @@ export class UnifiedGLPostingService {
 
       await sql`
         INSERT INTO gl_transactions (id, date, source_module, source_transaction_id, source_transaction_type, description, status, created_by, metadata)
-        VALUES (${glTransactionId}, CURRENT_DATE, ${data.sourceModule}, ${
-        data.transactionId
-      }, ${data.transactionType}, ${data.reference}, 'posted', ${
-        data.processedBy
-      }, ${JSON.stringify(data.metadata || {})})
+        VALUES (${glTransactionId}, CURRENT_DATE, ${
+        data.sourceModule
+      }, ${validTransactionId}, ${data.transactionType}, ${
+        data.reference
+      }, 'posted', ${data.processedBy}, ${JSON.stringify(data.metadata || {})})
       `;
 
       for (const entry of entries) {
