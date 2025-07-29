@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -163,6 +164,30 @@ export async function POST(request: NextRequest) {
       )
     `;
 
+    // Send SMS notification to customer
+    if (packageData.customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Package Received",
+          message: `Your package with tracking ID ${packageData.tracking_id} has been received from Jumia and is ready for pickup. Please visit our branch to collect it.`,
+          phone: packageData.customer_phone,
+          userId: user.id,
+          branchId: user.branchId,
+          metadata: {
+            packageId: newPackage[0].id,
+            trackingId: packageData.tracking_id,
+            customerName: packageData.customer_name,
+            status: "received",
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with package creation even if notification fails
+      }
+    }
+
     return NextResponse.json({
       success: true,
       data: newPackage[0],
@@ -209,6 +234,30 @@ export async function PUT(request: NextRequest) {
         { success: false, error: "Package not found" },
         { status: 404 }
       );
+    }
+
+    // Send SMS notification for package delivery
+    if (updateData.status === "delivered" && updatedPackage[0].customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Package Delivered",
+          message: `Your package with tracking ID ${updatedPackage[0].tracking_id} has been delivered successfully. Thank you for using our service!`,
+          phone: updatedPackage[0].customer_phone,
+          userId: updatedPackage[0].user_id,
+          branchId: updatedPackage[0].branch_id,
+          metadata: {
+            packageId: updatedPackage[0].id,
+            trackingId: updatedPackage[0].tracking_id,
+            customerName: updatedPackage[0].customer_name,
+            status: "delivered",
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with package update even if notification fails
+      }
     }
 
     return NextResponse.json({

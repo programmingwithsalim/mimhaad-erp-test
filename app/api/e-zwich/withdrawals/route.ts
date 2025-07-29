@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -111,6 +112,31 @@ export async function POST(request: NextRequest) {
       )
       RETURNING *
     `;
+
+    // Send SMS notification to customer (if phone number is provided)
+    if (body.customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "E-Zwich Withdrawal Successful",
+          message: `Thank you for using our service! Your E-Zwich withdrawal of GHS ${amount} was successful. Card: ${card_number}`,
+          phone: body.customer_phone,
+          userId: processed_by,
+          branchId: branch_id,
+          metadata: {
+            transactionId: result[0].id,
+            type: transaction_type || "withdrawal",
+            amount,
+            cardNumber: card_number,
+            reference: result[0].id,
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with transaction even if notification fails
+      }
+    }
 
     return NextResponse.json({
       success: true,

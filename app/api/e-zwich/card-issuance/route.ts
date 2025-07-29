@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { AuditLoggerService } from "@/lib/services/audit-logger-service";
 import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -388,6 +389,32 @@ export async function POST(request: NextRequest) {
       severity: "medium",
       branchId: branch_id,
     });
+
+    // Send SMS notification to customer
+    if (customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "E-Zwich Card Issuance Successful",
+          message: `Thank you for using our service! Your E-Zwich card ${newIssuance.card_number} has been issued successfully. Fee: GHS ${newIssuance.fee_charged}`,
+          phone: customer_phone,
+          userId: processed_by,
+          branchId: branch_id,
+          metadata: {
+            transactionId: newIssuance.id,
+            type: "card_issuance",
+            amount: newIssuance.fee_charged,
+            cardNumber: newIssuance.card_number,
+            customerName: newIssuance.customer_name,
+            reference: newIssuance.card_number,
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with issuance even if notification fails
+      }
+    }
 
     return NextResponse.json({
       success: true,

@@ -1495,16 +1495,16 @@ export default function JumiaPage() {
             </TabsContent>
           </div>
 
-          {/* Float Display - 1 column */}
-          <div className="lg:col-span-1">
+          {/* Dynamic Float Display - Only show on package_delivery and settlement tabs */}
+          {activeTab !== "transaction_history" && (
             <DynamicFloatDisplay
               selectedProvider={getSelectedProvider()}
               floatAccounts={floatAccounts}
-              serviceType="Jumia"
+              serviceType="jumia"
               onRefresh={loadFloatAccounts}
               isLoading={loadingFloats}
             />
-          </div>
+          )}
         </div>
       </Tabs>
 

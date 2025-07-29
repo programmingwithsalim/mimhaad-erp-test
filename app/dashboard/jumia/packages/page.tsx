@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Package, Filter, Download, Plus } from "lucide-react";
+import { Search, Package, Filter, Download, Plus, Trash2 } from "lucide-react";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { toast } from "@/hooks/use-toast";
 import {
@@ -65,6 +65,11 @@ export default function JumiaPackagesPage() {
   // Package creation state
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [creatingPackage, setCreatingPackage] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [deletingPackage, setDeletingPackage] = useState(false);
+  const [packageToDelete, setPackageToDelete] = useState<JumiaPackage | null>(
+    null
+  );
   const [packageForm, setPackageForm] = useState({
     tracking_id: "",
     customer_name: "",
@@ -184,6 +189,52 @@ export default function JumiaPackagesPage() {
     } finally {
       setCreatingPackage(false);
     }
+  };
+
+  const handleDeletePackage = async () => {
+    if (!packageToDelete) return;
+
+    try {
+      setDeletingPackage(true);
+      const response = await fetch(
+        `/api/jumia/packages/${packageToDelete.id}`,
+        {
+          method: "DELETE",
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: "Package Deleted",
+          description: `Package with tracking ID ${packageToDelete.tracking_id} has been deleted successfully.`,
+        });
+        setIsDeleteDialogOpen(false);
+        setPackageToDelete(null);
+        fetchPackages(); // Refresh the list
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to delete package",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error deleting package:", error);
+      toast({
+        title: "Error",
+        description: "Failed to delete package",
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingPackage(false);
+    }
+  };
+
+  const confirmDelete = (pkg: JumiaPackage) => {
+    setPackageToDelete(pkg);
+    setIsDeleteDialogOpen(true);
   };
 
   const resetPackageForm = () => {
@@ -315,18 +366,19 @@ export default function JumiaPackagesPage() {
                   <TableHead>Tracking ID</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Notes</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       Loading packages...
                     </TableCell>
                   </TableRow>
                 ) : packages.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
+                    <TableCell colSpan={7} className="text-center py-8">
                       No packages found
                     </TableCell>
                   </TableRow>
@@ -344,6 +396,16 @@ export default function JumiaPackagesPage() {
                       <TableCell>{getStatusBadge(pkg.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {pkg.notes || "No notes"}
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => confirmDelete(pkg)}
+                          className="text-red-600 hover:text-red-900"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))
@@ -460,6 +522,34 @@ export default function JumiaPackagesPage() {
               {creatingPackage ? "Creating..." : "Create Package"}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Package Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Are you absolutely sure?</DialogTitle>
+            <DialogDescription>
+              This action cannot be undone. This will permanently delete your
+              package.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeletePackage}
+              disabled={deletingPackage}
+            >
+              {deletingPackage ? "Deleting..." : "Delete Package"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

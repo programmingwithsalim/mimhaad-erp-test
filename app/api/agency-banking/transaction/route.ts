@@ -434,6 +434,34 @@ export async function POST(request: Request) {
       },
     });
 
+    // 9. Send SMS notification to customer
+    if (customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Agency Banking Transaction Successful",
+          message: `Thank you for using our service! Your ${type} transaction of GHS ${amount} was successful. Reference: ${reference || `AGENCY-${Date.now()}`}`,
+          phone: customer_phone,
+          userId: user.id,
+          branchId: user.branchId,
+          metadata: {
+            transactionId,
+            type,
+            amount,
+            fee: transactionFee,
+            partnerBank: partnerBank.account_name || partnerBank.provider || "",
+            customerName: customer_name,
+            accountNumber: account_number,
+            reference: reference || `AGENCY-${Date.now()}`,
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with transaction even if notification fails
+      }
+    }
+
     return NextResponse.json({
       success: true,
       message: "Agency banking transaction processed successfully",

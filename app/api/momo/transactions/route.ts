@@ -3,6 +3,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
+import { NotificationService } from "@/lib/services/notification-service";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -236,6 +237,32 @@ export async function POST(request: NextRequest) {
     } catch (glError) {
       console.error("GL posting failed for MoMo transaction:", glError);
       // Continue with transaction even if GL posting fails
+    }
+
+    // Send SMS notification to customer
+    if (normalizedData.customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "MoMo Transaction Successful",
+          message: `Thank you for using our service! Your MoMo ${normalizedData.type} transaction of GHS ${normalizedData.amount} was successful. Reference: ${normalizedData.reference || transaction[0].id}`,
+          phone: normalizedData.customer_phone,
+          userId: userId || "system",
+          branchId: branchId,
+          metadata: {
+            transactionId: transaction[0].id,
+            type: normalizedData.type,
+            amount: normalizedData.amount,
+            fee: normalizedData.fee,
+            provider: normalizedData.provider,
+            reference: normalizedData.reference || transaction[0].id,
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with transaction even if notification fails
+      }
     }
 
     return NextResponse.json({

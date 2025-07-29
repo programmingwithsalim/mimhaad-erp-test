@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { getSession } from "@/lib/auth-service";
 import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
+import { NotificationService } from "@/lib/services/notification-service";
 import {
   updatePowerTransaction,
   deletePowerTransaction,
@@ -375,6 +376,33 @@ export async function POST(request: NextRequest) {
       SET float_account_id = ${powerProviderDebit[0].id}
       WHERE id = ${transactionUUID}
     `;
+
+    // Send SMS notification to customer
+    if (body.customer_phone) {
+      try {
+        await NotificationService.sendNotification({
+          type: "transaction",
+          title: "Power Sale Successful",
+          message: `Thank you for using our service! Your power sale of GHS ${body.amount} for meter ${body.meter_number} was successful. Reference: ${transactionReference}`,
+          phone: body.customer_phone,
+          userId: body.userId,
+          branchId: body.branchId,
+          metadata: {
+            transactionId: transactionUUID,
+            type: "power_sale",
+            amount: body.amount,
+            meterNumber: body.meter_number,
+            provider: body.provider,
+            customerName: body.customer_name,
+            reference: transactionReference,
+          },
+          priority: "medium",
+        });
+      } catch (notificationError) {
+        console.error("Failed to send SMS notification:", notificationError);
+        // Continue with transaction even if notification fails
+      }
+    }
 
     return NextResponse.json({
       success: true,
