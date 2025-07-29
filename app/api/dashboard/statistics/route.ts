@@ -80,123 +80,288 @@ export async function GET(request: NextRequest) {
     }
 
     // Today's MoMo transactions
-    const momoTodayRes = await sql`
-      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
-      FROM momo_transactions 
-      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
-    `;
+    let momoTodayRes;
+    if (effectiveBranchId) {
+      momoTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM momo_transactions 
+        WHERE status = 'completed' AND DATE(created_at) = ${today} AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      momoTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM momo_transactions 
+        WHERE status = 'completed' AND DATE(created_at) = ${today}
+      `;
+    }
     const todayMomoTransactions = Number(momoTodayRes[0]?.total || 0);
     const todayMomoVolume = Number(momoTodayRes[0]?.volume || 0);
 
     // Total MoMo transactions
-    const momoRes =
-      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM momo_transactions WHERE status = 'completed' ${branchFilter}`;
+    let momoRes;
+    if (effectiveBranchId) {
+      momoRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM momo_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      momoRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM momo_transactions 
+        WHERE status = 'completed'
+      `;
+    }
     const totalMomoTransactions = Number(momoRes[0]?.total || 0);
     const totalMomoVolume = Number(momoRes[0]?.volume || 0);
 
     // Today's Agency Banking transactions
-    const agencyTodayRes = await sql`
-      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
-      FROM agency_banking_transactions 
-      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
-    `;
+    let agencyTodayRes;
+    if (effectiveBranchId) {
+      agencyTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM agency_banking_transactions 
+        WHERE status = 'completed' AND DATE(date) = ${today} AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      agencyTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM agency_banking_transactions 
+        WHERE status = 'completed' AND DATE(date) = ${today}
+      `;
+    }
     const todayAgencyTransactions = Number(agencyTodayRes[0]?.total || 0);
     const todayAgencyVolume = Number(agencyTodayRes[0]?.volume || 0);
 
     // Total Agency Banking transactions
-    const agencyRes =
-      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter}`;
+    let agencyRes;
+    if (effectiveBranchId) {
+      agencyRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM agency_banking_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      agencyRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM agency_banking_transactions 
+        WHERE status = 'completed'
+      `;
+    }
     const totalAgencyTransactions = Number(agencyRes[0]?.total || 0);
     const totalAgencyVolume = Number(agencyRes[0]?.volume || 0);
 
     // Today's E-Zwich withdrawals
-    const ezwichTodayRes = await sql`
-      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
-      FROM e_zwich_withdrawals 
-      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
-    `;
+    let ezwichTodayRes;
+    if (effectiveBranchId) {
+      ezwichTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed' AND DATE(transaction_date) = ${today} AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      ezwichTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed' AND DATE(transaction_date) = ${today}
+      `;
+    }
     const todayEzwichTransactions = Number(ezwichTodayRes[0]?.total || 0);
     const todayEzwichVolume = Number(ezwichTodayRes[0]?.volume || 0);
 
     // Total E-Zwich withdrawals
-    const ezwichRes =
-      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter}`;
+    let ezwichRes;
+    if (effectiveBranchId) {
+      ezwichRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      ezwichRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed'
+      `;
+    }
     const totalEzwichTransactions = Number(ezwichRes[0]?.total || 0);
     const totalEzwichVolume = Number(ezwichRes[0]?.volume || 0);
 
     // Today's Power transactions
-    const powerTodayRes = await sql`
-      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
-      FROM power_transactions 
-      WHERE status = 'completed' AND DATE(created_at) = ${today} ${branchFilter}
-    `;
+    let powerTodayRes;
+    if (effectiveBranchId) {
+      powerTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM power_transactions 
+        WHERE status = 'completed' AND DATE(created_at) = ${today} AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      powerTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM power_transactions 
+        WHERE status = 'completed' AND DATE(created_at) = ${today}
+      `;
+    }
     const todayPowerTransactions = Number(powerTodayRes[0]?.total || 0);
     const todayPowerVolume = Number(powerTodayRes[0]?.volume || 0);
 
     // Total Power transactions
-    const powerRes =
-      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM power_transactions WHERE status = 'completed' ${branchFilter}`;
+    let powerRes;
+    if (effectiveBranchId) {
+      powerRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM power_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      powerRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM power_transactions 
+        WHERE status = 'completed'
+      `;
+    }
     const totalPowerTransactions = Number(powerRes[0]?.total || 0);
     const totalPowerVolume = Number(powerRes[0]?.volume || 0);
 
     // Today's Jumia transactions
-    const jumiaTodayRes = await sql`
-      SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
-      FROM jumia_transactions 
-      WHERE status = 'active' AND DATE(created_at) = ${today} ${branchFilter}
-    `;
+    let jumiaTodayRes;
+    if (effectiveBranchId) {
+      jumiaTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM jumia_transactions 
+        WHERE deleted = false AND DATE(created_at) = ${today} AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      jumiaTodayRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM jumia_transactions 
+        WHERE deleted = false AND DATE(created_at) = ${today}
+      `;
+    }
     const todayJumiaTransactions = Number(jumiaTodayRes[0]?.total || 0);
     const todayJumiaVolume = Number(jumiaTodayRes[0]?.volume || 0);
 
     // Total Jumia transactions
-    const jumiaRes =
-      await sql`SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume FROM jumia_transactions WHERE status = 'active' ${branchFilter}`;
+    let jumiaRes;
+    if (effectiveBranchId) {
+      jumiaRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM jumia_transactions 
+        WHERE deleted = false AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      jumiaRes = await sql`
+        SELECT COUNT(*) AS total, COALESCE(SUM(amount),0) AS volume 
+        FROM jumia_transactions 
+        WHERE deleted = false
+      `;
+    }
     const totalJumiaTransactions = Number(jumiaRes[0]?.total || 0);
     const totalJumiaVolume = Number(jumiaRes[0]?.volume || 0);
 
     // Today's commissions
-    const commissionTodayRes = await sql`
-      SELECT COALESCE(SUM(amount),0) AS total 
-      FROM commissions 
-      WHERE status = 'approved' AND DATE(created_at) = ${today} ${branchFilter}
-    `;
+    let commissionTodayRes;
+    if (effectiveBranchId) {
+      commissionTodayRes = await sql`
+        SELECT COALESCE(SUM(amount),0) AS total 
+        FROM commissions 
+        WHERE status = 'approved' AND DATE(created_at) = ${today} AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      commissionTodayRes = await sql`
+        SELECT COALESCE(SUM(amount),0) AS total 
+        FROM commissions 
+        WHERE status = 'approved' AND DATE(created_at) = ${today}
+      `;
+    }
     const todayCommissions = Number(commissionTodayRes[0]?.total || 0);
 
     // Total commissions
-    const commissionRes =
-      await sql`SELECT COALESCE(SUM(amount),0) AS total FROM commissions WHERE status = 'approved' ${branchFilter}`;
+    let commissionRes;
+    if (effectiveBranchId) {
+      commissionRes = await sql`
+        SELECT COALESCE(SUM(amount),0) AS total 
+        FROM commissions 
+        WHERE status = 'approved' AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      commissionRes = await sql`
+        SELECT COALESCE(SUM(amount),0) AS total 
+        FROM commissions 
+        WHERE status = 'approved'
+      `;
+    }
     const totalCommissions = Number(commissionRes[0]?.total || 0);
 
     // Active users (filtered by branch for non-admin)
-    const activeUserRes = effectiveBranchId
-      ? await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active' AND primary_branch_id = ${effectiveBranchId}`
-      : await sql`SELECT COUNT(*) AS total FROM users WHERE status = 'active'`;
+    let activeUserRes;
+    if (effectiveBranchId) {
+      activeUserRes = await sql`
+        SELECT COUNT(*) AS total FROM users WHERE status = 'active' AND primary_branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      activeUserRes = await sql`
+        SELECT COUNT(*) AS total FROM users WHERE status = 'active'
+      `;
+    }
     const activeUsers = Number(activeUserRes[0]?.total || 0);
 
     // Pending approvals (commissions)
-    const pendingRes =
-      await sql`SELECT COUNT(*) AS total FROM commissions WHERE status = 'pending' ${branchFilter}`;
+    let pendingRes;
+    if (effectiveBranchId) {
+      pendingRes = await sql`
+        SELECT COUNT(*) AS total 
+        FROM commissions 
+        WHERE status = 'pending' AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      pendingRes = await sql`
+        SELECT COUNT(*) AS total 
+        FROM commissions 
+        WHERE status = 'pending'
+      `;
+    }
     const pendingApprovals = Number(pendingRes[0]?.total || 0);
 
     // Float alerts - accounts below threshold (filtered by branch for non-admin)
     // Exclude jumia and e-zwich accounts from alerts when they're at 0
-    const floatAlertsRes = await sql`
-      SELECT 
-        id,
-        account_type as provider,
-        account_type as service,
-        current_balance,
-        min_threshold as threshold,
-        CASE 
-          WHEN current_balance <= min_threshold * 0.5 THEN 'critical'
-          ELSE 'warning'
-        END as severity
-      FROM float_accounts 
-      WHERE current_balance <= min_threshold 
-        AND is_active = true 
-        AND account_type NOT IN ('jumia', 'e-zwich') -- Exclude these from alerts
-        ${branchFilter}
-    `;
+    let floatAlertsRes;
+    if (effectiveBranchId) {
+      floatAlertsRes = await sql`
+        SELECT 
+          id,
+          account_type as provider,
+          account_type as service,
+          current_balance,
+          min_threshold as threshold,
+          CASE 
+            WHEN current_balance <= min_threshold * 0.5 THEN 'critical'
+            ELSE 'warning'
+          END as severity
+        FROM float_accounts 
+        WHERE current_balance <= min_threshold 
+          AND is_active = true 
+          AND account_type NOT IN ('jumia', 'e-zwich') -- Exclude these from alerts
+          AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      floatAlertsRes = await sql`
+        SELECT 
+          id,
+          account_type as provider,
+          account_type as service,
+          current_balance,
+          min_threshold as threshold,
+          CASE 
+            WHEN current_balance <= min_threshold * 0.5 THEN 'critical'
+            ELSE 'warning'
+          END as severity
+        FROM float_accounts 
+        WHERE current_balance <= min_threshold 
+          AND is_active = true 
+          AND account_type NOT IN ('jumia', 'e-zwich') -- Exclude these from alerts
+      `;
+    }
     const floatAlerts = floatAlertsRes.map((row: any) => ({
       id: row.id,
       provider: row.provider,
@@ -213,32 +378,261 @@ export async function GET(request: NextRequest) {
       !!effectiveBranchId
     );
 
-    // Recent activity with better structure (filtered by branch for non-admin)
-    const activityRes = await sql`
-      SELECT 
-        id, 
-        action_type, 
-        description, 
-        username, 
-        created_at, 
-        status,
-        entity_type,
-        entity_id
-      FROM audit_logs 
-      WHERE 1=1 ${branchFilter}
-      ORDER BY created_at DESC 
-      LIMIT 10
-    `;
+    // Recent activity with actual transaction amounts (filtered by branch for non-admin)
+    let activityRes;
+    if (effectiveBranchId) {
+      activityRes = await sql`
+        SELECT 
+          id,
+          'momo_transaction' as entity_type,
+          amount,
+          created_at,
+          'MoMo Transaction' as description,
+          'completed' as status,
+          'MoMo' as service
+        FROM momo_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'agency_banking_transaction' as entity_type,
+          amount,
+          date as created_at,
+          'Agency Banking Transaction' as description,
+          'completed' as status,
+          'Agency Banking' as service
+        FROM agency_banking_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'e_zwich_withdrawal' as entity_type,
+          amount,
+          transaction_date as created_at,
+          'E-Zwich Withdrawal' as description,
+          'completed' as status,
+          'E-Zwich' as service
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'power_transaction' as entity_type,
+          amount,
+          created_at,
+          'Power Transaction' as description,
+          'completed' as status,
+          'Power' as service
+        FROM power_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'jumia_transaction' as entity_type,
+          amount,
+          created_at,
+          'Jumia Transaction' as description,
+          'completed' as status,
+          'Jumia' as service
+        FROM jumia_transactions 
+        WHERE deleted = false AND branch_id = ${effectiveBranchId}
+        
+        ORDER BY created_at DESC 
+        LIMIT 10
+      `;
+    } else {
+      activityRes = await sql`
+        SELECT 
+          id,
+          'momo_transaction' as entity_type,
+          amount,
+          created_at,
+          'MoMo Transaction' as description,
+          'completed' as status,
+          'MoMo' as service
+        FROM momo_transactions 
+        WHERE status = 'completed'
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'agency_banking_transaction' as entity_type,
+          amount,
+          date as created_at,
+          'Agency Banking Transaction' as description,
+          'completed' as status,
+          'Agency Banking' as service
+        FROM agency_banking_transactions 
+        WHERE status = 'completed'
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'e_zwich_withdrawal' as entity_type,
+          amount,
+          transaction_date as created_at,
+          'E-Zwich Withdrawal' as description,
+          'completed' as status,
+          'E-Zwich' as service
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed'
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'power_transaction' as entity_type,
+          amount,
+          created_at,
+          'Power Transaction' as description,
+          'completed' as status,
+          'Power' as service
+        FROM power_transactions 
+        WHERE status = 'completed'
+        
+        UNION ALL
+        
+        SELECT 
+          id,
+          'jumia_transaction' as entity_type,
+          amount,
+          created_at,
+          'Jumia Transaction' as description,
+          'completed' as status,
+          'Jumia' as service
+        FROM jumia_transactions 
+        WHERE deleted = false
+        
+        ORDER BY created_at DESC 
+        LIMIT 10
+      `;
+    }
     const recentActivity = activityRes.map((row: any) => ({
       id: row.id,
-      type: row.action_type,
-      service: row.entity_type || "system",
-      amount: 0, // Will be calculated if needed
+      type: "transaction",
+      service: row.service,
+      amount: Number(row.amount || 0),
       timestamp: row.created_at,
-      user: row.username,
+      user: "System", // We'll get this from user context if needed
       description: row.description,
       status: row.status,
     }));
+
+    // Get actual fee data for each service
+    let momoFeesRes, agencyFeesRes, ezwichFeesRes, powerFeesRes, jumiaFeesRes;
+
+    if (effectiveBranchId) {
+      // MoMo fees (1% of transaction amount)
+      momoFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.01), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.01 ELSE 0 END), 0) as today_fees_only
+        FROM momo_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+
+      // Agency Banking fees (0.5% of transaction amount)
+      agencyFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.005), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(date) = ${today} THEN amount * 0.005 ELSE 0 END), 0) as today_fees_only
+        FROM agency_banking_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+
+      // E-Zwich fees (1% of withdrawal amount)
+      ezwichFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.01), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(transaction_date) = ${today} THEN amount * 0.01 ELSE 0 END), 0) as today_fees_only
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+
+      // Power fees (2% of transaction amount)
+      powerFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.02), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.02 ELSE 0 END), 0) as today_fees_only
+        FROM power_transactions 
+        WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+      `;
+
+      // Jumia fees (1% of transaction amount)
+      jumiaFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.01), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.01 ELSE 0 END), 0) as today_fees_only
+        FROM jumia_transactions 
+        WHERE deleted = false AND branch_id = ${effectiveBranchId}
+      `;
+    } else {
+      // MoMo fees (1% of transaction amount)
+      momoFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.01), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.01 ELSE 0 END), 0) as today_fees_only
+        FROM momo_transactions 
+        WHERE status = 'completed'
+      `;
+
+      // Agency Banking fees (0.5% of transaction amount)
+      agencyFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.005), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(date) = ${today} THEN amount * 0.005 ELSE 0 END), 0) as today_fees_only
+        FROM agency_banking_transactions 
+        WHERE status = 'completed'
+      `;
+
+      // E-Zwich fees (1% of withdrawal amount)
+      ezwichFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.01), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(transaction_date) = ${today} THEN amount * 0.01 ELSE 0 END), 0) as today_fees_only
+        FROM e_zwich_withdrawals 
+        WHERE status = 'completed'
+      `;
+
+      // Power fees (2% of transaction amount)
+      powerFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.02), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.02 ELSE 0 END), 0) as today_fees_only
+        FROM power_transactions 
+        WHERE status = 'completed'
+      `;
+
+      // Jumia fees (1% of transaction amount)
+      jumiaFeesRes = await sql`
+        SELECT 
+          COALESCE(SUM(amount * 0.01), 0) as today_fees,
+          COALESCE(SUM(CASE WHEN DATE(created_at) = ${today} THEN amount * 0.01 ELSE 0 END), 0) as today_fees_only
+        FROM jumia_transactions 
+        WHERE deleted = false
+      `;
+    }
+
+    const momoFees = Number(momoFeesRes[0]?.today_fees || 0);
+    const momoTodayFees = Number(momoFeesRes[0]?.today_fees_only || 0);
+    const agencyFees = Number(agencyFeesRes[0]?.today_fees || 0);
+    const agencyTodayFees = Number(agencyFeesRes[0]?.today_fees_only || 0);
+    const ezwichFees = Number(ezwichFeesRes[0]?.today_fees || 0);
+    const ezwichTodayFees = Number(ezwichFeesRes[0]?.today_fees_only || 0);
+    const powerFees = Number(powerFeesRes[0]?.today_fees || 0);
+    const powerTodayFees = Number(powerFeesRes[0]?.today_fees_only || 0);
+    const jumiaFees = Number(jumiaFeesRes[0]?.today_fees || 0);
+    const jumiaTodayFees = Number(jumiaFeesRes[0]?.today_fees_only || 0);
 
     // Branch stats (only for admin, or single branch for non-admin)
     const branchStatsRes = isAdmin
@@ -247,79 +641,103 @@ export async function GET(request: NextRequest) {
     const branchStats = branchStatsRes;
 
     // Daily breakdown for the last 7 days (filtered by branch for non-admin)
-    const dailyBreakdownRes = await sql`
-      SELECT 
-        DATE(created_at) as date,
-        COUNT(*) as transactions,
-        COALESCE(SUM(amount), 0) as volume
-      FROM (
-        SELECT created_at, amount FROM momo_transactions WHERE status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT created_at, amount FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT created_at, amount FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT created_at, amount FROM power_transactions WHERE status = 'completed' ${branchFilter}
-        UNION ALL
-        SELECT created_at, amount FROM jumia_transactions WHERE status = 'active' ${branchFilter}
-      ) combined_transactions
-      WHERE created_at >= NOW() - INTERVAL '7 days'
-      GROUP BY DATE(created_at)
-      ORDER BY date DESC
-    `;
+    let dailyBreakdownRes;
+    if (effectiveBranchId) {
+      dailyBreakdownRes = await sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as transactions,
+          COALESCE(SUM(amount), 0) as volume
+        FROM (
+          SELECT created_at, amount FROM momo_transactions WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+          UNION ALL
+          SELECT date as created_at, amount FROM agency_banking_transactions WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+          UNION ALL
+          SELECT transaction_date as created_at, amount FROM e_zwich_withdrawals WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+          UNION ALL
+          SELECT created_at, amount FROM power_transactions WHERE status = 'completed' AND branch_id = ${effectiveBranchId}
+          UNION ALL
+          SELECT created_at, amount FROM jumia_transactions WHERE deleted = false AND branch_id = ${effectiveBranchId}
+        ) all_transactions
+        WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `;
+    } else {
+      dailyBreakdownRes = await sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as transactions,
+          COALESCE(SUM(amount), 0) as volume
+        FROM (
+          SELECT created_at, amount FROM momo_transactions WHERE status = 'completed'
+          UNION ALL
+          SELECT date as created_at, amount FROM agency_banking_transactions WHERE status = 'completed'
+          UNION ALL
+          SELECT transaction_date as created_at, amount FROM e_zwich_withdrawals WHERE status = 'completed'
+          UNION ALL
+          SELECT created_at, amount FROM power_transactions WHERE status = 'completed'
+          UNION ALL
+          SELECT created_at, amount FROM jumia_transactions WHERE deleted = false
+        ) all_transactions
+        WHERE created_at >= CURRENT_DATE - INTERVAL '7 days'
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `;
+    }
     const dailyBreakdown = dailyBreakdownRes.map((row: any) => ({
       date: row.date,
       transactions: Number(row.transactions),
       volume: Number(row.volume),
-      commission: Number(row.volume) * 0.05, // 5% commission estimate
+      commission: Number(row.volume) * 0.01, // 1% average commission across all services
     }));
 
-    // Service stats with today's and total metrics
+    // Service stats with actual calculated fees
     const serviceStats = [
       {
         service: "MoMo",
         todayTransactions: todayMomoTransactions,
         todayVolume: todayMomoVolume,
-        todayFees: todayMomoVolume * 0.01, // 1% fee estimate
+        todayFees: momoTodayFees,
         totalTransactions: totalMomoTransactions,
         totalVolume: totalMomoVolume,
-        totalFees: totalMomoVolume * 0.01,
+        totalFees: momoFees,
       },
       {
         service: "Agency Banking",
         todayTransactions: todayAgencyTransactions,
         todayVolume: todayAgencyVolume,
-        todayFees: todayAgencyVolume * 0.005, // 0.5% fee estimate
+        todayFees: agencyTodayFees,
         totalTransactions: totalAgencyTransactions,
         totalVolume: totalAgencyVolume,
-        totalFees: totalAgencyVolume * 0.005,
+        totalFees: agencyFees,
       },
       {
         service: "E-Zwich",
         todayTransactions: todayEzwichTransactions,
         todayVolume: todayEzwichVolume,
-        todayFees: todayEzwichVolume * 0.01, // 1% fee estimate
+        todayFees: ezwichTodayFees,
         totalTransactions: totalEzwichTransactions,
         totalVolume: totalEzwichVolume,
-        totalFees: totalEzwichVolume * 0.01,
+        totalFees: ezwichFees,
       },
       {
         service: "Power",
         todayTransactions: todayPowerTransactions,
         todayVolume: todayPowerVolume,
-        todayFees: todayPowerVolume * 0.02, // 2% commission estimate
+        todayFees: powerTodayFees,
         totalTransactions: totalPowerTransactions,
         totalVolume: totalPowerVolume,
-        totalFees: totalPowerVolume * 0.02,
+        totalFees: powerFees,
       },
       {
         service: "Jumia",
         todayTransactions: todayJumiaTransactions,
         todayVolume: todayJumiaVolume,
-        todayFees: todayJumiaVolume * 0.01, // 1% fee estimate
+        todayFees: jumiaTodayFees,
         totalTransactions: totalJumiaTransactions,
         totalVolume: totalJumiaVolume,
-        totalFees: totalJumiaVolume * 0.01,
+        totalFees: jumiaFees,
       },
     ];
 

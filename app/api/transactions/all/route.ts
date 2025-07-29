@@ -214,8 +214,8 @@ export async function GET(request: NextRequest) {
           if (effectiveBranchId && effectiveBranchId !== "all") {
             withdrawals = await sql`
               SELECT 
-                ew.id, 'withdrawal' as type, ew.amount, ew.fee, ew.customer_name, ew.phone_number, 
-                ew.provider, ew.status, ew.created_at as date, ew.branch_id, ew.user_id, ew.reference,
+                ew.id, 'withdrawal' as type, ew.amount, ew.fee, ew.customer_name, ew.customer_phone as phone_number, 
+                ew.partner_bank as provider, ew.status, ew.created_at as date, ew.branch_id, ew.user_id, ew.reference,
                 b.name as branch_name
               FROM e_zwich_withdrawals ew
               LEFT JOIN branches b ON ew.branch_id = b.id
@@ -225,8 +225,8 @@ export async function GET(request: NextRequest) {
           } else {
             withdrawals = await sql`
               SELECT 
-                ew.id, 'withdrawal' as type, ew.amount, ew.fee, ew.customer_name, ew.phone_number, 
-                ew.provider, ew.status, ew.created_at as date, ew.branch_id, ew.user_id, ew.reference,
+                ew.id, 'withdrawal' as type, ew.amount, ew.fee, ew.customer_name, ew.customer_phone as phone_number, 
+                ew.partner_bank as provider, ew.status, ew.created_at as date, ew.branch_id, ew.user_id, ew.reference,
                 b.name as branch_name
               FROM e_zwich_withdrawals ew
               LEFT JOIN branches b ON ew.branch_id = b.id
@@ -239,8 +239,8 @@ export async function GET(request: NextRequest) {
           if (effectiveBranchId && effectiveBranchId !== "all") {
             cardIssuances = await sql`
               SELECT 
-                eci.id, 'card_issuance' as type, eci.amount, eci.fee, eci.customer_name, eci.phone_number, 
-                eci.provider, eci.status, eci.created_at as date, eci.branch_id, eci.user_id, eci.reference,
+                eci.id, 'card_issuance' as type, eci.fee_charged as amount, eci.fee_charged as fee, eci.customer_name, eci.customer_phone as phone_number, 
+                eci.partner_bank as provider, eci.status, eci.created_at as date, eci.branch_id, eci.issued_by as user_id, eci.reference,
                 b.name as branch_name
               FROM e_zwich_card_issuances eci
               LEFT JOIN branches b ON eci.branch_id = b.id
@@ -250,8 +250,8 @@ export async function GET(request: NextRequest) {
           } else {
             cardIssuances = await sql`
               SELECT 
-                eci.id, 'card_issuance' as type, eci.amount, eci.fee, eci.customer_name, eci.phone_number, 
-                eci.provider, eci.status, eci.created_at as date, eci.branch_id, eci.user_id, eci.reference,
+                eci.id, 'card_issuance' as type, eci.fee_charged as amount, eci.fee_charged as fee, eci.customer_name, eci.customer_phone as phone_number, 
+                eci.partner_bank as provider, eci.status, eci.created_at as date, eci.branch_id, eci.issued_by as user_id, eci.reference,
                 b.name as branch_name
               FROM e_zwich_card_issuances eci
               LEFT JOIN branches b ON eci.branch_id = b.id

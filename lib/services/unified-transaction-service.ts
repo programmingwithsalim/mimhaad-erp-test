@@ -653,7 +653,7 @@ export class UnifiedTransactionService {
           data.customerName
         },
             ${data.amount}, ${data.fee}, ${data.provider}, 
-            ${data.reference || `EZWICH-WD-${Date.now()}`}, 'completed'
+            ${data.reference || `EZWICH-WD-${Date.now()}`}, 'pending'
           )
           RETURNING *
         `;
@@ -1137,7 +1137,11 @@ export class UnifiedTransactionService {
         processedBy: data.processedBy,
         branchId: data.branchId,
         branchName: "Branch",
-        metadata: data.metadata || {},
+        metadata: {
+          ...data.metadata,
+          provider: data.provider, // Pass provider in metadata for GL account naming
+          actualProvider: data.provider, // Also pass as actualProvider for consistency
+        },
       });
     } catch (error) {
       console.error("Error creating GL entries:", error);
@@ -1212,6 +1216,8 @@ export class UnifiedTransactionService {
           reason: reason,
           originalAmount: transaction.amount,
           originalFee: transaction.fee || 0,
+          provider: transaction.provider, // Pass provider for correct GL account naming
+          actualProvider: transaction.provider, // Also pass as actualProvider for consistency
         },
       });
 

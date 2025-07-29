@@ -44,6 +44,7 @@ export class FloatAccountService {
     provider?: string;
     account_number: string;
     initial_balance?: number;
+    userId?: string; // Add userId parameter
   }): Promise<FloatAccount> {
     try {
       console.log("💰 [FLOAT] Creating float account:", data);
@@ -146,7 +147,7 @@ export class FloatAccountService {
 
       console.log("✅ [FLOAT] Float account created:", floatAccount.id);
 
-      // Create GL accounts and mappings using the AutoGLMappingService
+      // Create GL accounts and mappings using AutoGLMappingService
       try {
         const module = this.getModuleFromAccountType(floatAccount.account_type);
         const transactionType = `${floatAccount.account_type.replace(
@@ -161,9 +162,42 @@ export class FloatAccountService {
           module,
           transactionType,
           floatAccount.branch_id,
-          requiredMappings
+          requiredMappings,
+          floatAccount.id, // Pass the float account ID
+          floatAccount.provider // Pass the actual provider
         );
         console.log("✅ [FLOAT] GL accounts and mappings created successfully");
+
+        // Create GL entries for initial balance if provided
+        if (data.initial_balance && data.initial_balance > 0) {
+          try {
+            const { FloatAccountGLService } = await import(
+              "./float-account-gl-service"
+            );
+            const glResult =
+              await FloatAccountGLService.createInitialBalanceGLEntries(
+                floatAccount.id,
+                data.initial_balance,
+                data.userId || "system", // processedBy
+                floatAccount.branch_id
+              );
+
+            if (glResult.success) {
+              console.log("✅ [FLOAT] GL entries created for initial balance");
+            } else {
+              console.warn(
+                "⚠️ [FLOAT] Failed to create GL entries for initial balance:",
+                glResult.error
+              );
+            }
+          } catch (glEntryError) {
+            console.error(
+              "❌ [FLOAT] Failed to create GL entries for initial balance:",
+              glEntryError
+            );
+            // Don't fail the entire operation for GL entry issues
+          }
+        }
       } catch (glError) {
         console.error(
           "❌ [FLOAT] Failed to create GL accounts/mappings:",
@@ -224,7 +258,8 @@ export class FloatAccountService {
         module,
         transactionType,
         floatAccount.branch_id,
-        existingMappings
+        existingMappings,
+        floatAccount.id // Pass the float account ID
       );
 
       console.log(

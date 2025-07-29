@@ -15,7 +15,8 @@ export interface UnifiedGLTransactionData {
     | "jumia"
     | "expenses"
     | "commissions"
-    | "float_transfers";
+    | "float_transfers"
+    | "float_operations";
   transactionType: string;
   amount: number;
   fee: number;
@@ -263,6 +264,29 @@ export class UnifiedGLPostingService {
         branchId
       );
 
+      // Special handling for float operations with custom entries
+      if (sourceModule === "float_operations" && data.metadata?.customEntries) {
+        console.log(
+          "🔍 [DEBUG] Processing float operations with custom entries"
+        );
+
+        // Get account codes for the custom entries
+        const accountCodes: Record<string, string> = {};
+        for (const customEntry of data.metadata.customEntries) {
+          const accountCode = await this.getAccountCodeById(
+            customEntry.accountId
+          );
+          if (accountCode) {
+            accountCodes[customEntry.accountId] = accountCode;
+          }
+        }
+
+        return {
+          customEntries: data.metadata.customEntries,
+          accountCodes: accountCodes,
+        };
+      }
+
       // Determine the correct transaction type based on source module and float account
       let actualTransactionType = transactionType;
 
@@ -316,7 +340,52 @@ export class UnifiedGLPostingService {
 
       console.log("🔍 [DEBUG] Found GL mappings:", mappings);
 
-      if (mappings.length === 0) {
+      // Get the actual provider from the transaction data
+      const actualProvider =
+        data.metadata?.provider || data.metadata?.actualProvider;
+
+      // If we have a specific provider, try to find provider-specific mappings
+      if (actualProvider && mappings.length > 0) {
+        const expectedProviderCode = actualProvider
+          .toUpperCase()
+          .replace(/\s+/g, "");
+
+        // Filter mappings to find provider-specific ones
+        const providerSpecificMappings = mappings.filter((mapping) =>
+          mapping.gl_account_code.includes(expectedProviderCode)
+        );
+
+        if (providerSpecificMappings.length > 0) {
+          console.log(
+            `🔍 [DEBUG] Found ${providerSpecificMappings.length} provider-specific mappings for '${actualProvider}'`
+          );
+          return this.formatGLAccounts(providerSpecificMappings);
+        } else {
+          console.log(
+            `🔍 [DEBUG] No provider-specific mappings found for '${actualProvider}', will create them`
+          );
+        }
+      }
+
+      // Check if we need to create provider-specific mappings
+      let shouldCreateProviderSpecificMappings = false;
+      if (actualProvider && mappings.length > 0) {
+        const expectedProviderCode = actualProvider
+          .toUpperCase()
+          .replace(/\s+/g, "");
+        const hasCorrectProvider = mappings.some((mapping) =>
+          mapping.gl_account_code.includes(expectedProviderCode)
+        );
+
+        if (!hasCorrectProvider) {
+          console.log(
+            `🔍 [DEBUG] No mappings found for provider '${actualProvider}', will create provider-specific mappings`
+          );
+          shouldCreateProviderSpecificMappings = true;
+        }
+      }
+
+      if (mappings.length === 0 || shouldCreateProviderSpecificMappings) {
         // Try to get default mappings from the main branch
         const defaultMappings = await sql`
           SELECT 
@@ -339,11 +408,14 @@ export class UnifiedGLPostingService {
           try {
             const requiredMappings =
               this.getRequiredMappingsForModule(sourceModule);
+
             await AutoGLMappingService.ensureGLMappings(
               sourceModule,
               actualTransactionType,
               branchId,
-              requiredMappings
+              requiredMappings,
+              undefined, // floatAccountId
+              actualProvider // Pass the actual provider
             );
 
             // Try to get the mappings again after creation
@@ -359,33 +431,93 @@ export class UnifiedGLPostingService {
                 AND gm.is_active = true
             `;
 
-            if (newMappings.length > 0) {
-              console.log(
-                "🔍 [DEBUG] Successfully created and found GL mappings:",
-                newMappings
-              );
-              return this.formatGLAccounts(newMappings);
-            }
-          } catch (autoMappingError) {
+            console.log(
+              "🔍 [DEBUG] Successfully created and found GL mappings:",
+              newMappings
+            );
+            return this.formatGLAccounts(newMappings);
+          } catch (error) {
             console.error(
               "🔍 [DEBUG] Failed to create GL mappings automatically:",
-              autoMappingError
+              error
             );
+            return {};
+          }
+        } else {
+          // Check if default mappings also use the correct provider
+          if (actualProvider) {
+            const expectedProviderCode = actualProvider
+              .toUpperCase()
+              .replace(/\s+/g, "");
+            const hasCorrectProvider = defaultMappings.some((mapping) =>
+              mapping.gl_account_code.includes(expectedProviderCode)
+            );
+
+            if (!hasCorrectProvider) {
+              console.log(
+                `🔍 [DEBUG] Default mappings also don't use correct provider '${actualProvider}', creating new ones`
+              );
+
+              try {
+                const requiredMappings =
+                  this.getRequiredMappingsForModule(sourceModule);
+
+                await AutoGLMappingService.ensureGLMappings(
+                  sourceModule,
+                  actualTransactionType,
+                  branchId,
+                  requiredMappings,
+                  undefined, // floatAccountId
+                  actualProvider // Pass the actual provider
+                );
+
+                // Try to get the mappings again after creation
+                const newMappings = await sql`
+                  SELECT 
+                    gm.mapping_type, 
+                    gm.gl_account_id, 
+                    ga.code as gl_account_code
+                  FROM gl_mappings gm
+                  JOIN gl_accounts ga ON gm.gl_account_id = ga.id
+                  WHERE gm.transaction_type = ${actualTransactionType}
+                    AND gm.branch_id = ${branchId}
+                    AND gm.is_active = true
+                `;
+
+                console.log(
+                  "🔍 [DEBUG] Successfully created and found GL mappings:",
+                  newMappings
+                );
+                return this.formatGLAccounts(newMappings);
+              } catch (error) {
+                console.error(
+                  "🔍 [DEBUG] Failed to create GL mappings automatically:",
+                  error
+                );
+                return {};
+              }
+            }
           }
 
-          throw new Error(
-            `No GL mappings found for transaction type: ${actualTransactionType}`
+          console.log(
+            "🔍 [DEBUG] Using default mappings from main branch:",
+            defaultMappings
           );
+          return this.formatGLAccounts(defaultMappings);
         }
-
-        console.log("🔍 [DEBUG] Using default GL mappings:", defaultMappings);
-        return this.formatGLAccounts(defaultMappings);
       }
 
+      console.log(
+        "🔍 [DEBUG] Successfully created and found GL mappings:",
+        mappings
+      );
       return this.formatGLAccounts(mappings);
     } catch (error) {
-      console.error("🔷 [GL] Error getting GL accounts:", error);
-      throw error;
+      console.error(
+        "🔍 [DEBUG] Error getting GL accounts for transaction:",
+        error
+      );
+      return {};
     }
   }
 
@@ -405,6 +537,22 @@ export class UnifiedGLPostingService {
     }
   }
 
+  private static async getAccountCodeById(
+    accountId: string
+  ): Promise<string | null> {
+    try {
+      const result = await sql`
+        SELECT code FROM gl_accounts 
+        WHERE id = ${accountId}
+        LIMIT 1
+      `;
+      return result.length > 0 ? result[0].code : null;
+    } catch (error) {
+      console.error("Error getting GL account code by ID:", error);
+      return null;
+    }
+  }
+
   /**
    * Get required mapping types for a module
    */
@@ -417,19 +565,19 @@ export class UnifiedGLPostingService {
       case "e_zwich":
         return ["main", "liability", "fee", "revenue"];
       case "power":
-        return ["main", "revenue", "fee"];
+        return ["main", "liability", "fee", "revenue"];
       case "jumia":
-        return ["main", "liability", "revenue"];
-      case "commissions":
-        return ["main", "revenue"];
+        return ["main", "liability", "fee", "revenue"];
       case "expenses":
-        return ["main", "expense"];
+        return ["expense", "asset"];
+      case "commissions":
+        return ["expense", "asset"];
       case "float_transfers":
-        return ["source", "destination", "fee", "revenue"];
-      case "e-zwich-inventory":
-        return ["main", "inventory"];
+        return ["main", "asset"];
+      case "float_operations":
+        return ["main", "revenue", "expense", "asset"];
       default:
-        return ["main", "revenue"];
+        return ["main"];
     }
   }
 
@@ -474,6 +622,69 @@ export class UnifiedGLPostingService {
 
     // Create entries based on transaction type
     switch (data.transactionType) {
+      case "initial_balance":
+      case "recharge":
+      case "withdrawal":
+      case "balance_adjustment":
+      case "transfer":
+        // Handle float operations with custom entries
+        if (
+          data.metadata?.customEntries &&
+          Array.isArray(data.metadata.customEntries)
+        ) {
+          // Use the custom entries provided in metadata
+          for (const customEntry of data.metadata.customEntries) {
+            const accountCode =
+              accounts.accountCodes?.[customEntry.accountId] || "";
+            entries.push({
+              accountId: customEntry.accountId,
+              accountCode: accountCode,
+              debit: customEntry.debit,
+              credit: customEntry.credit,
+              description: customEntry.description,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                floatAccountId: data.metadata.floatAccountId,
+                operationType: data.metadata.operationType,
+              },
+            });
+          }
+        } else {
+          // Fallback to default float operation entries
+          if (accounts.main && accounts.liability) {
+            entries.push({
+              accountId: accounts.main,
+              accountCode: accounts.mainCode,
+              debit: data.amount,
+              credit: 0,
+              description: `Float ${data.transactionType} - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                floatAccountId: data.metadata?.floatAccountId,
+              },
+            });
+
+            entries.push({
+              accountId: accounts.liability,
+              accountCode: accounts.liabilityCode,
+              debit: 0,
+              credit: data.amount,
+              description: `Float ${data.transactionType} Liability - ${data.reference}`,
+              metadata: {
+                transactionId: data.transactionId,
+                sourceModule: data.sourceModule,
+                transactionType: data.transactionType,
+                floatAccountId: data.metadata?.floatAccountId,
+              },
+            });
+          }
+        }
+        break;
+
       case "cash-in":
         // MoMo Cash-In: Debit cash account, credit liability account
         if (accounts.main && accounts.liability) {
@@ -956,6 +1167,178 @@ export class UnifiedGLPostingService {
                 customerName: data.customerName,
               },
             });
+          }
+        }
+        break;
+
+      case "float_operations":
+        // Float operations: Handle initial balance, recharge, withdrawal, etc.
+        if (accounts.main) {
+          const operationType =
+            data.metadata?.operationType || data.transactionType;
+
+          switch (operationType) {
+            case "initial_balance":
+              // Initial balance setup: Debit the float account
+              entries.push({
+                accountId: accounts.main,
+                accountCode: accounts.mainCode,
+                debit: data.amount,
+                credit: 0,
+                description: `Initial float balance setup - ${data.reference}`,
+                metadata: {
+                  transactionId: data.transactionId,
+                  sourceModule: data.sourceModule,
+                  transactionType: data.transactionType,
+                  operationType: "initial_balance",
+                  floatAccountId: data.metadata?.floatAccountId,
+                },
+              });
+              break;
+
+            case "recharge":
+              // Float recharge: Debit the float account, credit revenue
+              entries.push({
+                accountId: accounts.main,
+                accountCode: accounts.mainCode,
+                debit: data.amount,
+                credit: 0,
+                description: `Float recharge via ${
+                  data.metadata?.rechargeMethod || "unknown"
+                } - ${data.reference}`,
+                metadata: {
+                  transactionId: data.transactionId,
+                  sourceModule: data.sourceModule,
+                  transactionType: data.transactionType,
+                  operationType: "recharge",
+                  floatAccountId: data.metadata?.floatAccountId,
+                  rechargeMethod: data.metadata?.rechargeMethod,
+                },
+              });
+
+              // Credit revenue account if available
+              if (accounts.revenue) {
+                entries.push({
+                  accountId: accounts.revenue,
+                  accountCode: accounts.revenueCode,
+                  debit: 0,
+                  credit: data.amount,
+                  description: `Float recharge revenue - ${data.reference}`,
+                  metadata: {
+                    transactionId: data.transactionId,
+                    sourceModule: data.sourceModule,
+                    transactionType: data.transactionType,
+                    operationType: "recharge",
+                    floatAccountId: data.metadata?.floatAccountId,
+                    rechargeMethod: data.metadata?.rechargeMethod,
+                  },
+                });
+              }
+              break;
+
+            case "withdrawal":
+              // Float withdrawal: Credit the float account, debit expense
+              entries.push({
+                accountId: accounts.main,
+                accountCode: accounts.mainCode,
+                debit: 0,
+                credit: data.amount,
+                description: `Float withdrawal - ${data.reference}`,
+                metadata: {
+                  transactionId: data.transactionId,
+                  sourceModule: data.sourceModule,
+                  transactionType: data.transactionType,
+                  operationType: "withdrawal",
+                  floatAccountId: data.metadata?.floatAccountId,
+                },
+              });
+
+              // Debit expense account if available
+              if (accounts.expense) {
+                entries.push({
+                  accountId: accounts.expense,
+                  accountCode: accounts.expenseCode,
+                  debit: data.amount,
+                  credit: 0,
+                  description: `Float withdrawal expense - ${data.reference}`,
+                  metadata: {
+                    transactionId: data.transactionId,
+                    sourceModule: data.sourceModule,
+                    transactionType: data.transactionType,
+                    operationType: "withdrawal",
+                    floatAccountId: data.metadata?.floatAccountId,
+                  },
+                });
+              }
+              break;
+
+            case "transfer":
+              // Float transfer: Debit source account, credit destination account
+              const sourceAccountId =
+                data.metadata?.sourceAccountId || accounts.main;
+              const sourceAccountCode =
+                data.metadata?.sourceAccountCode || accounts.mainCode;
+              const destAccountId = data.metadata?.destinationAccountId;
+              const destAccountCode = data.metadata?.destinationAccountCode;
+
+              if (destAccountId && destAccountCode) {
+                // Debit source account
+                entries.push({
+                  accountId: sourceAccountId,
+                  accountCode: sourceAccountCode,
+                  debit: 0,
+                  credit: data.amount,
+                  description: `Float transfer from ${
+                    data.metadata?.sourceAccountName || "source"
+                  } - ${data.reference}`,
+                  metadata: {
+                    transactionId: data.transactionId,
+                    sourceModule: data.sourceModule,
+                    transactionType: data.transactionType,
+                    operationType: "transfer",
+                    sourceAccountId,
+                    destinationAccountId: destAccountId,
+                  },
+                });
+
+                // Credit destination account
+                entries.push({
+                  accountId: destAccountId,
+                  accountCode: destAccountCode,
+                  debit: data.amount,
+                  credit: 0,
+                  description: `Float transfer to ${
+                    data.metadata?.destinationAccountName || "destination"
+                  } - ${data.reference}`,
+                  metadata: {
+                    transactionId: data.transactionId,
+                    sourceModule: data.sourceModule,
+                    transactionType: data.transactionType,
+                    operationType: "transfer",
+                    sourceAccountId,
+                    destinationAccountId: destAccountId,
+                  },
+                });
+              }
+              break;
+
+            default:
+              // Generic float operation
+              entries.push({
+                accountId: accounts.main,
+                accountCode: accounts.mainCode,
+                debit: data.amount > 0 ? data.amount : 0,
+                credit: data.amount < 0 ? Math.abs(data.amount) : 0,
+                description: `${operationType} - ${data.reference}`,
+                metadata: {
+                  transactionId: data.transactionId,
+                  sourceModule: data.sourceModule,
+                  transactionType: data.transactionType,
+                  operationType,
+                  floatAccountId: data.metadata?.floatAccountId,
+                },
+              });
+              break;
           }
         }
         break;

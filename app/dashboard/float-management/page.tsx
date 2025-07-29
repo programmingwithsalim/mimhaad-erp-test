@@ -39,7 +39,7 @@ import { FloatRechargeDialog } from "@/components/float-management/float-recharg
 import { CreateFloatAccountModal } from "@/components/float-management/create-float-account-modal";
 import { EditFloatAccountModal } from "@/components/float-management/edit-float-account-modal";
 import { DeleteAccountDialog } from "@/components/float-management/delete-account-dialog";
-import { StatementGenerator } from "@/components/float-management/statement-generator";
+import { GenerateStatement } from "@/components/float-management/generate-statement";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -78,7 +78,8 @@ export default function FloatManagementPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isStatementDialogOpen, setIsStatementDialogOpen] = useState(false);
+  const [isGenerateStatementDialogOpen, setIsGenerateStatementDialogOpen] =
+    useState(false);
   const [accountTypeFilter, setAccountTypeFilter] = useState<string>("");
   const [providerFilter, setProviderFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -265,9 +266,9 @@ export default function FloatManagementPage() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleStatement = (account: FloatAccountData) => {
+  const handleGenerateStatement = (account: FloatAccountData) => {
     setSelectedAccount(account);
-    setIsStatementDialogOpen(true);
+    setIsGenerateStatementDialogOpen(true);
   };
 
   const handleReactivate = async (account: FloatAccountData) => {
@@ -312,7 +313,7 @@ export default function FloatManagementPage() {
     setIsCreateModalOpen(false);
     setIsEditModalOpen(false);
     setIsDeleteDialogOpen(false);
-    setIsStatementDialogOpen(false);
+    setIsGenerateStatementDialogOpen(false);
     setSelectedAccount(null);
   };
 
@@ -816,10 +817,10 @@ export default function FloatManagementPage() {
                               </CardTitle>
                               <CardDescription>
                                 {isAdmin && account.branch_name ? (
-                                  <div className="flex items-center gap-1">
-                                    <Building2 className="h-3 w-3" />
+                                  <>
+                                    <Building2 className="h-3 w-3 inline mr-1" />
                                     {account.branch_name}
-                                  </div>
+                                  </>
                                 ) : (
                                   account.branch_name || "Branch"
                                 )}
@@ -872,10 +873,12 @@ export default function FloatManagementPage() {
                                   Edit
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={() => handleStatement(account)}
+                                  onClick={() =>
+                                    handleGenerateStatement(account)
+                                  }
                                 >
                                   <FileText className="h-4 w-4 mr-2" />
-                                  Statement
+                                  Generate Statement
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
                                   onClick={() => handleDelete(account)}
@@ -1046,19 +1049,15 @@ export default function FloatManagementPage() {
         onSuccess={handleSuccess}
       />
 
-      <StatementGenerator
-        account={
+      <GenerateStatement
+        floatAccountId={selectedAccount?.id || ""}
+        floatAccountName={
           selectedAccount
-            ? {
-                id: selectedAccount.id,
-                provider: selectedAccount.provider,
-                account_type: selectedAccount.account_type,
-                current_balance: selectedAccount.current_balance,
-              }
-            : null
+            ? `${selectedAccount.provider} (${selectedAccount.account_type})`
+            : ""
         }
-        open={isStatementDialogOpen}
-        onOpenChange={setIsStatementDialogOpen}
+        open={isGenerateStatementDialogOpen}
+        onOpenChange={setIsGenerateStatementDialogOpen}
       />
     </div>
   );

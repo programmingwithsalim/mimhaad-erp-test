@@ -7,10 +7,10 @@ const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
 
     const result = await sql`
       SELECT 
@@ -47,10 +47,10 @@ export async function GET(
 
 export async function PATCH(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     // Get current user for role-based access
@@ -137,10 +137,10 @@ export async function PATCH(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
 
     // Get current user for role-based access
@@ -184,6 +184,18 @@ export async function PUT(
       }
     }
 
+    // Get current account to check if balance is being changed
+    const [currentAccount] = await sql`
+      SELECT current_balance, branch_id FROM float_accounts WHERE id = ${id}
+    `;
+
+    if (!currentAccount) {
+      return NextResponse.json(
+        { success: false, error: "Float account not found" },
+        { status: 404 }
+      );
+    }
+
     // Update the float account
     const result = await sql`
       UPDATE float_accounts SET
@@ -207,6 +219,42 @@ export async function PUT(
       );
     }
 
+    // Create GL entries if balance was adjusted
+    if (
+      current_balance !== undefined &&
+      current_balance !== currentAccount.current_balance
+    ) {
+      const adjustmentAmount =
+        current_balance - Number(currentAccount.current_balance);
+      const reason =
+        adjustmentAmount > 0
+          ? "Manual balance increase"
+          : "Manual balance decrease";
+
+      try {
+        const { FloatAccountGLService } = await import(
+          "@/lib/services/float-account-gl-service"
+        );
+        await FloatAccountGLService.createBalanceAdjustmentGLEntries(
+          id,
+          adjustmentAmount,
+          reason,
+          user.id,
+          currentAccount.branch_id,
+          `Balance adjustment: ${reason}`
+        );
+        console.log(
+          "✅ [FLOAT-EDIT] GL entries created for balance adjustment"
+        );
+      } catch (glError) {
+        console.error(
+          "❌ [FLOAT-EDIT] Failed to create GL entries for balance adjustment:",
+          glError
+        );
+        // Don't fail the entire operation for GL entry issues
+      }
+    }
+
     return NextResponse.json({
       success: true,
       account: result[0],
@@ -227,10 +275,10 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { password } = body;
 

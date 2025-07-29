@@ -178,6 +178,25 @@ export async function POST(request: Request) {
       RETURNING *
     `;
 
+    // Create GL entries for recharge
+    try {
+      const { FloatAccountGLService } = await import(
+        "@/lib/services/float-account-gl-service"
+      );
+      await FloatAccountGLService.createRechargeGLEntries(
+        accountId,
+        rechargeAmount,
+        "transfer", // Since this is a transfer from another account
+        performedBy,
+        targetAccount[0].branch_id,
+        reference || `RECHARGE-${Date.now()}`
+      );
+      console.log("✅ [RECHARGE] GL entries created for recharge");
+    } catch (glError) {
+      console.error("❌ [RECHARGE] Failed to create GL entries:", glError);
+      // Don't fail the operation for GL entry issues
+    }
+
     console.log("✅ [RECHARGE] Recharge processed successfully");
 
     return NextResponse.json({

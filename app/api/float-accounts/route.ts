@@ -358,6 +358,7 @@ export async function POST(request: NextRequest) {
       provider,
       account_number: account_number || provider || account_type,
       initial_balance: current_balance || 0,
+      userId: user.id, // Pass the user ID
     });
 
     return NextResponse.json({

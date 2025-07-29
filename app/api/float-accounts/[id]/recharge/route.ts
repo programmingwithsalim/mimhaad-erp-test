@@ -5,7 +5,7 @@ import { getDatabaseSession } from "@/lib/database-session-service";
 
 export async function POST(
   request: Request,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // Convert to NextRequest for cookie access
@@ -110,7 +110,7 @@ export async function POST(
         NOW()
       )
     `;
-    await client.query(transferOutQuery, [
+    await client(transferOutQuery, [
       sourceAccountId,
       `Transfer to ${targetAccount.provider}`,
       user.id,
@@ -133,14 +133,46 @@ export async function POST(
         NOW()
       )
     `;
-    await client.query(rechargeQuery, [
+    await client(rechargeQuery, [
       accountId,
       `Recharge from ${sourceAccount.provider}`,
       user.id,
       user.branchId,
     ]);
 
-    // 8. Success response
+    // 8. Create GL entries for the recharge operation
+    try {
+      const { FloatAccountGLService } = await import(
+        "@/lib/services/float-account-gl-service"
+      );
+
+      // Create GL entries for source account withdrawal
+      await FloatAccountGLService.createWithdrawalGLEntries(
+        sourceAccountId,
+        amount,
+        "transfer",
+        user.id,
+        user.branchId,
+        `Transfer to ${targetAccount.provider}`
+      );
+
+      // Create GL entries for target account recharge
+      await FloatAccountGLService.createRechargeGLEntries(
+        accountId,
+        amount,
+        "transfer",
+        user.id,
+        user.branchId,
+        `Recharge from ${sourceAccount.provider}`
+      );
+
+      console.log("✅ [RECHARGE] GL entries created successfully");
+    } catch (glError) {
+      console.error("❌ [RECHARGE] Failed to create GL entries:", glError);
+      // Don't fail the entire operation for GL entry issues
+    }
+
+    // 9. Success response
     return NextResponse.json({
       success: true,
       message: "Recharge successful",

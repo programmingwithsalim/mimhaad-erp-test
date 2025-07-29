@@ -10,59 +10,42 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url);
-    const accountId = searchParams.get("accountId");
+    const accountId =
+      searchParams.get("accountId") || searchParams.get("floatAccountId");
     const type = searchParams.get("type");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
     const limit = parseInt(searchParams.get("limit") || "50");
     const offset = parseInt(searchParams.get("offset") || "0");
 
-    let query = sql`
+    // Build the complete query with all conditions
+    const query = sql`
       SELECT 
         ft.id,
-        ft.account_id,
-        ft.type,
+        ft.float_account_id,
+        ft.transaction_type,
         ft.amount,
         ft.balance_before,
         ft.balance_after,
         ft.description,
         ft.created_at,
         ft.reference,
-        ft.recharge_method,
         fa.provider,
         fa.account_type,
         u.name as created_by_name
       FROM float_transactions ft
-      LEFT JOIN float_accounts fa ON ft.account_id = fa.id
-      LEFT JOIN users u ON ft.created_by = u.id
+      LEFT JOIN float_accounts fa ON ft.float_account_id = fa.id
+      LEFT JOIN users u ON ft.processed_by = u.id
       WHERE 1=1
-    `;
-
-    const params: any[] = [];
-
-    if (accountId) {
-      query = sql`${query} AND ft.account_id = ${accountId}`;
-    }
-
-    if (type) {
-      query = sql`${query} AND ft.type = ${type}`;
-    }
-
-    if (startDate) {
-      query = sql`${query} AND ft.created_at >= ${startDate}`;
-    }
-
-    if (endDate) {
-      query = sql`${query} AND ft.created_at <= ${endDate}`;
-    }
-
-    // Add branch filter for non-admin users
-    if (session.user.role !== "Admin" && session.user.branchId) {
-      query = sql`${query} AND ft.branch_id = ${session.user.branchId}`;
-    }
-
-    query = sql`
-      ${query}
+      ${accountId ? sql`AND ft.float_account_id = ${accountId}` : sql``}
+      ${type ? sql`AND ft.transaction_type = ${type}` : sql``}
+      ${startDate ? sql`AND ft.created_at >= ${startDate}` : sql``}
+      ${endDate ? sql`AND ft.created_at <= ${endDate}` : sql``}
+      ${
+        session.user.role !== "Admin" && session.user.branchId
+          ? sql`AND ft.branch_id = ${session.user.branchId}`
+          : sql``
+      }
       ORDER BY ft.created_at DESC
       LIMIT ${limit}
       OFFSET ${offset}
@@ -71,31 +54,20 @@ export async function GET(request: Request) {
     const transactions = await query;
 
     // Get total count for pagination
-    let countQuery = sql`
+    const countQuery = sql`
       SELECT COUNT(*) as total
       FROM float_transactions ft
       WHERE 1=1
+      ${accountId ? sql`AND ft.float_account_id = ${accountId}` : sql``}
+      ${type ? sql`AND ft.transaction_type = ${type}` : sql``}
+      ${startDate ? sql`AND ft.created_at >= ${startDate}` : sql``}
+      ${endDate ? sql`AND ft.created_at <= ${endDate}` : sql``}
+      ${
+        session.user.role !== "Admin" && session.user.branchId
+          ? sql`AND ft.branch_id = ${session.user.branchId}`
+          : sql``
+      }
     `;
-
-    if (accountId) {
-      countQuery = sql`${countQuery} AND ft.account_id = ${accountId}`;
-    }
-
-    if (type) {
-      countQuery = sql`${countQuery} AND ft.type = ${type}`;
-    }
-
-    if (startDate) {
-      countQuery = sql`${countQuery} AND ft.created_at >= ${startDate}`;
-    }
-
-    if (endDate) {
-      countQuery = sql`${countQuery} AND ft.created_at <= ${endDate}`;
-    }
-
-    if (session.user.role !== "Admin" && session.user.branchId) {
-      countQuery = sql`${countQuery} AND ft.branch_id = ${session.user.branchId}`;
-    }
 
     const countResult = await countQuery;
     const total = countResult[0]?.total || 0;

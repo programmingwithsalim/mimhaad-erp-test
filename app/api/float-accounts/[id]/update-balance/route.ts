@@ -101,7 +101,7 @@ async function logTransaction(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string  }> }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   const session = await getSession();
   if (!session?.user || session.user.role?.toLowerCase() !== "super-admin") {
@@ -207,6 +207,30 @@ export async function POST(
       newBalance,
       description || "Balance update"
     );
+
+    // Create GL entries for balance adjustment
+    try {
+      const { FloatAccountGLService } = await import(
+        "@/lib/services/float-account-gl-service"
+      );
+      await FloatAccountGLService.createBalanceAdjustmentGLEntries(
+        accountId,
+        amount,
+        description || "Balance adjustment",
+        session.user.id,
+        account.branch_id,
+        `BAL-ADJ-${Date.now()}`
+      );
+      console.log(
+        "✅ [BALANCE-UPDATE] GL entries created for balance adjustment"
+      );
+    } catch (glError) {
+      console.error(
+        "❌ [BALANCE-UPDATE] Failed to create GL entries:",
+        glError
+      );
+      // Don't fail the operation for GL entry issues
+    }
 
     return NextResponse.json({
       success: true,

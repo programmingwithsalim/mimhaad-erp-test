@@ -17,79 +17,99 @@ export async function GET(request: NextRequest) {
     });
 
     // Build WHERE conditions as template literals
-    let whereClause = sql``;
+    let whereConditions = [];
+
     if (branchId && branchId !== "all") {
-      whereClause = sql`WHERE branch_id::text = ${branchId} AND deleted = false`;
-      if (dateFrom) {
-        whereClause = sql`${whereClause} AND created_at >= ${dateFrom}`;
-      }
-      if (dateTo) {
-        whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
-      }
-    } else if (dateFrom || dateTo) {
-      whereClause = sql`WHERE deleted = false`;
-      if (dateFrom) {
-        whereClause = sql`${whereClause} AND created_at >= ${dateFrom}`;
-        if (dateTo) {
-          whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
-        }
-      } else if (dateTo) {
-        whereClause = sql`${whereClause} AND created_at <= ${dateTo}`;
-      }
-    } else {
-      whereClause = sql`WHERE deleted = false`;
+      whereConditions.push(sql`branch_id::text = ${branchId}`);
     }
+
+    whereConditions.push(sql`deleted = false`);
+
+    if (dateFrom) {
+      whereConditions.push(sql`created_at >= ${dateFrom}`);
+    }
+
+    if (dateTo) {
+      whereConditions.push(sql`created_at <= ${dateTo}`);
+    }
+
+    const whereClause =
+      whereConditions.length > 0
+        ? sql`WHERE ${whereConditions.reduce(
+            (acc, condition) => sql`${acc} AND ${condition}`
+          )}`
+        : sql``;
 
     // Get transaction statistics
     const statsResult = await sql`
       SELECT 
         COUNT(*) as total_count,
-        COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount,
-        COUNT(CASE WHEN transaction_type = 'package_receipt' THEN 1 END) as package_count,
-        COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as pod_count,
-        COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as pod_amount,
-        COUNT(CASE WHEN transaction_type = 'settlement' THEN 1 END) as settlement_count,
-        COALESCE(SUM(CASE WHEN transaction_type = 'settlement' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as settlement_amount
-      FROM jumia_transactions
+        COALESCE(SUM(amount), 0) as total_amount,
+        COUNT(CASE WHEN deleted = false THEN 1 END) as active_count,
+        COALESCE(SUM(CASE WHEN deleted = false THEN amount ELSE 0 END), 0) as active_amount,
+        COUNT(CASE WHEN deleted = true THEN 1 END) as deleted_count,
+        COALESCE(SUM(CASE WHEN deleted = true THEN amount ELSE 0 END), 0) as deleted_amount
+      FROM jumia_transactions 
       ${whereClause}
     `;
     const stats = statsResult[0] || {};
 
     // Get today's statistics (exclude settlements)
-    const todayStats = await sql`
-      SELECT 
-        COUNT(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN 1 END) as today_count,
-        COALESCE(SUM(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_amount,
-        COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_pod_count,
-        COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_pod_amount
-      FROM jumia_transactions
-      WHERE created_at >= CURRENT_DATE 
-      AND deleted = false
-      ${
-        branchId && branchId !== "all"
-          ? sql`AND branch_id::text = ${branchId}`
-          : sql``
-      }
-    `;
+    let todayStats;
+    if (branchId && branchId !== "all") {
+      todayStats = await sql`
+        SELECT 
+          COUNT(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN 1 END) as today_count,
+          COALESCE(SUM(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_amount,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_pod_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_pod_amount
+        FROM jumia_transactions
+        WHERE created_at >= CURRENT_DATE 
+        AND deleted = false
+        AND branch_id::text = ${branchId}
+      `;
+    } else {
+      todayStats = await sql`
+        SELECT 
+          COUNT(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN 1 END) as today_count,
+          COALESCE(SUM(CASE WHEN transaction_type IN ('package_receipt', 'pod_collection') THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_amount,
+          COUNT(CASE WHEN transaction_type = 'pod_collection' THEN 1 END) as today_pod_count,
+          COALESCE(SUM(CASE WHEN transaction_type = 'pod_collection' THEN CAST(amount AS DECIMAL) ELSE 0 END), 0) as today_pod_amount
+        FROM jumia_transactions
+        WHERE created_at >= CURRENT_DATE 
+        AND deleted = false
+      `;
+    }
     const todayData = todayStats[0] || {};
 
     // Get daily breakdown for the last 30 days
-    const dailyStats = await sql`
-      SELECT 
-        DATE(created_at) as date,
-        COUNT(*) as count,
-        COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
-      FROM jumia_transactions
-      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
-      AND deleted = false
-      ${
-        branchId && branchId !== "all"
-          ? sql`AND branch_id::text = ${branchId}`
-          : sql``
-      }
-      GROUP BY DATE(created_at)
-      ORDER BY date DESC
-    `;
+    let dailyStats;
+    if (branchId && branchId !== "all") {
+      dailyStats = await sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+        FROM jumia_transactions
+        WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+        AND deleted = false
+        AND branch_id::text = ${branchId}
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `;
+    } else {
+      dailyStats = await sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as count,
+          COALESCE(SUM(CAST(amount AS DECIMAL)), 0) as total_amount
+        FROM jumia_transactions
+        WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+        AND deleted = false
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `;
+    }
 
     // Get transaction type breakdown
     const typeStats = await sql`

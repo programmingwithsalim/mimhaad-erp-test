@@ -18,146 +18,232 @@ export async function GET(request: NextRequest) {
       provider,
     });
 
-    // Build WHERE conditions using template literals for better safety
-    let whereConditions = [];
-    let queryParams = [];
-
+    // Use proper sql template literals instead of sql.unsafe
+    let statsResult;
     if (branchId && branchId !== "all") {
-      whereConditions.push("branch_id::text = $1");
-      queryParams.push(branchId);
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as completed_amount,
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
+          COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN amount ELSE 0 END), 0) as failed_amount,
+          COUNT(CASE WHEN status = 'reversed' THEN 1 END) as reversed_count,
+          COALESCE(SUM(CASE WHEN status = 'reversed' THEN amount ELSE 0 END), 0) as reversed_amount,
+          COUNT(CASE WHEN status = 'deleted' THEN 1 END) as deleted_count,
+          COALESCE(SUM(CASE WHEN status = 'deleted' THEN amount ELSE 0 END), 0) as deleted_amount
+        FROM power_transactions
+        WHERE branch_id::text = ${branchId}
+        AND (is_reversal IS NULL OR is_reversal = false)
+        ${dateFrom ? sql`AND created_at >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND created_at <= ${dateTo}` : sql``}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+      `;
+    } else {
+      statsResult = await sql`
+        SELECT 
+          COUNT(*) as total_count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission,
+          COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
+          COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as completed_amount,
+          COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
+          COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
+          COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count,
+          COALESCE(SUM(CASE WHEN status = 'failed' THEN amount ELSE 0 END), 0) as failed_amount,
+          COUNT(CASE WHEN status = 'reversed' THEN 1 END) as reversed_count,
+          COALESCE(SUM(CASE WHEN status = 'reversed' THEN amount ELSE 0 END), 0) as reversed_amount,
+          COUNT(CASE WHEN status = 'deleted' THEN 1 END) as deleted_count,
+          COALESCE(SUM(CASE WHEN status = 'deleted' THEN amount ELSE 0 END), 0) as deleted_amount
+        FROM power_transactions
+        WHERE (is_reversal IS NULL OR is_reversal = false)
+        ${dateFrom ? sql`AND created_at >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND created_at <= ${dateTo}` : sql``}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+      `;
     }
-
-    if (dateFrom) {
-      whereConditions.push("created_at >= $2");
-      queryParams.push(dateFrom);
-    }
-
-    if (dateTo) {
-      whereConditions.push("created_at <= $3");
-      queryParams.push(dateTo);
-    }
-
-    if (provider && provider !== "all") {
-      whereConditions.push("provider = $4");
-      queryParams.push(provider);
-    }
-
-    // Add reversal filter
-    whereConditions.push("(is_reversal IS NULL OR is_reversal = false)");
-
-    const whereClause =
-      whereConditions.length > 0
-        ? `WHERE ${whereConditions.join(" AND ")}`
-        : "WHERE (is_reversal IS NULL OR is_reversal = false)";
-
-    // Get transaction statistics
-    const statsQuery = `
-      SELECT 
-        COUNT(*) as total_count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COALESCE(SUM(commission), 0) as total_commission,
-        COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_count,
-        COALESCE(SUM(CASE WHEN status = 'completed' THEN amount ELSE 0 END), 0) as completed_amount,
-        COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_count,
-        COALESCE(SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END), 0) as pending_amount,
-        COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_count,
-        COALESCE(SUM(CASE WHEN status = 'failed' THEN amount ELSE 0 END), 0) as failed_amount,
-        COUNT(CASE WHEN status = 'reversed' THEN 1 END) as reversed_count,
-        COALESCE(SUM(CASE WHEN status = 'reversed' THEN amount ELSE 0 END), 0) as reversed_amount,
-        COUNT(CASE WHEN status = 'deleted' THEN 1 END) as deleted_count,
-        COALESCE(SUM(CASE WHEN status = 'deleted' THEN amount ELSE 0 END), 0) as deleted_amount
-      FROM power_transactions
-      ${whereClause}
-    `;
-
-    console.log("🔍 [POWER] Stats query:", statsQuery);
-    console.log("🔍 [POWER] Query params:", queryParams);
-
-    const statsResult = await sql.unsafe(statsQuery, queryParams);
     const stats = statsResult[0] || {};
 
     console.log("📊 [POWER] Stats result:", stats);
 
     // --- Today's stats ---
     const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-    let todayWhere =
-      "WHERE (is_reversal IS NULL OR is_reversal = false) AND DATE(created_at) = $1";
-    let todayParams = [today];
+
+    let todayStatsResult;
     if (branchId && branchId !== "all") {
-      todayWhere += " AND branch_id::text = $2";
-      todayParams.push(branchId);
+      todayStatsResult = await sql`
+        SELECT 
+          COUNT(*) as today_count,
+          COALESCE(SUM(amount), 0) as today_amount,
+          COALESCE(SUM(commission), 0) as today_commission
+        FROM power_transactions
+        WHERE (is_reversal IS NULL OR is_reversal = false) 
+        AND DATE(created_at) = ${today}
+        AND branch_id::text = ${branchId}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+      `;
+    } else {
+      todayStatsResult = await sql`
+        SELECT 
+          COUNT(*) as today_count,
+          COALESCE(SUM(amount), 0) as today_amount,
+          COALESCE(SUM(commission), 0) as today_commission
+        FROM power_transactions
+        WHERE (is_reversal IS NULL OR is_reversal = false) 
+        AND DATE(created_at) = ${today}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+      `;
     }
-    if (provider && provider !== "all") {
-      todayWhere +=
-        branchId && branchId !== "all"
-          ? " AND provider = $3"
-          : " AND provider = $2";
-      todayParams.push(provider);
-    }
-    const todayStatsQuery = `
-      SELECT 
-        COUNT(*) as today_count,
-        COALESCE(SUM(amount), 0) as today_amount,
-        COALESCE(SUM(commission), 0) as today_commission
-      FROM power_transactions
-      ${todayWhere}
-    `;
-    const todayStatsResult = await sql.unsafe(todayStatsQuery, todayParams);
     const todayStats = todayStatsResult[0] || {};
 
     // Get provider breakdown
-    const providerQuery = `
-      SELECT 
-        provider,
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COALESCE(SUM(commission), 0) as total_commission
-      FROM power_transactions
-      ${whereClause}
-      GROUP BY provider
-      ORDER BY total_amount DESC
-    `;
-
-    const providerResult = await sql.unsafe(providerQuery, queryParams);
+    let providerResult;
+    if (branchId && branchId !== "all") {
+      providerResult = await sql`
+        SELECT 
+          provider,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission
+        FROM power_transactions
+        WHERE branch_id::text = ${branchId}
+        AND (is_reversal IS NULL OR is_reversal = false)
+        ${dateFrom ? sql`AND created_at >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND created_at <= ${dateTo}` : sql``}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+        GROUP BY provider
+        ORDER BY total_amount DESC
+      `;
+    } else {
+      providerResult = await sql`
+        SELECT 
+          provider,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission
+        FROM power_transactions
+        WHERE (is_reversal IS NULL OR is_reversal = false)
+        ${dateFrom ? sql`AND created_at >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND created_at <= ${dateTo}` : sql``}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+        GROUP BY provider
+        ORDER BY total_amount DESC
+      `;
+    }
     const providerStats = Array.isArray(providerResult) ? providerResult : [];
 
     // Get daily breakdown for the last 30 days
-    const dailyQuery = `
-      SELECT 
-        DATE(created_at) as date,
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COALESCE(SUM(commission), 0) as total_commission
-      FROM power_transactions
-      WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
-      AND (is_reversal IS NULL OR is_reversal = false)
-      ${branchId && branchId !== "all" ? "AND branch_id::text = $1" : ""}
-      ${provider && provider !== "all" ? "AND provider = $2" : ""}
-      GROUP BY DATE(created_at)
-      ORDER BY date DESC
-    `;
-
-    const dailyParams = [];
-    if (branchId && branchId !== "all") dailyParams.push(branchId);
-    if (provider && provider !== "all") dailyParams.push(provider);
-
-    const dailyResult = await sql.unsafe(dailyQuery, dailyParams);
+    let dailyResult;
+    if (branchId && branchId !== "all") {
+      dailyResult = await sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission
+        FROM power_transactions
+        WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+        AND (is_reversal IS NULL OR is_reversal = false)
+        AND branch_id::text = ${branchId}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `;
+    } else {
+      dailyResult = await sql`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission
+        FROM power_transactions
+        WHERE created_at >= CURRENT_DATE - INTERVAL '30 days'
+        AND (is_reversal IS NULL OR is_reversal = false)
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `;
+    }
     const dailyStats = Array.isArray(dailyResult) ? dailyResult : [];
 
     // Get transaction type breakdown
-    const typeQuery = `
-      SELECT 
-        type,
-        COUNT(*) as count,
-        COALESCE(SUM(amount), 0) as total_amount,
-        COALESCE(SUM(commission), 0) as total_commission
-      FROM power_transactions
-      ${whereClause}
-      GROUP BY type
-      ORDER BY total_amount DESC
-    `;
-
-    const typeResult = await sql.unsafe(typeQuery, queryParams);
+    let typeResult;
+    if (branchId && branchId !== "all") {
+      typeResult = await sql`
+        SELECT 
+          type,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission
+        FROM power_transactions
+        WHERE branch_id::text = ${branchId}
+        AND (is_reversal IS NULL OR is_reversal = false)
+        ${dateFrom ? sql`AND created_at >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND created_at <= ${dateTo}` : sql``}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+        GROUP BY type
+        ORDER BY total_amount DESC
+      `;
+    } else {
+      typeResult = await sql`
+        SELECT 
+          type,
+          COUNT(*) as count,
+          COALESCE(SUM(amount), 0) as total_amount,
+          COALESCE(SUM(commission), 0) as total_commission
+        FROM power_transactions
+        WHERE (is_reversal IS NULL OR is_reversal = false)
+        ${dateFrom ? sql`AND created_at >= ${dateFrom}` : sql``}
+        ${dateTo ? sql`AND created_at <= ${dateTo}` : sql``}
+        ${
+          provider && provider !== "all"
+            ? sql`AND provider = ${provider}`
+            : sql``
+        }
+        GROUP BY type
+        ORDER BY total_amount DESC
+      `;
+    }
     const typeStats = Array.isArray(typeResult) ? typeResult : [];
 
     const statistics = {

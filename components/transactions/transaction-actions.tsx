@@ -136,8 +136,8 @@ export function TransactionActions({
           userId: user?.id,
           branchId: user?.branchId,
           processedBy:
-            user?.firstName && user?.lastName
-              ? `${user.firstName} ${user.lastName}`
+            user?.first_name && user?.last_name
+              ? `${user.first_name} ${user.last_name}`
               : user?.email,
         }),
       });
@@ -147,8 +147,7 @@ export function TransactionActions({
       if (result.success) {
         toast({
           title: "Transaction Delivered",
-          description:
-            result.message || "Transaction has been delivered successfully",
+          description: "Transaction has been delivered successfully",
         });
         onSuccess?.();
       } else {
@@ -157,6 +156,48 @@ export function TransactionActions({
     } catch (error) {
       toast({
         title: "Delivery Failed",
+        description:
+          error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDisburse = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch("/api/transactions/unified", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "disburse",
+          transactionId: transaction.id,
+          sourceModule: sourceModule,
+          userId: user?.id,
+          branchId: user?.branchId,
+          processedBy:
+            user?.first_name && user?.last_name
+              ? `${user.first_name} ${user.last_name}`
+              : user?.email,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: "Transaction Disbursed",
+          description: "Transaction has been disbursed successfully",
+        });
+        onSuccess?.();
+      } else {
+        throw new Error(result.error || "Failed to disburse transaction");
+      }
+    } catch (error) {
+      toast({
+        title: "Disbursement Failed",
         description:
           error instanceof Error ? error.message : "An unknown error occurred",
         variant: "destructive",
@@ -196,7 +237,7 @@ export function TransactionActions({
     if (sourceModule === "momo" && transaction.status === "completed") {
       return {
         label: "Disburse",
-        action: onReverse, // Using existing disburse logic
+        action: handleDisburse, // Using existing disburse logic
         canShow: canReverse,
       };
     }
@@ -208,7 +249,7 @@ export function TransactionActions({
     ) {
       return {
         label: "Disburse",
-        action: onReverse, // Using existing disburse logic
+        action: handleDisburse, // Using existing disburse logic
         canShow: canReverse,
       };
     }
@@ -221,7 +262,7 @@ export function TransactionActions({
     ) {
       return {
         label: "Disburse",
-        action: onReverse, // Using existing disburse logic
+        action: handleDisburse, // Using existing disburse logic
         canShow: canReverse,
       };
     }
@@ -234,7 +275,7 @@ export function TransactionActions({
     ) {
       return {
         label: "Disburse",
-        action: onReverse, // Using existing disburse logic
+        action: handleDisburse, // Using existing disburse logic
         canShow: canReverse,
       };
     }

@@ -17,9 +17,9 @@ export async function GET(request: NextRequest) {
 
     console.log("Fetching E-Zwich statistics for branch:", branchId);
 
-    const today = new Date().toISOString().split("T")[0];
-
+    // Use CURRENT_DATE instead of JavaScript date conversion to avoid timezone issues
     // Get today's statistics from both withdrawals and card issuances
+    // Include both 'pending' and 'completed' statuses
     const [todayWithdrawals, todayIssuances] = await Promise.all([
       sql`
         SELECT 
@@ -28,8 +28,8 @@ export async function GET(request: NextRequest) {
           COALESCE(SUM(fee), 0) as today_withdrawal_fees
         FROM e_zwich_withdrawals 
         WHERE branch_id = ${branchId}
-        AND DATE(created_at) = ${today}
-        AND status = 'completed'
+        AND status IN ('pending', 'completed', 'disbursed')
+        AND DATE(transaction_date) = CURRENT_DATE
         AND (is_reversal IS NULL OR is_reversal = false)
       `,
       sql`
@@ -38,11 +38,13 @@ export async function GET(request: NextRequest) {
           COALESCE(SUM(fee_charged), 0) as today_issuance_fees
         FROM ezwich_card_issuance 
         WHERE branch_id = ${branchId}
-        AND DATE(created_at) = ${today}
+        AND status IN ('pending', 'completed', 'disbursed')
+        AND DATE(created_at) = CURRENT_DATE
       `,
     ]);
 
     // Get total statistics from both withdrawals and card issuances
+    // Include both 'pending' and 'completed' statuses
     const [totalWithdrawals, totalIssuances] = await Promise.all([
       sql`
         SELECT 
@@ -51,7 +53,7 @@ export async function GET(request: NextRequest) {
           COALESCE(SUM(fee), 0) as total_withdrawal_fees
         FROM e_zwich_withdrawals 
         WHERE branch_id = ${branchId}
-        AND status = 'completed'
+        AND status IN ('pending', 'completed', 'disbursed')
         AND (is_reversal IS NULL OR is_reversal = false)
       `,
       sql`
@@ -60,6 +62,7 @@ export async function GET(request: NextRequest) {
           COALESCE(SUM(fee_charged), 0) as total_issuance_fees
         FROM ezwich_card_issuance 
         WHERE branch_id = ${branchId}
+        AND status IN ('pending', 'completed', 'disbursed')
       `,
     ]);
 
@@ -84,61 +87,98 @@ export async function GET(request: NextRequest) {
     }
 
     // Get active providers count (E-Zwich partners)
-    const providerStats = await sql`
-      SELECT COUNT(*) as active_providers
-      FROM float_accounts 
-      WHERE branch_id = ${branchId}
-      AND is_active = true
-      AND ${
-        hasIsezwichpartner
-          ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
-          : sql`account_type = 'e-zwich'`
-      }
-    `;
+    let providerStats;
+    if (hasIsezwichpartner) {
+      providerStats = await sql`
+        SELECT COUNT(*) as active_providers
+        FROM float_accounts 
+        WHERE branch_id = ${branchId}
+        AND is_active = true
+        AND (isezwichpartner = true OR account_type = 'e-zwich')
+      `;
+    } else {
+      providerStats = await sql`
+        SELECT COUNT(*) as active_providers
+        FROM float_accounts 
+        WHERE branch_id = ${branchId}
+        AND is_active = true
+        AND account_type = 'e-zwich'
+      `;
+    }
 
-    // Get float balance from E-Zwich partner accounts
-    const floatStats = await sql`
-      SELECT COALESCE(SUM(current_balance), 0) as float_balance
-      FROM float_accounts 
-      WHERE branch_id = ${branchId}
-      AND is_active = true
-      AND ${
-        hasIsezwichpartner
-          ? sql`(isezwichpartner = true OR account_type = 'e-zwich')`
-          : sql`account_type = 'e-zwich'`
-      }
-    `;
+    // Get float balance for E-Zwich accounts
+    let floatStats;
+    if (hasIsezwichpartner) {
+      floatStats = await sql`
+        SELECT 
+          COALESCE(SUM(current_balance), 0) as float_balance,
+          COUNT(*) as low_float_alerts
+        FROM float_accounts 
+        WHERE branch_id = ${branchId}
+        AND is_active = true
+        AND (isezwichpartner = true OR account_type = 'e-zwich')
+        AND current_balance <= min_threshold
+      `;
+    } else {
+      floatStats = await sql`
+        SELECT 
+          COALESCE(SUM(current_balance), 0) as float_balance,
+          COUNT(*) as low_float_alerts
+        FROM float_accounts 
+        WHERE branch_id = ${branchId}
+        AND is_active = true
+        AND account_type = 'e-zwich'
+        AND current_balance <= min_threshold
+      `;
+    }
 
-    // Calculate totals
-    const todayTransactions =
-      Number(todayWithdrawals[0]?.today_withdrawals || 0) +
-      Number(todayIssuances[0]?.today_issuances || 0);
-    const totalTransactions =
-      Number(totalWithdrawals[0]?.total_withdrawals || 0) +
-      Number(totalIssuances[0]?.total_issuances || 0);
-    const todayVolume = Number(
-      todayWithdrawals[0]?.today_withdrawal_volume || 0
-    );
-    const totalVolume = Number(
-      totalWithdrawals[0]?.total_withdrawal_volume || 0
-    );
+    // Calculate total float balance (not just low balance accounts)
+    let totalFloatBalance;
+    if (hasIsezwichpartner) {
+      totalFloatBalance = await sql`
+        SELECT COALESCE(SUM(current_balance), 0) as total_float_balance
+        FROM float_accounts 
+        WHERE branch_id = ${branchId}
+        AND is_active = true
+        AND (isezwichpartner = true OR account_type = 'e-zwich')
+      `;
+    } else {
+      totalFloatBalance = await sql`
+        SELECT COALESCE(SUM(current_balance), 0) as total_float_balance
+        FROM float_accounts 
+        WHERE branch_id = ${branchId}
+        AND is_active = true
+        AND account_type = 'e-zwich'
+      `;
+    }
+
+    // Calculate commission (1.5% of withdrawal volume)
     const todayCommission =
-      Number(todayWithdrawals[0]?.today_withdrawal_fees || 0) +
+      Number(todayWithdrawals[0]?.today_withdrawal_volume || 0) * 0.015 +
       Number(todayIssuances[0]?.today_issuance_fees || 0);
+
     const totalCommission =
-      Number(totalWithdrawals[0]?.total_withdrawal_fees || 0) +
+      Number(totalWithdrawals[0]?.total_withdrawal_volume || 0) * 0.015 +
       Number(totalIssuances[0]?.total_issuance_fees || 0);
 
     const statistics = {
-      todayTransactions,
-      totalTransactions,
-      todayVolume,
-      totalVolume,
-      todayCommission,
-      totalCommission,
+      todayTransactions:
+        Number(todayWithdrawals[0]?.today_withdrawals || 0) +
+        Number(todayIssuances[0]?.today_issuances || 0),
+      totalTransactions:
+        Number(totalWithdrawals[0]?.total_withdrawals || 0) +
+        Number(totalIssuances[0]?.total_issuances || 0),
+      todayVolume:
+        Number(todayWithdrawals[0]?.today_withdrawal_volume || 0) +
+        Number(todayIssuances[0]?.today_issuance_fees || 0),
+      totalVolume:
+        Number(totalWithdrawals[0]?.total_withdrawal_volume || 0) +
+        Number(totalIssuances[0]?.total_issuance_fees || 0),
+      todayCommission: todayCommission,
+      totalCommission: totalCommission,
       activeProviders: Number(providerStats[0]?.active_providers || 0),
-      floatBalance: Number(floatStats[0]?.float_balance || 0),
-      lowFloatAlerts: 0, // Will be calculated from float accounts
+      floatBalance: Number(totalFloatBalance[0]?.total_float_balance || 0),
+      lowFloatAlerts: Number(floatStats[0]?.low_float_alerts || 0),
     };
 
     console.log("E-Zwich statistics:", statistics);
@@ -150,21 +190,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Error fetching E-Zwich statistics:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch E-Zwich statistics",
-        data: {
-          todayTransactions: 0,
-          totalTransactions: 0,
-          todayVolume: 0,
-          totalVolume: 0,
-          todayCommission: 0,
-          totalCommission: 0,
-          activeProviders: 0,
-          floatBalance: 0,
-          lowFloatAlerts: 0,
-        },
-      },
+      { success: false, error: "Failed to fetch E-Zwich statistics" },
       { status: 500 }
     );
   }

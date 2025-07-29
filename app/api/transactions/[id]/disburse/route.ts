@@ -75,7 +75,7 @@ export async function POST(
           // Check both withdrawals and card issuances
           const withdrawalResult = await sql`
             SELECT id, status, amount, customer_name, reference, created_at
-            FROM ezwich_withdrawals 
+            FROM e_zwich_withdrawals 
             WHERE id = ${transactionId}
           `;
           if (withdrawalResult.length > 0) {
@@ -83,7 +83,7 @@ export async function POST(
           } else {
             const cardResult = await sql`
               SELECT id, status, fee_charged as amount, customer_name, reference, created_at
-              FROM ezwich_card_issuance 
+              FROM e_zwich_card_issuances 
               WHERE id = ${transactionId}
             `;
             currentTransaction = cardResult[0];
@@ -165,18 +165,18 @@ export async function POST(
         case "e_zwich":
           // Check if it's a withdrawal or card issuance
           const withdrawal = await sql`
-            SELECT id FROM ezwich_withdrawals WHERE id = ${transactionId}
+            SELECT id FROM e_zwich_withdrawals WHERE id = ${transactionId}
           `;
           if (withdrawal.length > 0) {
             updateResult = await sql`
-              UPDATE ezwich_withdrawals 
+              UPDATE e_zwich_withdrawals 
               SET status = 'disbursed', updated_at = NOW()
               WHERE id = ${transactionId}
               RETURNING *
             `;
           } else {
             updateResult = await sql`
-              UPDATE ezwich_card_issuance 
+              UPDATE e_zwich_card_issuances 
               SET status = 'disbursed', updated_at = NOW()
               WHERE id = ${transactionId}
               RETURNING *

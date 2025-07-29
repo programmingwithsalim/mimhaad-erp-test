@@ -34,34 +34,33 @@ export class AutoGLMappingService {
     sourceModule: string,
     transactionType: string,
     branchId: string,
-    requiredMappings: string[]
+    requiredMappings: string[],
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<Record<string, string>> {
     console.log(
-      `🔧 [AUTO-MAPPING] Ensuring GL mappings for ${sourceModule}/${transactionType} in branch ${branchId}`
+      `🔧 [AUTO-MAPPING] Ensuring GL mappings for ${sourceModule}/${transactionType} in branch ${branchId}${
+        floatAccountId ? ` for float account ${floatAccountId}` : ""
+      }`
     );
 
-    const result: Record<string, string> = {};
+    const mappings: Record<string, string> = {};
 
     for (const mappingType of requiredMappings) {
-      try {
-        const accountId = await this.ensureGLMapping(
-          sourceModule,
-          transactionType,
-          mappingType,
-          branchId
-        );
-        result[mappingType] = accountId;
-      } catch (error) {
-        console.error(
-          `🔧 [AUTO-MAPPING] Failed to ensure mapping for ${mappingType}:`,
-          error
-        );
-        throw error;
-      }
+      const accountId = await this.ensureGLMapping(
+        sourceModule,
+        transactionType,
+        mappingType,
+        branchId,
+        floatAccountId,
+        actualProvider
+      );
+      mappings[mappingType] = accountId;
     }
 
-    console.log(`🔧 [AUTO-MAPPING] Completed mappings:`, result);
-    return result;
+    console.log(`🔧 [AUTO-MAPPING] Completed mappings:`, mappings);
+
+    return mappings;
   }
 
   /**
@@ -71,10 +70,13 @@ export class AutoGLMappingService {
     sourceModule: string,
     baseTransactionType: string,
     branchId: string,
-    existingMappings: Record<string, string>
+    existingMappings: Record<string, string>,
+    floatAccountId?: string
   ): Promise<void> {
     console.log(
-      `🔄 [AUTO-MAPPING] Ensuring reversal mappings for ${sourceModule}/${baseTransactionType} in branch ${branchId}`
+      `🔄 [AUTO-MAPPING] Ensuring reversal mappings for ${sourceModule}/${baseTransactionType} in branch ${branchId}${
+        floatAccountId ? ` for float account ${floatAccountId}` : ""
+      }`
     );
 
     // Define reversal transaction types based on source module
@@ -92,7 +94,8 @@ export class AutoGLMappingService {
             sourceModule,
             reversalType,
             mappingType,
-            branchId
+            branchId,
+            floatAccountId
           );
           console.log(
             `✅ [AUTO-MAPPING] Created reversal mapping: ${reversalType} -> ${mappingType}`
@@ -153,17 +156,34 @@ export class AutoGLMappingService {
     sourceModule: string,
     transactionType: string,
     mappingType: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<string> {
     // First, check if mapping already exists
-    const existingMapping = await sql`
-      SELECT gl_account_id 
-      FROM gl_mappings 
-      WHERE transaction_type = ${transactionType}
-        AND mapping_type = ${mappingType}
-        AND branch_id = ${branchId}
-        AND is_active = true
-    `;
+    let existingMapping;
+
+    if (floatAccountId) {
+      existingMapping = await sql`
+        SELECT gl_account_id 
+        FROM gl_mappings 
+        WHERE transaction_type = ${transactionType}
+          AND mapping_type = ${mappingType}
+          AND branch_id = ${branchId}
+          AND float_account_id = ${floatAccountId}
+          AND is_active = true
+      `;
+    } else {
+      existingMapping = await sql`
+        SELECT gl_account_id 
+        FROM gl_mappings 
+        WHERE transaction_type = ${transactionType}
+          AND mapping_type = ${mappingType}
+          AND branch_id = ${branchId}
+          AND float_account_id IS NULL
+          AND is_active = true
+      `;
+    }
 
     if (existingMapping.length > 0) {
       console.log(
@@ -182,18 +202,24 @@ export class AutoGLMappingService {
       sourceModule,
       transactionType,
       mappingType,
-      branchId
+      branchId,
+      floatAccountId,
+      actualProvider
     );
 
     // Create the mapping
     const mappingId = crypto.randomUUID();
     await sql`
-      INSERT INTO gl_mappings (id, transaction_type, gl_account_id, mapping_type, branch_id, is_active, created_at, updated_at)
-      VALUES (${mappingId}, ${transactionType}, ${accountId}, ${mappingType}, ${branchId}, true, NOW(), NOW())
+      INSERT INTO gl_mappings (id, transaction_type, gl_account_id, mapping_type, branch_id, float_account_id, is_active, created_at, updated_at)
+      VALUES (${mappingId}, ${transactionType}, ${accountId}, ${mappingType}, ${branchId}, ${
+      floatAccountId || null
+    }, true, NOW(), NOW())
     `;
 
     console.log(
-      `🔧 [AUTO-MAPPING] Created mapping ${mappingId} for ${transactionType}/${mappingType} -> ${accountId}`
+      `🔧 [AUTO-MAPPING] Created mapping ${mappingId} for ${transactionType}/${mappingType} -> ${accountId}${
+        floatAccountId ? ` (float account: ${floatAccountId})` : ""
+      }`
     );
     return accountId;
   }
@@ -205,14 +231,18 @@ export class AutoGLMappingService {
     sourceModule: string,
     transactionType: string,
     mappingType: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<string> {
     // Generate account details based on module and mapping type
     const accountDetails = await this.generateAccountDetails(
       sourceModule,
       transactionType,
       mappingType,
-      branchId
+      branchId,
+      floatAccountId,
+      actualProvider
     );
 
     // Check if account already exists
@@ -276,80 +306,117 @@ export class AutoGLMappingService {
   }
 
   /**
+   * Get branch name from branch table
+   */
+  private static async getBranchName(branchId: string): Promise<string> {
+    try {
+      const branch = await sql`
+        SELECT name FROM branches WHERE id = ${branchId}
+      `;
+
+      if (branch.length > 0 && branch[0].name) {
+        return branch[0].name;
+      }
+
+      // Fallback to UUID substring if no name found
+      console.warn(
+        `🔧 [AUTO-MAPPING] No branch name found for ${branchId}, using UUID substring`
+      );
+      return branchId.substring(0, 8).toUpperCase();
+    } catch (error) {
+      console.warn(
+        `🔧 [AUTO-MAPPING] Error fetching branch name for ${branchId}:`,
+        error
+      );
+      return branchId.substring(0, 8).toUpperCase();
+    }
+  }
+
+  /**
    * Generate account details based on module and mapping type
    */
   private static async generateAccountDetails(
     sourceModule: string,
     transactionType: string,
     mappingType: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
-    // Get branch code from branch table
     const branchCode = await this.getBranchCode(branchId);
 
     switch (sourceModule) {
-      case "expenses":
-        return await this.generateExpenseAccountDetails(
-          transactionType,
-          mappingType,
-          branchCode,
-          branchId
-        );
       case "momo":
         return await this.generateMoMoAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "agency_banking":
         return await this.generateAgencyBankingAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "e_zwich":
         return await this.generateEzwichAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "power":
         return await this.generatePowerAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "jumia":
         return await this.generateJumiaAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "commissions":
         return await this.generateCommissionAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "float_transfers":
         return await this.generateFloatTransferAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       case "cash_till":
         return await this.generateCashTillAccountDetails(
           transactionType,
           mappingType,
           branchCode,
-          branchId
+          branchId,
+          floatAccountId,
+          actualProvider
         );
       default:
         return this.generateDefaultAccountDetails(
@@ -411,58 +478,60 @@ export class AutoGLMappingService {
    * Generate standardized account code with provider
    */
   private static generateAccountCode(
-    module: string,
+    accountType: string,
     branchCode: string,
     mappingType: string,
-    provider?: string | null
+    provider?: string
   ): string {
-    const modulePrefix = module.toUpperCase();
-    const providerSuffix = provider
-      ? `-${provider.toUpperCase().replace(/\s+/g, "")}`
-      : "";
-    const mappingSuffix =
-      mappingType === "main" ? "" : `-${mappingType.toUpperCase()}`;
+    // Convert account type to uppercase
+    const type = accountType.toUpperCase().replace(/-/g, "_");
 
-    return `${modulePrefix}-${branchCode}${providerSuffix}${mappingSuffix}`;
+    // Convert mapping type to uppercase
+    const mapping = mappingType.toUpperCase();
+
+    // Use provider if available, otherwise use account type
+    const providerCode = provider
+      ? provider.toUpperCase().replace(/\s+/g, "")
+      : type;
+
+    // Format: ACCOUNT_TYPE-BRANCH_CODE-PROVIDER-MAPPING_TYPE
+    return `${type}-${branchCode}-${providerCode}-${mapping}`;
   }
 
   /**
    * Generate standardized account name with provider
    */
   private static generateAccountName(
-    module: string,
-    mappingType: string,
     accountType: string,
-    provider?: string | null
+    mappingType: string,
+    accountTypeCategory: string,
+    provider?: string
   ): string {
-    const moduleName = module.charAt(0).toUpperCase() + module.slice(1);
-    const providerSuffix = provider ? ` - ${provider}` : "";
+    // Convert account type to title case
+    const type = accountType
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
 
-    switch (mappingType) {
-      case "main":
-        return `${moduleName} Float Account${providerSuffix}`;
-      case "fee":
-        return `${moduleName} Fee Account${providerSuffix}`;
-      case "revenue":
-        return `${moduleName} Revenue Account${providerSuffix}`;
-      case "expense":
-        return `${moduleName} Expense Account${providerSuffix}`;
-      case "commission":
-        return `${moduleName} Commission Account${providerSuffix}`;
-      case "payment":
-        return `${moduleName} Payment Account${providerSuffix}`;
-      default:
-        return `${moduleName} ${
-          mappingType.charAt(0).toUpperCase() + mappingType.slice(1)
-        } Account${providerSuffix}`;
-    }
+    // Convert mapping type to title case
+    const mapping = mappingType
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
+
+    // Use provider if available, otherwise use account type
+    const providerName = provider || type;
+
+    // Format: "Account Type Mapping Account - Provider"
+    return `${type} ${mapping} Account - ${providerName}`;
   }
 
   private static async generateExpenseAccountDetails(
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string
   ): Promise<{ code: string; name: string; type: string }> {
     switch (mappingType) {
       case "expense":
@@ -544,25 +613,46 @@ export class AutoGLMappingService {
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
-    // Get the primary MoMo provider for this branch
-    const provider = await this.getPrimaryProvider("momo", branchId);
+    // Use actual provider if provided, otherwise get the primary MoMo provider for this branch
+    const provider =
+      actualProvider || (await this.getPrimaryProvider("momo", branchId));
+
+    // Get the actual branch name
+    const branchName = await this.getBranchName(branchId);
 
     // For momo_float transaction type, create specific MoMo accounts
     if (transactionType === "momo_float") {
-      const code = this.generateAccountCode(
-        "momo",
-        branchCode,
-        mappingType,
-        provider
-      );
-      const name = this.generateAccountName(
-        "momo",
-        mappingType,
-        "Asset",
-        provider
-      );
+      let code: string;
+      let name: string;
+
+      if (floatAccountId) {
+        // Create float-specific GL accounts
+        code = this.generateAccountCode(
+          "momo",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = `${this.generateAccountName(
+          "momo",
+          mappingType,
+          "Asset",
+          provider
+        )} - Float Account`;
+      } else {
+        // Use generic accounts for non-float operations
+        code = this.generateAccountCode(
+          "momo",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = this.generateAccountName("momo", mappingType, "Asset", provider);
+      }
 
       // Determine account type based on mapping type
       let accountType = "Asset";
@@ -626,24 +716,46 @@ export class AutoGLMappingService {
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
     const provider = await this.getPrimaryProvider("agency_banking", branchId);
 
     // For agency_banking_float transaction type, create specific agency banking accounts
     if (transactionType === "agency_banking_float") {
-      const code = this.generateAccountCode(
-        "agency_banking",
-        branchCode,
-        mappingType,
-        provider
-      );
-      const name = this.generateAccountName(
-        "agency_banking",
-        mappingType,
-        "Asset",
-        provider
-      );
+      let code: string;
+      let name: string;
+
+      if (floatAccountId) {
+        // Create float-specific GL accounts
+        code = this.generateAccountCode(
+          "agency_banking",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = `${this.generateAccountName(
+          "agency_banking",
+          mappingType,
+          "Asset",
+          provider
+        )} - Float Account`;
+      } else {
+        // Use generic accounts for non-float operations
+        code = this.generateAccountCode(
+          "agency_banking",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = this.generateAccountName(
+          "agency_banking",
+          mappingType,
+          "Asset",
+          provider
+        );
+      }
 
       // Determine account type based on mapping type
       let accountType = "Asset";
@@ -680,66 +792,73 @@ export class AutoGLMappingService {
     const name = this.generateAccountName(
       "agency_banking",
       mappingType,
-      "agency_banking",
+      "Asset",
       provider
     );
 
+    // Determine account type based on mapping type
+    let accountType = "Asset";
     switch (mappingType) {
-      case "main":
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
-      case "fee":
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
       case "revenue":
-        return {
-          code: code,
-          name: name,
-          type: "Revenue",
-        };
+        accountType = "Revenue";
+        break;
       case "expense":
-        return {
-          code: code,
-          name: name,
-          type: "Expense",
-        };
+        accountType = "Expense";
+        break;
+      case "fee":
+        accountType = "Revenue";
+        break;
       default:
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
+        accountType = "Asset";
     }
+
+    return { code, name, type: accountType };
   }
 
   private static async generateEzwichAccountDetails(
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
     const provider = await this.getPrimaryProvider("e_zwich", branchId);
 
     // For e_zwich_float transaction type, create specific E-Zwich accounts
     if (transactionType === "e_zwich_float") {
-      const code = this.generateAccountCode(
-        "e_zwich",
-        branchCode,
-        mappingType,
-        provider
-      );
-      const name = this.generateAccountName(
-        "e_zwich",
-        mappingType,
-        "Asset",
-        provider
-      );
+      let code: string;
+      let name: string;
+
+      if (floatAccountId) {
+        // Create float-specific GL accounts
+        code = this.generateAccountCode(
+          "e_zwich",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = `${this.generateAccountName(
+          "e_zwich",
+          mappingType,
+          "Asset",
+          provider
+        )} - Float Account`;
+      } else {
+        // Use generic accounts for non-float operations
+        code = this.generateAccountCode(
+          "e_zwich",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = this.generateAccountName(
+          "e_zwich",
+          mappingType,
+          "Asset",
+          provider
+        );
+      }
 
       // Determine account type based on mapping type
       let accountType = "Asset";
@@ -776,159 +895,73 @@ export class AutoGLMappingService {
     const name = this.generateAccountName(
       "e_zwich",
       mappingType,
-      "e_zwich",
+      "Asset",
       provider
     );
 
+    // Determine account type based on mapping type
+    let accountType = "Asset";
     switch (mappingType) {
-      case "main":
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
-      case "fee":
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
       case "revenue":
-        return {
-          code: code,
-          name: name,
-          type: "Revenue",
-        };
+        accountType = "Revenue";
+        break;
       case "expense":
-        return {
-          code: code,
-          name: name,
-          type: "Expense",
-        };
+        accountType = "Expense";
+        break;
+      case "fee":
+        accountType = "Revenue";
+        break;
       default:
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
+        accountType = "Asset";
     }
+
+    return { code, name, type: accountType };
   }
 
   private static async generatePowerAccountDetails(
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
     const provider = await this.getPrimaryProvider("power", branchId);
 
-    // For power_float transaction type, create specific Power accounts
+    // For power_float transaction type, create specific power accounts
     if (transactionType === "power_float") {
-      const code = this.generateAccountCode(
-        "power",
-        branchCode,
-        mappingType,
-        provider
-      );
-      const name = this.generateAccountName(
-        "power",
-        mappingType,
-        "Asset",
-        provider
-      );
+      let code: string;
+      let name: string;
 
-      // Determine account type based on mapping type
-      let accountType = "Asset";
-      switch (mappingType) {
-        case "main":
-          accountType = "Asset";
-          break;
-        case "revenue":
-          accountType = "Revenue";
-          break;
-        case "fee":
-          accountType = "Revenue";
-          break;
-        case "expense":
-          accountType = "Expense";
-          break;
-        default:
-          accountType = "Asset";
+      if (floatAccountId) {
+        // Create float-specific GL accounts
+        code = this.generateAccountCode(
+          "power",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = `${this.generateAccountName(
+          "power",
+          mappingType,
+          "Asset",
+          provider
+        )} - Float Account`;
+      } else {
+        // Use generic accounts for non-float operations
+        code = this.generateAccountCode(
+          "power",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = this.generateAccountName(
+          "power",
+          mappingType,
+          "Asset",
+          provider
+        );
       }
-
-      return { code, name, type: accountType };
-    }
-
-    // For regular Power transactions, use the original logic
-    const code = this.generateAccountCode(
-      "power",
-      branchCode,
-      mappingType,
-      provider
-    );
-    const name = this.generateAccountName(
-      "power",
-      mappingType,
-      "power",
-      provider
-    );
-
-    switch (mappingType) {
-      case "main":
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
-      case "fee":
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
-      case "revenue":
-        return {
-          code: code,
-          name: name,
-          type: "Revenue",
-        };
-      case "expense":
-        return {
-          code: code,
-          name: name,
-          type: "Expense",
-        };
-      default:
-        return {
-          code: code,
-          name: name,
-          type: "Asset",
-        };
-    }
-  }
-
-  private static async generateJumiaAccountDetails(
-    transactionType: string,
-    mappingType: string,
-    branchCode: string,
-    branchId: string
-  ): Promise<{ code: string; name: string; type: string }> {
-    const provider = await this.getPrimaryProvider("jumia", branchId);
-
-    // For jumia_float transaction type, create specific Jumia accounts
-    if (transactionType === "jumia_float") {
-      const code = this.generateAccountCode(
-        "jumia",
-        branchCode,
-        mappingType,
-        provider
-      );
-      const name = this.generateAccountName(
-        "jumia",
-        mappingType,
-        "Asset",
-        provider
-      );
 
       // Determine account type based on mapping type
       let accountType = "Asset";
@@ -955,7 +988,110 @@ export class AutoGLMappingService {
       return { code, name, type: accountType };
     }
 
-    // For regular Jumia transactions, use the original logic
+    // For regular power transactions, use the original logic
+    const code = this.generateAccountCode(
+      "power",
+      branchCode,
+      mappingType,
+      provider
+    );
+    const name = this.generateAccountName(
+      "power",
+      mappingType,
+      "Asset",
+      provider
+    );
+
+    // Determine account type based on mapping type
+    let accountType = "Asset";
+    switch (mappingType) {
+      case "revenue":
+        accountType = "Revenue";
+        break;
+      case "expense":
+        accountType = "Expense";
+        break;
+      case "fee":
+        accountType = "Revenue";
+        break;
+      default:
+        accountType = "Asset";
+    }
+
+    return { code, name, type: accountType };
+  }
+
+  private static async generateJumiaAccountDetails(
+    transactionType: string,
+    mappingType: string,
+    branchCode: string,
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
+  ): Promise<{ code: string; name: string; type: string }> {
+    const provider = await this.getPrimaryProvider("jumia", branchId);
+
+    // For jumia_float transaction type, create specific jumia accounts
+    if (transactionType === "jumia_float") {
+      let code: string;
+      let name: string;
+
+      if (floatAccountId) {
+        // Create float-specific GL accounts
+        code = this.generateAccountCode(
+          "jumia",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = `${this.generateAccountName(
+          "jumia",
+          mappingType,
+          "Asset",
+          provider
+        )} - Float Account`;
+      } else {
+        // Use generic accounts for non-float operations
+        code = this.generateAccountCode(
+          "jumia",
+          branchCode,
+          mappingType,
+          provider
+        );
+        name = this.generateAccountName(
+          "jumia",
+          mappingType,
+          "Asset",
+          provider
+        );
+      }
+
+      // Determine account type based on mapping type
+      let accountType = "Asset";
+      switch (mappingType) {
+        case "main":
+          accountType = "Asset";
+          break;
+        case "liability":
+          accountType = "Liability";
+          break;
+        case "revenue":
+          accountType = "Revenue";
+          break;
+        case "fee":
+          accountType = "Revenue";
+          break;
+        case "expense":
+          accountType = "Expense";
+          break;
+        default:
+          accountType = "Asset";
+      }
+
+      return { code, name, type: accountType };
+    }
+
+    // For regular jumia transactions, use the original logic
     const code = this.generateAccountCode(
       "jumia",
       branchCode,
@@ -965,7 +1101,7 @@ export class AutoGLMappingService {
     const name = this.generateAccountName(
       "jumia",
       mappingType,
-      "jumia",
+      "Asset",
       provider
     );
 
@@ -992,7 +1128,9 @@ export class AutoGLMappingService {
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
     // For commissions, we don't need a specific provider, but we can use the transaction type
     const code = this.generateAccountCode(
@@ -1028,7 +1166,9 @@ export class AutoGLMappingService {
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
     // For float transfers, we don't need a specific provider
     const code = this.generateAccountCode(
@@ -1070,33 +1210,69 @@ export class AutoGLMappingService {
     transactionType: string,
     mappingType: string,
     branchCode: string,
-    branchId: string
+    branchId: string,
+    floatAccountId?: string,
+    actualProvider?: string
   ): Promise<{ code: string; name: string; type: string }> {
-    // For cash till, we don't need a specific provider
-    const code = this.generateAccountCode(
-      "cash_till",
-      branchCode,
-      mappingType,
-      null
-    );
-    const name = this.generateAccountName(
-      "cash_till",
-      mappingType,
-      "cash_till",
-      null
-    );
+    // For cash_till_float transaction type, create specific cash till accounts
+    if (transactionType === "cash_till_float") {
+      let code: string;
+      let name: string;
+
+      if (floatAccountId) {
+        // Create float-specific GL accounts
+        code = this.generateAccountCode("cash_till", branchCode, mappingType);
+        name = `${this.generateAccountName(
+          "cash_till",
+          mappingType,
+          "Asset"
+        )} - Float Account`;
+      } else {
+        // Use generic accounts for non-float operations
+        code = this.generateAccountCode("cash_till", branchCode, mappingType);
+        name = this.generateAccountName("cash_till", mappingType, "Asset");
+      }
+
+      // Determine account type based on mapping type
+      let accountType = "Asset";
+      switch (mappingType) {
+        case "main":
+          accountType = "Asset";
+          break;
+        case "liability":
+          accountType = "Liability";
+          break;
+        case "revenue":
+          accountType = "Revenue";
+          break;
+        case "fee":
+          accountType = "Revenue";
+          break;
+        case "expense":
+          accountType = "Expense";
+          break;
+        default:
+          accountType = "Asset";
+      }
+
+      return { code, name, type: accountType };
+    }
+
+    // For regular cash till transactions, use the original logic
+    const code = this.generateAccountCode("cash_till", branchCode, mappingType);
+    const name = this.generateAccountName("cash_till", mappingType, "Asset");
 
     // Determine account type based on mapping type
     let accountType = "Asset";
     switch (mappingType) {
-      case "main":
-        accountType = "Asset";
-        break;
       case "revenue":
         accountType = "Revenue";
         break;
       case "expense":
         accountType = "Expense";
+        break;
+      case "fee":
+        accountType = "Revenue";
         break;
       default:
         accountType = "Asset";
