@@ -570,21 +570,31 @@ export class EnhancedFloatStatementService {
     );
 
     // Calculate running balances properly
-    let runningBalance = 0; // Start from 0 for the period
+    let runningBalance = 0;
 
-    // Calculate the opening balance by working backwards from current balance
-    // through all transactions that happened before this period
-    let openingBalance = Number(account.current_balance);
-
-    // Subtract all transactions in this period to get the opening balance
-    for (const entry of merged) {
-      openingBalance -= entry.amount;
+    // Get the actual opening balance for the start date
+    let openingBalance = 0;
+    if (filters.startDate) {
+      const openingBalanceResult = await sql`
+        SELECT COALESCE(
+          (SELECT balance_after 
+           FROM float_transactions 
+           WHERE float_account_id = ${floatAccountId}
+           AND created_at < ${filters.startDate}::date
+           ORDER BY created_at DESC 
+           LIMIT 1), 
+          (SELECT current_balance 
+           FROM float_accounts 
+           WHERE id = ${floatAccountId})
+        ) as opening_balance
+      `;
+      openingBalance = Number(openingBalanceResult[0]?.opening_balance || 0);
+    } else {
+      // If no start date, use current balance as opening
+      openingBalance = Number(account.current_balance);
     }
 
-    // Ensure opening balance is not negative (minimum 0)
-    openingBalance = Math.max(0, openingBalance);
-
-    // Now calculate forward from the opening balance
+    // Calculate forward from the opening balance
     runningBalance = openingBalance;
 
     for (const entry of merged) {

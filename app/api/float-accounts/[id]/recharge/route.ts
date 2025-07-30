@@ -1,6 +1,5 @@
 import { NextResponse, NextRequest } from "next/server";
 import { sql } from "@/lib/db";
-import { neon } from "@neondatabase/serverless";
 import { getDatabaseSession } from "@/lib/database-session-service";
 
 export async function POST(
@@ -92,53 +91,40 @@ export async function POST(
     await sql`UPDATE float_accounts SET current_balance = ${newSourceBalance}, updated_at = NOW() WHERE id = ${sourceAccountId}`;
     await sql`UPDATE float_accounts SET current_balance = ${newTargetBalance}, updated_at = NOW() WHERE id = ${accountId}`;
 
-    // 7. Record transactions (raw SQL with Neon client)
-    const client = neon(process.env.DATABASE_URL!);
-    const transferOutQuery = `
+    // 7. Record transactions using sql
+    await sql`
       INSERT INTO float_transactions (
-        id, account_id, type, amount, balance_before, balance_after, description, created_by, branch_id, created_at
+        id, float_account_id, transaction_type, amount, balance_before, balance_after, description, processed_by, branch_id, created_at
       ) VALUES (
         gen_random_uuid(),
-        $1,
+        ${sourceAccountId},
         'transfer_out',
         ${-amount},
         ${Number(sourceAccount.current_balance)},
         ${newSourceBalance},
-        $2,
-        $3,
-        $4,
+        ${`Transfer to ${targetAccount.provider}`},
+        ${user.id},
+        ${user.branchId},
         NOW()
       )
     `;
-    await client(transferOutQuery, [
-      sourceAccountId,
-      `Transfer to ${targetAccount.provider}`,
-      user.id,
-      user.branchId,
-    ]);
 
-    const rechargeQuery = `
+    await sql`
       INSERT INTO float_transactions (
-        id, account_id, type, amount, balance_before, balance_after, description, created_by, branch_id, created_at
+        id, float_account_id, transaction_type, amount, balance_before, balance_after, description, processed_by, branch_id, created_at
       ) VALUES (
         gen_random_uuid(),
-        $1,
+        ${accountId},
         'recharge',
         ${amount},
         ${Number(targetAccount.current_balance)},
         ${newTargetBalance},
-        $2,
-        $3,
-        $4,
+        ${`Recharge from ${sourceAccount.provider}`},
+        ${user.id},
+        ${user.branchId},
         NOW()
       )
     `;
-    await client(rechargeQuery, [
-      accountId,
-      `Recharge from ${sourceAccount.provider}`,
-      user.id,
-      user.branchId,
-    ]);
 
     // 8. Create GL entries for the recharge operation
     try {
