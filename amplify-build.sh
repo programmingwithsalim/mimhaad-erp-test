@@ -51,6 +51,13 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Build completed successfully"
 
+# Step 4.5: Manual cache cleanup (in case the post-build script fails)
+echo "🧹 Manual cache cleanup..."
+if [ -d ".next/cache" ]; then
+    rm -rf .next/cache
+    echo "✅ Build cache removed manually"
+fi
+
 # Step 5: Post-build cleanup (remove cache but keep build output)
 echo "🧹 Post-build cleanup..."
 if [ -d ".next/cache" ]; then

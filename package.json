@@ -16,7 +16,7 @@
     "clean:cache": "next clear && npm cache clean --force",
     "clean:all": "powershell -ExecutionPolicy Bypass -File clean-cache.ps1 && npm install",
     "clean:pre-build": "next clear",
-    "clean:post-build": "powershell -Command \"if (Test-Path '.next/cache') { Remove-Item -Recurse -Force '.next/cache'; Write-Host '✅ Build cache cleaned' -ForegroundColor Green }\"",
+    "clean:post-build": "rm -rf .next/cache && echo '✅ Build cache cleaned'",
     "build:amplify": "powershell -ExecutionPolicy Bypass -File amplify-build.ps1",
     "build:amplify:linux": "./amplify-build.sh"
   },

@@ -3,10 +3,11 @@ frontend:
   phases:
     preBuild:
       commands:
-        - chmod +x amplify-build.sh
+        - npm ci --legacy-peer-deps
     build:
       commands:
-        - ./amplify-build.sh
+        - npm run build
+        - rm -rf .next/cache
   artifacts:
     baseDirectory: .next
     files:
