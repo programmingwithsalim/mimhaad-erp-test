@@ -85,6 +85,7 @@ export default function AgencyBankingPage() {
     amount: "",
     fee: "",
     customer_name: "",
+    customer_phone: "",
     account_number: "",
     partner_bank_id: "",
     notes: "",
@@ -277,6 +278,7 @@ export default function AgencyBankingPage() {
           amount: Number(formData.amount),
           fee: Number(formData.fee) || 0,
           customer_name: formData.customer_name,
+          customer_phone: formData.customer_phone,
           account_number: formData.account_number,
           partner_bank_id: formData.partner_bank_id,
           reference: `AGENCY-${Date.now()}`,
@@ -300,6 +302,7 @@ export default function AgencyBankingPage() {
           amount: "",
           fee: "",
           customer_name: "",
+          customer_phone: "",
           account_number: "",
           partner_bank_id: "",
           notes: "",
@@ -706,6 +709,29 @@ export default function AgencyBankingPage() {
                           placeholder="Enter customer name"
                           required
                         />
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="customer_phone">Customer Phone</Label>
+                        <Input
+                          id="customer_phone"
+                          value={formData.customer_phone || ""}
+                          onChange={(e) => {
+                            // Only allow digits
+                            const value = e.target.value.replace(/\D/g, "");
+                            // Limit to 10 digits
+                            const limitedValue = value.slice(0, 10);
+                            setFormData({
+                              ...formData,
+                              customer_phone: limitedValue,
+                            });
+                          }}
+                          placeholder="0241234567"
+                          maxLength={10}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Optional: Customer phone number for notifications
+                        </p>
                       </div>
 
                       <div className="space-y-2">

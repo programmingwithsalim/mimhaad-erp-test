@@ -1189,7 +1189,6 @@ export default function JumiaPage() {
                             }}
                             placeholder="0241234567"
                             required
-                            disabled={true}
                           />
                         </div>
 
