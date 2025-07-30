@@ -55,7 +55,9 @@ const API_ROUTE_RESTRICTIONS: Record<
   { roles: Role[]; permissions?: Permission[] }
 > = {
   "/api/users": { roles: ["Admin"] },
-  "/api/branches": { roles: ["Admin", "Manager", "Finance"] },
+  "/api/branches": { roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"] },
+  "/api/branches/statistics": { roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"] },
+  "/api/branches/search": { roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"] },
   "/api/settings": { roles: ["Admin", "Manager", "Finance"] },
   "/api/gl": { roles: ["Admin", "Finance"] },
   "/api/audit-logs": { roles: ["Admin", "Manager", "Finance"] },
