@@ -305,12 +305,12 @@ export function useAllTransactions(autoRefresh = true, refreshInterval = 30000) 
   useEffect(() => {
     if (!autoRefresh || !user) return;
 
-    const refreshInterval = setInterval(() => {
+    const interval = setInterval(() => {
       console.log("Auto-refreshing transactions...");
       refetch();
     }, refreshInterval);
 
-    return () => clearInterval(refreshInterval);
+    return () => clearInterval(interval);
   }, [autoRefresh, refreshInterval, refetch, user]);
 
   // Cleanup timeouts on unmount
