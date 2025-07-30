@@ -3,7 +3,6 @@ frontend:
   phases:
     preBuild:
       commands:
-        - nvm use 19
         - chmod +x amplify-build.sh
     build:
       commands:

@@ -13,7 +13,7 @@ if [[ $NODE_VERSION =~ v([0-9]+) ]]; then
     MAJOR_VERSION=${BASH_REMATCH[1]}
     if [ "$MAJOR_VERSION" -lt 19 ]; then
         echo "⚠️ Warning: Node.js version $NODE_VERSION detected. Some packages require Node.js 19+."
-        echo "Consider upgrading Node.js version in your Amplify environment."
+        echo "Using --legacy-peer-deps to handle compatibility issues."
     fi
 fi
 

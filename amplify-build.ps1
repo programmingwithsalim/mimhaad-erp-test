@@ -11,7 +11,7 @@ if ($nodeVersion -match "v(\d+)") {
     $majorVersion = [int]$matches[1]
     if ($majorVersion -lt 19) {
         Write-Host "⚠️ Warning: Node.js version $nodeVersion detected. Some packages require Node.js 19+." -ForegroundColor Yellow
-        Write-Host "Consider upgrading Node.js version in your Amplify environment." -ForegroundColor Yellow
+        Write-Host "Using --legacy-peer-deps to handle compatibility issues." -ForegroundColor Yellow
     }
 }
 
