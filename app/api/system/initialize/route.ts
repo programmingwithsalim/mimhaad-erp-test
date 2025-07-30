@@ -13,22 +13,30 @@ export async function POST() {
       CREATE TABLE IF NOT EXISTS user_notification_settings (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        email_enabled BOOLEAN DEFAULT true,
-        sms_enabled BOOLEAN DEFAULT true,
-        push_enabled BOOLEAN DEFAULT false,
-        login_alerts BOOLEAN DEFAULT true,
-        transaction_alerts BOOLEAN DEFAULT true,
-        low_balance_alerts BOOLEAN DEFAULT true,
-        high_value_transaction_threshold DECIMAL(10,2) DEFAULT 1000.00,
-        low_balance_threshold DECIMAL(10,2) DEFAULT 100.00,
+        email_notifications BOOLEAN DEFAULT true,
         email_address VARCHAR(255),
+        sms_notifications BOOLEAN DEFAULT false,
         phone_number VARCHAR(20),
-        sms_provider VARCHAR(50) DEFAULT 'hubtel',
-        sms_api_key VARCHAR(255),
-        sms_api_secret VARCHAR(255),
-        sms_sender_id VARCHAR(50),
+        push_notifications BOOLEAN DEFAULT true,
+        transaction_alerts BOOLEAN DEFAULT true,
+        float_threshold_alerts BOOLEAN DEFAULT true,
+        system_updates BOOLEAN DEFAULT true,
+        security_alerts BOOLEAN DEFAULT true,
+        daily_reports BOOLEAN DEFAULT false,
+        weekly_reports BOOLEAN DEFAULT false,
+        login_alerts BOOLEAN DEFAULT true,
+        marketing_emails BOOLEAN DEFAULT false,
+        quiet_hours_enabled BOOLEAN DEFAULT false,
+        quiet_hours_start TIME DEFAULT '22:00:00',
+        quiet_hours_end TIME DEFAULT '08:00:00',
+        alert_frequency VARCHAR(20) DEFAULT 'immediate',
+        report_frequency VARCHAR(20) DEFAULT 'weekly',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        sms_provider VARCHAR(50),
+        sms_sender_id VARCHAR(50),
+        sms_api_key VARCHAR(255),
+        sms_api_secret VARCHAR(255),
         UNIQUE(user_id)
       )
     `
@@ -38,10 +46,10 @@ export async function POST() {
       CREATE INDEX IF NOT EXISTS idx_user_notification_settings_user_id ON user_notification_settings(user_id)
     `
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_email_enabled ON user_notification_settings(email_enabled)
+      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_email_notifications ON user_notification_settings(email_notifications)
     `
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_sms_enabled ON user_notification_settings(sms_enabled)
+      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_sms_notifications ON user_notification_settings(sms_notifications)
     `
 
     // Seed default settings and fees

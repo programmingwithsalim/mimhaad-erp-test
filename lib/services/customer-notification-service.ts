@@ -126,10 +126,7 @@ export class CustomerNotificationService {
     try {
       const config = await sql`
         SELECT 
-          sms_provider,
-          sms_api_key,
-          sms_api_secret,
-          sms_sender_id
+          key, value
         FROM system_settings 
         WHERE key IN ('sms_provider', 'sms_api_key', 'sms_api_secret', 'sms_sender_id')
       `

@@ -330,6 +330,39 @@ export class SettingsService {
         data_type: "number" as const,
         is_public: false,
       },
+      // SMS Configuration
+      {
+        key: "sms_provider",
+        value: "hubtel",
+        category: "sms",
+        description: "Default SMS provider (hubtel, smsonlinegh)",
+        data_type: "string" as const,
+        is_public: false,
+      },
+      {
+        key: "sms_api_key",
+        value: "",
+        category: "sms",
+        description: "SMS API key for notifications",
+        data_type: "string" as const,
+        is_public: false,
+      },
+      {
+        key: "sms_api_secret",
+        value: "",
+        category: "sms",
+        description: "SMS API secret for notifications",
+        data_type: "string" as const,
+        is_public: false,
+      },
+      {
+        key: "sms_sender_id",
+        value: "MIMHAAD",
+        category: "sms",
+        description: "SMS sender ID for notifications",
+        data_type: "string" as const,
+        is_public: false,
+      },
       // System configuration
       {
         key: "system_maintenance_mode",

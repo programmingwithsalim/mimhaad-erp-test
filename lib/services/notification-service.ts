@@ -208,37 +208,33 @@ export class NotificationService {
       // Get user's notification settings
       const settings = await sql`
         SELECT 
-          email_enabled,
-          sms_enabled,
-          push_enabled,
+          email_notifications,
+          sms_notifications,
+          push_notifications,
           login_alerts,
           transaction_alerts,
-          low_balance_alerts,
-          high_value_transaction_threshold,
-          low_balance_threshold,
-          email_address,
+          float_threshold_alerts,
           phone_number,
+          email_address,
           sms_provider,
           sms_api_key,
           sms_api_secret,
           sms_sender_id
-        FROM user_notification_settings 
+        FROM user_notification_settings
         WHERE user_id = ${userId}
-      `;
+      `
 
       if (settings.length === 0) {
         // Create default settings for the user
         await sql`
           INSERT INTO user_notification_settings (
             user_id,
-            email_enabled,
-            sms_enabled,
-            push_enabled,
+            email_notifications,
+            sms_notifications,
+            push_notifications,
             login_alerts,
             transaction_alerts,
-            low_balance_alerts,
-            high_value_transaction_threshold,
-            low_balance_threshold
+            float_threshold_alerts
           ) VALUES (
             ${userId},
             true,
@@ -246,11 +242,9 @@ export class NotificationService {
             false,
             true,
             true,
-            true,
-            1000.00,
-            100.00
+            true
           )
-        `;
+        `
 
         // Return default settings
         return {
@@ -262,12 +256,28 @@ export class NotificationService {
           low_balance_alerts: true,
           high_value_transaction_threshold: 1000,
           low_balance_threshold: 100,
-        };
+        }
       }
 
-      return settings[0];
+      const setting = settings[0]
+      return {
+        email_enabled: setting.email_notifications,
+        sms_enabled: setting.sms_notifications,
+        push_enabled: setting.push_notifications,
+        login_alerts: setting.login_alerts,
+        transaction_alerts: setting.transaction_alerts,
+        low_balance_alerts: setting.float_threshold_alerts,
+        high_value_transaction_threshold: 1000,
+        low_balance_threshold: 100,
+        email_address: setting.email_address,
+        phone_number: setting.phone_number,
+        sms_provider: setting.sms_provider,
+        sms_api_key: setting.sms_api_key,
+        sms_api_secret: setting.sms_api_secret,
+        sms_sender_id: setting.sms_sender_id,
+      }
     } catch (error) {
-      console.error("Error getting user notification settings:", error);
+      console.error("Error getting user notification settings:", error)
       
       // Return default settings if there's an error
       return {
@@ -279,7 +289,7 @@ export class NotificationService {
         low_balance_alerts: true,
         high_value_transaction_threshold: 1000,
         low_balance_threshold: 100,
-      };
+      }
     }
   }
 
