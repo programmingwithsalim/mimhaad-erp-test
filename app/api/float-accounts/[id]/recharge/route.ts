@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { getDatabaseSession } from "@/lib/database-session-service";
+import { logger, LogCategory } from "@/lib/logger";
 
 export async function POST(
   request: Request,
@@ -14,7 +15,7 @@ export async function POST(
         : new NextRequest(request.url, request);
     // 1. Session check
     const session = await getDatabaseSession(nextRequest);
-    console.log("[RECHARGE] Session:", session);
+    await logger.info(LogCategory.API, "Recharge request started", { session: !!session }, { userId: session?.user?.id });
     if (!session?.user) {
       return NextResponse.json(
         { error: "Unauthorized: No session" },
@@ -22,7 +23,7 @@ export async function POST(
       );
     }
     const user = session.user;
-    console.log("[RECHARGE] User:", user);
+    await logger.info(LogCategory.API, "User authenticated for recharge", { userId: user.id, role: user.role });
 
     // 2. Parse and validate body
     const { amount, sourceAccountId } = await request.json();
@@ -41,12 +42,17 @@ export async function POST(
     const [targetAccount] =
       await sql`SELECT * FROM float_accounts WHERE id = ${accountId}`;
     if (!targetAccount) {
+      await logger.error(LogCategory.API, "Target account not found for recharge", undefined, { accountId });
       return NextResponse.json(
         { error: "Target account not found" },
         { status: 404 }
       );
     }
-    console.log("[RECHARGE] Target account:", targetAccount);
+    await logger.info(LogCategory.FLOAT_ACCOUNT, "Target account found for recharge", {
+      accountId,
+      accountType: targetAccount.account_type,
+      currentBalance: targetAccount.current_balance,
+    }, { entityId: accountId });
 
     // 4. Permission check
     const isAdmin = user.role?.toLowerCase() === "admin";
@@ -128,11 +134,24 @@ export async function POST(
 
     // 8. Create GL entries for the recharge operation
     try {
+      await logger.info(LogCategory.GL_ENTRY, "Starting GL entry creation for recharge", {
+        sourceAccountId,
+        targetAccountId: accountId,
+        amount,
+        user: user.id,
+      });
+
       const { FloatAccountGLService } = await import(
         "@/lib/services/float-account-gl-service"
       );
 
       // Create GL entries for source account withdrawal
+      await logger.info(LogCategory.GL_ENTRY, "Creating withdrawal GL entries for source account", {
+        sourceAccountId,
+        amount,
+        description: `Transfer to ${targetAccount.provider}`,
+      });
+      
       await FloatAccountGLService.createWithdrawalGLEntries(
         sourceAccountId,
         amount,
@@ -143,6 +162,12 @@ export async function POST(
       );
 
       // Create GL entries for target account recharge
+      await logger.info(LogCategory.GL_ENTRY, "Creating recharge GL entries for target account", {
+        targetAccountId: accountId,
+        amount,
+        description: `Recharge from ${sourceAccount.provider}`,
+      });
+
       await FloatAccountGLService.createRechargeGLEntries(
         accountId,
         amount,
@@ -152,20 +177,42 @@ export async function POST(
         `Recharge from ${sourceAccount.provider}`
       );
 
-      console.log("✅ [RECHARGE] GL entries created successfully");
+      await logger.info(LogCategory.GL_ENTRY, "GL entries created successfully for recharge", {
+        sourceAccountId,
+        targetAccountId: accountId,
+        amount,
+      });
     } catch (glError) {
-      console.error("❌ [RECHARGE] Failed to create GL entries:", glError);
+      await logger.error(LogCategory.GL_ENTRY, "Failed to create GL entries for recharge", glError as Error, {
+        sourceAccountId,
+        targetAccountId: accountId,
+        amount,
+        user: user.id,
+      });
       // Don't fail the entire operation for GL entry issues
     }
 
     // 9. Success response
+    await logger.info(LogCategory.TRANSACTION, "Recharge completed successfully", {
+      sourceAccountId,
+      targetAccountId: accountId,
+      amount,
+      newTargetBalance,
+      user: user.id,
+    });
+    
     return NextResponse.json({
       success: true,
       message: "Recharge successful",
       newTargetBalance,
     });
   } catch (error: any) {
-    console.error("[RECHARGE] Error:", error);
+    await logger.error(LogCategory.API, "Recharge operation failed", error as Error, {
+      sourceAccountId,
+      targetAccountId: accountId,
+      amount,
+      user: user.id,
+    });
     return NextResponse.json(
       { error: error?.message || "Internal error" },
       { status: 500 }

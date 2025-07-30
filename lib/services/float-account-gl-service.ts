@@ -1,4 +1,5 @@
 import { sql } from "@/lib/db";
+import { logger, LogCategory } from "@/lib/logger";
 
 export class FloatAccountGLService {
   /**
@@ -37,7 +38,11 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        console.log(`No GL mappings found for float account ${floatAccountId} withdrawal`);
+        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account withdrawal`, {
+          floatAccountId,
+          transactionType,
+          amount,
+        }, { entityId: floatAccountId });
         return;
       }
 
@@ -87,9 +92,18 @@ export class FloatAccountGLService {
         }
       }
 
-      console.log(`✅ Created GL entries for float account withdrawal: ${amount}`);
+      await logger.logGLEntry(glTransaction.id, `Created GL entries for float account withdrawal`, {
+        floatAccountId,
+        amount,
+        transactionType,
+        glTransactionId: glTransaction.id,
+      }, { entityId: floatAccountId });
     } catch (error) {
-      console.error("❌ Error creating withdrawal GL entries:", error);
+      await logger.error(LogCategory.GL_ENTRY, "Error creating withdrawal GL entries", error as Error, {
+        floatAccountId,
+        amount,
+        transactionType,
+      }, { entityId: floatAccountId });
       throw error;
     }
   }
@@ -130,7 +144,11 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        console.log(`No GL mappings found for float account ${floatAccountId} recharge`);
+        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account recharge`, {
+          floatAccountId,
+          transactionType,
+          amount,
+        }, { entityId: floatAccountId });
         return;
       }
 
@@ -180,9 +198,18 @@ export class FloatAccountGLService {
         }
       }
 
-      console.log(`✅ Created GL entries for float account recharge: ${amount}`);
+      await logger.logGLEntry(glTransaction.id, `Created GL entries for float account recharge`, {
+        floatAccountId,
+        amount,
+        transactionType,
+        glTransactionId: glTransaction.id,
+      }, { entityId: floatAccountId });
     } catch (error) {
-      console.error("❌ Error creating recharge GL entries:", error);
+      await logger.error(LogCategory.GL_ENTRY, "Error creating recharge GL entries", error as Error, {
+        floatAccountId,
+        amount,
+        transactionType,
+      }, { entityId: floatAccountId });
       throw error;
     }
   }
@@ -221,7 +248,10 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        console.log(`No GL mappings found for float account ${floatAccountId} initial balance`);
+        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account initial balance`, {
+          floatAccountId,
+          initialBalance,
+        }, { entityId: floatAccountId });
         return;
       }
 
@@ -271,9 +301,16 @@ export class FloatAccountGLService {
         }
       }
 
-      console.log(`✅ Created initial GL entries for float account: ${initialBalance}`);
+      await logger.logGLEntry(glTransaction.id, `Created initial GL entries for float account`, {
+        floatAccountId,
+        initialBalance,
+        glTransactionId: glTransaction.id,
+      }, { entityId: floatAccountId });
     } catch (error) {
-      console.error("❌ Error creating initial GL entries:", error);
+      await logger.error(LogCategory.GL_ENTRY, "Error creating initial GL entries", error as Error, {
+        floatAccountId,
+        initialBalance,
+      }, { entityId: floatAccountId });
       throw error;
     }
   }
@@ -314,7 +351,11 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        console.log(`No GL mappings found for float account ${floatAccountId} balance adjustment`);
+        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account balance adjustment`, {
+          floatAccountId,
+          amount,
+          description,
+        }, { entityId: floatAccountId });
         return;
       }
 
@@ -364,9 +405,20 @@ export class FloatAccountGLService {
         }
       }
 
-      console.log(`✅ Created balance adjustment GL entries for float account: ${amount}`);
+      await logger.logGLEntry(glTransaction.id, `Created balance adjustment GL entries for float account`, {
+        floatAccountId,
+        amount,
+        description,
+        reference,
+        glTransactionId: glTransaction.id,
+      }, { entityId: floatAccountId });
     } catch (error) {
-      console.error("❌ Error creating balance adjustment GL entries:", error);
+      await logger.error(LogCategory.GL_ENTRY, "Error creating balance adjustment GL entries", error as Error, {
+        floatAccountId,
+        amount,
+        description,
+        reference,
+      }, { entityId: floatAccountId });
       throw error;
     }
   }
