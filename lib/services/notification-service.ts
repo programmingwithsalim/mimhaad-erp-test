@@ -1,5 +1,6 @@
 import { sql } from "@/lib/db";
 import { EmailTemplates } from "@/lib/email-templates";
+import { formatGhanaPhoneNumber, formatPhoneForSMS } from "@/lib/utils/phone-utils";
 
 export interface NotificationConfig {
   email_enabled: boolean;
@@ -36,48 +37,37 @@ export interface NotificationData {
 export class NotificationService {
   static async sendNotification(data: NotificationData) {
     try {
-      console.log("🔔 Sending notification:", data);
+      console.log("🔔 Sending notification:", {
+        type: data.type,
+        title: data.title,
+        userId: data.userId,
+        priority: data.priority,
+      });
 
       // Get user notification preferences
       const userPrefs = await this.getUserNotificationSettings(data.userId);
-
       if (!userPrefs) {
-        console.log(
-          "⚠️ No notification preferences found for user:",
-          data.userId
-        );
-        return { success: false, error: "User preferences not found" };
+        console.log("❌ No notification preferences found for user:", data.userId);
+        return { success: false, error: "No notification preferences found" };
       }
 
-      // Check if this type of notification is enabled
-      const shouldSend = this.shouldSendNotification(data.type, userPrefs);
-
-      if (!shouldSend) {
-        console.log("⚠️ Notification type disabled for user:", data.type);
-        return {
-          success: true,
-          message: "Notification disabled by user preferences",
-        };
+      // Check if we should send this type of notification
+      if (!this.shouldSendNotification(data.type, userPrefs)) {
+        console.log("❌ Notification type disabled:", data.type);
+        return { success: false, error: "Notification type disabled" };
       }
 
-      // Store notification in database
-      await sql`
-        INSERT INTO notifications (
-          id, user_id, branch_id, type, title, message, 
-          metadata, priority, status, created_at
-        ) VALUES (
-          gen_random_uuid(),
-          ${data.userId},
-          ${data.branchId || null},
-          ${data.type},
-          ${data.title},
-          ${data.message},
-          ${JSON.stringify(data.metadata || {})},
-          ${data.priority},
-          'sent',
-          CURRENT_TIMESTAMP
-        )
-      `;
+      // Format phone number with Ghana country code
+      if (userPrefs.phone_number) {
+        userPrefs.phone_number = formatGhanaPhoneNumber(userPrefs.phone_number)
+      }
+
+      console.log("✅ Notification preferences loaded:", {
+        email: userPrefs.email_enabled,
+        sms: userPrefs.sms_enabled,
+        push: userPrefs.push_enabled,
+        phone: userPrefs.phone_number ? "configured" : "not configured",
+      });
 
       // Send via enabled channels
       const results = [];
@@ -188,19 +178,25 @@ export class NotificationService {
       branchId?: string;
     }
   ) {
+    const user = await sql`
+      SELECT first_name || ' ' || last_name as full_name, email, phone FROM users WHERE id = ${userId}
+    `;
+
+    if (user.length === 0) return { success: false, error: "User not found" };
+
+    const userData = user[0];
+    const timestamp = new Date().toLocaleString();
+
     return this.sendNotification({
       type: "low_balance",
       title: "Low Balance Alert",
-      message: `Float account "${
-        floatData.accountName
-      }" has a low balance of GHS ${floatData.currentBalance.toFixed(
-        2
-      )}, which is below the threshold of GHS ${floatData.threshold.toFixed(
-        2
-      )}. Please recharge soon.`,
+      message: `Low balance alert for ${floatData.accountName}. Current balance: GHS ${floatData.currentBalance.toFixed(2)}. Threshold: GHS ${floatData.threshold.toFixed(2)}. Please recharge soon.`,
       userId,
       branchId: floatData.branchId,
-      metadata: floatData,
+      metadata: {
+        ...floatData,
+        timestamp,
+      },
       priority: "high",
     });
   }
@@ -209,19 +205,19 @@ export class NotificationService {
     userId: string
   ): Promise<NotificationConfig | null> {
     try {
+      // Get user's notification settings
       const settings = await sql`
         SELECT 
-          email_notifications as email_enabled,
-          email_address,
-          sms_notifications as sms_enabled,
-          phone_number,
-          push_notifications as push_enabled,
+          email_enabled,
+          sms_enabled,
+          push_enabled,
           login_alerts,
           transaction_alerts,
-          float_threshold_alerts as low_balance_alerts,
-          COALESCE(alert_frequency, 'immediate') as alert_frequency,
-          1000 as high_value_transaction_threshold,
-          100 as low_balance_threshold,
+          low_balance_alerts,
+          high_value_transaction_threshold,
+          low_balance_threshold,
+          email_address,
+          phone_number,
           sms_provider,
           sms_api_key,
           sms_api_secret,
@@ -230,90 +226,23 @@ export class NotificationService {
         WHERE user_id = ${userId}
       `;
 
-      // Get system SMS configuration
-      const systemConfig = await sql`
-        SELECT config_key, config_value
-        FROM system_config
-        WHERE config_key IN (
-          'sms_provider',
-          'hubtel_sms_api_key',
-          'hubtel_sms_api_secret', 
-          'hubtel_sms_sender_id',
-          'smsonlinegh_sms_api_key',
-          'smsonlinegh_sms_api_secret',
-          'smsonlinegh_sms_sender_id'
-        )
-      `;
-
-      // Convert system config to object
-      const systemConfigObj = systemConfig.reduce((acc: any, config: any) => {
-        acc[config.config_key] = config.config_value;
-        return acc;
-      }, {});
-
       if (settings.length === 0) {
-        // Get user's email and phone from users table as fallback
-        const user = await sql`
-          SELECT email, phone FROM users WHERE id = ${userId}
-        `;
-
-        if (user.length === 0) return null;
-
-        // Return default settings with user's contact info and system SMS config
+        // Return default settings if none found
         return {
           email_enabled: true,
-          sms_enabled: false,
-          push_enabled: true,
+          sms_enabled: true,
+          push_enabled: false,
           login_alerts: true,
           transaction_alerts: true,
           low_balance_alerts: true,
           high_value_transaction_threshold: 1000,
           low_balance_threshold: 100,
-          email_address: user[0].email,
-          phone_number: user[0].phone,
-          sms_provider: systemConfigObj.sms_provider || "hubtel",
-          sms_api_key:
-            systemConfigObj.hubtel_sms_api_key ||
-            systemConfigObj.smsonlinegh_sms_api_key,
-          sms_api_secret:
-            systemConfigObj.hubtel_sms_api_secret ||
-            systemConfigObj.smsonlinegh_sms_api_secret,
-          sms_sender_id:
-            systemConfigObj.hubtel_sms_sender_id ||
-            systemConfigObj.smsonlinegh_sms_sender_id,
         };
       }
 
-      const setting = settings[0];
-      return {
-        email_enabled: setting.email_enabled || false,
-        sms_enabled: setting.sms_enabled || false,
-        push_enabled: setting.push_enabled || false,
-        login_alerts: setting.login_alerts || false,
-        transaction_alerts: setting.transaction_alerts || false,
-        low_balance_alerts: setting.low_balance_alerts || false,
-        high_value_transaction_threshold:
-          setting.high_value_transaction_threshold || 1000,
-        low_balance_threshold: setting.low_balance_threshold || 100,
-        email_address: setting.email_address,
-        phone_number: setting.phone_number,
-        sms_provider:
-          setting.sms_provider || systemConfigObj.sms_provider || "hubtel",
-        sms_api_key:
-          setting.sms_api_key ||
-          systemConfigObj.hubtel_sms_api_key ||
-          systemConfigObj.smsonlinegh_sms_api_key,
-        sms_api_secret:
-          setting.sms_api_secret ||
-          systemConfigObj.hubtel_sms_api_secret ||
-          systemConfigObj.smsonlinegh_sms_api_secret,
-        sms_sender_id:
-          setting.sms_sender_id ||
-          systemConfigObj.hubtel_sms_sender_id ||
-          systemConfigObj.smsonlinegh_sms_sender_id,
-      };
+      return settings[0];
     } catch (error) {
-      console.error("Error fetching user notification settings:", error);
+      console.error("Error getting user notification settings:", error);
       return null;
     }
   }
@@ -330,7 +259,7 @@ export class NotificationService {
       case "low_balance":
         return prefs.low_balance_alerts;
       default:
-        return true; // Send system alerts by default
+        return true;
     }
   }
 
@@ -343,59 +272,23 @@ export class NotificationService {
         return { success: false, error: "No email address configured" };
       }
 
-      // Use the real EmailService
-      const { EmailService } = await import("@/lib/email-service");
-      let template;
-      let templateData;
-      if (data.type === "transaction") {
-        template = "transactionAlert";
-        templateData = {
-          userName: prefs.email_address,
-          transactionDetails: {
-            id: data.metadata?.reference || "N/A",
-            amount: data.metadata?.amount || 0,
-            type: data.metadata?.type || "transaction",
-            date: data.metadata?.timestamp || new Date().toISOString(),
-            service: data.metadata?.service || "Unknown",
-            message: data.message,
-          },
-        };
-      } else if (data.type === "login") {
-        template = "loginAlert";
-        templateData = {
-          userName: prefs.email_address,
-          loginData: {
-            ipAddress: data.metadata?.ip_address || "Unknown",
-            userAgent: data.metadata?.user_agent || "Unknown",
-            location: data.metadata?.location || "Unknown",
-            timestamp: data.metadata?.timestamp || new Date().toISOString(),
-          },
-        };
-      } else if (data.type === "low_balance") {
-        template = "lowBalanceAlert";
-        templateData = {
-          userName: prefs.email_address,
-          accountType: data.metadata?.accountName || "Float",
-          currentBalance: data.metadata?.currentBalance || 0,
-          threshold: data.metadata?.threshold || 0,
-        };
-      } else {
-        template = "welcome";
-        templateData = { userName: prefs.email_address, ...data.metadata };
-      }
-      const sent = await EmailService.sendEmail(
-        prefs.email_address,
-        template,
-        templateData
+      // Get email template
+      const template = EmailTemplates[data.type] || EmailTemplates.default;
+      const htmlContent = template(data);
+
+      // Send email using your email service
+      console.log("📧 Sending email to:", prefs.email_address);
+      
+      // Simulate email sending
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      console.log(
+        `\n===== EMAIL NOTIFICATION =====\nTo: ${prefs.email_address}\nSubject: ${data.title}\nMessage: ${data.message}\nPriority: ${data.priority}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
       );
-      if (sent) {
-        return {
-          success: true,
-          message: "Email notification sent successfully",
-        };
-      } else {
-        return { success: false, error: "Failed to send email via provider" };
-      }
+
+      return {
+        success: true,
+        message: "Email notification sent successfully (simulated)",
+      };
     } catch (error) {
       console.error("Email notification error:", error);
       return {
@@ -414,12 +307,14 @@ export class NotificationService {
         return { success: false, error: "No phone number configured" };
       }
 
+      // Format phone number for SMS providers
+      const formattedPhone = formatPhoneForSMS(prefs.phone_number)
+
       // Determine provider
       const provider = prefs.sms_provider || "hubtel";
       const apiKey = prefs.sms_api_key;
       const apiSecret = prefs.sms_api_secret;
       const senderId = prefs.sms_sender_id;
-      const phone = prefs.phone_number;
       const message = data.message;
 
       console.log("🔍 [SMS] Configuration:", {
@@ -427,7 +322,8 @@ export class NotificationService {
         apiKey: apiKey ? "***" : "missing",
         apiSecret: apiSecret ? "***" : "missing",
         senderId,
-        phone,
+        originalPhone: prefs.phone_number,
+        formattedPhone,
         messageLength: message.length,
       });
 
@@ -444,7 +340,7 @@ export class NotificationService {
             body: JSON.stringify({
               sender: senderId,
               message,
-              recipients: [phone],
+              recipients: [formattedPhone],
             }),
           }
         );
@@ -459,12 +355,6 @@ export class NotificationService {
         }
       } else if (provider === "hubtel") {
         // Hubtel API - use HTTP Basic Auth
-        const formattedPhone = phone.startsWith("+")
-          ? phone.substring(1)
-          : phone.startsWith("233")
-          ? phone
-          : `233${phone.replace(/^0/, "")}`;
-
         const url = "https://devp-sms03726-api.hubtel.com/v1/messages/send";
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
 
@@ -500,11 +390,7 @@ export class NotificationService {
       // Simulate SMS sending with a delay
       await new Promise((resolve) => setTimeout(resolve, 100));
       console.log(
-        `\n===== SMS NOTIFICATION =====\nTo: ${phone}\nMessage: ${message}\nPriority: ${
-          data.priority
-        }\nType: ${
-          data.type
-        }\nTimestamp: ${new Date().toISOString()}\n============================\n`
+        `\n===== SMS NOTIFICATION =====\nTo: ${formattedPhone}\nMessage: ${message}\nPriority: ${data.priority}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
       );
       return {
         success: true,
@@ -524,32 +410,18 @@ export class NotificationService {
     prefs: NotificationConfig
   ) {
     try {
-      // In a real implementation, you would integrate with a push notification service like:
-      // - Firebase Cloud Messaging (FCM)
-      // - Apple Push Notification Service (APNs)
-      // - OneSignal
-      // - Pusher
-
-      console.log("🔔 Sending push notification");
-      console.log("Title:", data.title);
-      console.log("Message:", data.message);
-
-      // Simulate push notification sending with a delay
+      console.log("📱 Sending push notification");
+      
+      // Simulate push notification
       await new Promise((resolve) => setTimeout(resolve, 100));
+      console.log(
+        `\n===== PUSH NOTIFICATION =====\nTitle: ${data.title}\nMessage: ${data.message}\nPriority: ${data.priority}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
+      );
 
-      // For testing purposes, we'll log the push notification content
-      console.log(`
-        ===== PUSH NOTIFICATION =====
-        Title: ${data.title}
-        Message: ${data.message}
-        
-        Priority: ${data.priority}
-        Type: ${data.type}
-        Timestamp: ${new Date().toISOString()}
-        =============================
-      `);
-
-      return { success: true, message: "Push notification sent successfully" };
+      return {
+        success: true,
+        message: "Push notification sent successfully (simulated)",
+      };
     } catch (error) {
       console.error("Push notification error:", error);
       return {
@@ -573,7 +445,7 @@ export class NotificationService {
       const apiKey = config.smsApiKey || config.sms_api_key;
       const apiSecret = config.smsApiSecret || config.sms_api_secret;
       const senderId = config.smsSenderId || config.sms_sender_id;
-      const phone = testPhone;
+      const phone = formatPhoneForSMS(testPhone);
 
       if (!apiKey || !senderId || !phone) {
         return { success: false, error: "Missing SMS config or phone number" };
@@ -607,12 +479,6 @@ export class NotificationService {
         }
       } else if (provider === "hubtel") {
         // Hubtel API - use HTTP Basic Auth
-        const formattedPhone = phone.startsWith("+")
-          ? phone.substring(1)
-          : phone.startsWith("233")
-          ? phone
-          : `233${phone.replace(/^0/, "")}`;
-
         const url = "https://devp-sms03726-api.hubtel.com/v1/messages/send";
         const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
 
@@ -624,13 +490,14 @@ export class NotificationService {
           },
           body: JSON.stringify({
             from: senderId,
-            to: formattedPhone,
+            to: phone,
             content: message,
           }),
         });
         const result = await response.json();
-        console.log("🔍 [HUBTEL] API Response:", result);
+        console.log("🔍 [HUBTEL TEST] API Response:", result);
 
+        // Hubtel returns status: 0 for success, or other values for failure
         if (result.status === 0 || (result.data && result.data.status === 0)) {
           return { success: true, message: "SMS sent via Hubtel" };
         } else {
@@ -644,20 +511,20 @@ export class NotificationService {
         }
       }
 
-      // Simulate SMS sending with a delay
+      // Simulate SMS sending
       await new Promise((resolve) => setTimeout(resolve, 100));
       console.log(
-        `\n===== TEST SMS NOTIFICATION =====\nTo: ${phone}\nMessage: ${message}\nProvider: ${provider}\nTimestamp: ${new Date().toISOString()}\n============================\n`
+        `\n===== TEST SMS NOTIFICATION =====\nTo: ${phone}\nMessage: ${message}\nTimestamp: ${new Date().toISOString()}\n============================\n`
       );
       return {
         success: true,
-        message: "SMS notification sent successfully (simulated)",
+        message: "Test SMS notification sent successfully (simulated)",
       };
     } catch (error) {
-      console.error("SMS notification error:", error);
+      console.error("Test SMS notification error:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "SMS send failed",
+        error: error instanceof Error ? error.message : "Test SMS send failed",
       };
     }
   }
@@ -674,33 +541,51 @@ export class NotificationService {
     try {
       const { limit = 50, offset = 0, type, status } = options;
 
-      const notifications = await sql`
+      let query = `
         SELECT 
-          id, type, title, message, metadata, priority, 
-          status, created_at, read_at
+          id,
+          user_id,
+          type,
+          title,
+          message,
+          status,
+          metadata,
+          created_at,
+          read_at
         FROM notifications 
-        WHERE user_id = ${userId}
-        ${type ? sql`AND type = ${type}` : sql``}
-        ${status ? sql`AND status = ${status}` : sql``}
-        ORDER BY created_at DESC
-        LIMIT ${limit} OFFSET ${offset}
+        WHERE user_id = $1
       `;
+
+      const params: any[] = [userId];
+      let paramIndex = 1;
+
+      if (type) {
+        paramIndex++;
+        query += ` AND type = $${paramIndex}`;
+        params.push(type);
+      }
+
+      if (status) {
+        paramIndex++;
+        query += ` AND status = $${paramIndex}`;
+        params.push(status);
+      }
+
+      query += ` ORDER BY created_at DESC LIMIT $${paramIndex + 1} OFFSET $${paramIndex + 2}`;
+      params.push(limit, offset);
+
+      const notifications = await sql.query(query, params);
 
       return {
         success: true,
-        notifications: notifications.map((n) => ({
-          ...n,
-          metadata:
-            typeof n.metadata === "string"
-              ? JSON.parse(n.metadata)
-              : n.metadata,
-        })),
+        notifications,
+        total: notifications.length,
       };
     } catch (error) {
-      console.error("Error fetching notifications:", error);
+      console.error("Error getting notifications:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: error instanceof Error ? error.message : "Failed to get notifications",
       };
     }
   }
@@ -709,7 +594,7 @@ export class NotificationService {
     try {
       await sql`
         UPDATE notifications 
-        SET read_at = CURRENT_TIMESTAMP, status = 'read'
+        SET read_at = NOW() 
         WHERE id = ${notificationId} AND user_id = ${userId}
       `;
 
@@ -718,24 +603,18 @@ export class NotificationService {
       console.error("Error marking notification as read:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: error instanceof Error ? error.message : "Failed to mark as read",
       };
     }
   }
 
-  // Test method to send a sample notification
   static async sendTestNotification(userId: string) {
     return this.sendNotification({
       type: "system_alert",
       title: "Test Notification",
-      message:
-        "This is a test notification to verify your notification settings are working correctly.",
+      message: "This is a test notification to verify your notification settings are working correctly.",
       userId,
-      priority: "low",
-      metadata: {
-        test: true,
-        timestamp: new Date().toISOString(),
-      },
+      priority: "medium",
     });
   }
 }
