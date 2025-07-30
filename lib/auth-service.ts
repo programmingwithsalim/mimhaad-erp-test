@@ -23,7 +23,6 @@ export async function authenticate(
   password: string
 ): Promise<AuthenticatedUser | null> {
   try {
-    console.log("🔐 [AUTH] Attempting authentication for:", email);
 
     // Get user from database
     const users = await sql`
@@ -45,7 +44,6 @@ export async function authenticate(
     `;
 
     if (users.length === 0) {
-      console.log("❌ [AUTH] User not found:", email);
       return null;
     }
 
@@ -54,11 +52,8 @@ export async function authenticate(
     // Verify password
     const isValidPassword = await verifyPassword(password, user.password_hash);
     if (!isValidPassword) {
-      console.log("❌ [AUTH] Invalid password for user:", email);
       return null;
     }
-
-    console.log("✅ [AUTH] Authentication successful for:", email);
 
     return {
       id: user.id,
@@ -70,7 +65,6 @@ export async function authenticate(
       branchName: user.branch_name,
     };
   } catch (error) {
-    console.error("❌ [AUTH] Authentication error:", error);
     return null;
   }
 }
@@ -99,7 +93,6 @@ export async function getSession(
       },
     };
   } catch (error) {
-    console.error("Error getting session:", error);
     return null;
   }
 }

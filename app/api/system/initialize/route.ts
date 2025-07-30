@@ -11,6 +11,21 @@ export async function POST() {
     // Seed default settings and fees
     await SettingsService.seedDefaultSettings()
 
+    // Seed GL mappings for float accounts
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/gl/mappings/seed`, {
+        method: 'POST',
+      });
+      if (response.ok) {
+        const result = await response.json();
+        console.log("GL mappings seeded:", result.message);
+      } else {
+        console.log("GL mappings seeding failed or already exists");
+      }
+    } catch (error) {
+      console.log("GL mappings seeding error:", error);
+    }
+
     // Create system_logs table for structured logging
     await sql`
       CREATE TABLE IF NOT EXISTS system_logs (

@@ -38,11 +38,16 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account withdrawal`, {
-          floatAccountId,
-          transactionType,
-          amount,
-        }, { entityId: floatAccountId });
+        await logger.warn(
+          LogCategory.GL_ENTRY,
+          `No GL mappings found for float account withdrawal`,
+          {
+            floatAccountId,
+            transactionType,
+            amount,
+          },
+          { entityId: floatAccountId }
+        );
         return;
       }
 
@@ -59,13 +64,16 @@ export class FloatAccountGLService {
           ${description},
           ${userId},
           ${branchId},
-          ${JSON.stringify({ floatAccountId, floatAccountType: floatAccount.account_type })}
+          ${JSON.stringify({
+            floatAccountId,
+            floatAccountType: floatAccount.account_type,
+          })}
         ) RETURNING id
       `;
 
       // Create GL journal entries
       for (const mapping of mappings) {
-        if (mapping.mapping_type === 'debit') {
+        if (mapping.mapping_type === "debit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -77,7 +85,7 @@ export class FloatAccountGLService {
               ${description}
             )
           `;
-        } else if (mapping.mapping_type === 'credit') {
+        } else if (mapping.mapping_type === "credit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -92,18 +100,29 @@ export class FloatAccountGLService {
         }
       }
 
-      await logger.logGLEntry(glTransaction.id, `Created GL entries for float account withdrawal`, {
-        floatAccountId,
-        amount,
-        transactionType,
-        glTransactionId: glTransaction.id,
-      }, { entityId: floatAccountId });
+      await logger.logGLEntry(
+        glTransaction.id,
+        `Created GL entries for float account withdrawal`,
+        {
+          floatAccountId,
+          amount,
+          transactionType,
+          glTransactionId: glTransaction.id,
+        },
+        { entityId: floatAccountId }
+      );
     } catch (error) {
-      await logger.error(LogCategory.GL_ENTRY, "Error creating withdrawal GL entries", error as Error, {
-        floatAccountId,
-        amount,
-        transactionType,
-      }, { entityId: floatAccountId });
+      await logger.error(
+        LogCategory.GL_ENTRY,
+        "Error creating withdrawal GL entries",
+        error as Error,
+        {
+          floatAccountId,
+          amount,
+          transactionType,
+        },
+        { entityId: floatAccountId }
+      );
       throw error;
     }
   }
@@ -144,11 +163,16 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account recharge`, {
-          floatAccountId,
-          transactionType,
-          amount,
-        }, { entityId: floatAccountId });
+        await logger.warn(
+          LogCategory.GL_ENTRY,
+          `No GL mappings found for float account recharge`,
+          {
+            floatAccountId,
+            transactionType,
+            amount,
+          },
+          { entityId: floatAccountId }
+        );
         return;
       }
 
@@ -165,13 +189,16 @@ export class FloatAccountGLService {
           ${description},
           ${userId},
           ${branchId},
-          ${JSON.stringify({ floatAccountId, floatAccountType: floatAccount.account_type })}
+          ${JSON.stringify({
+            floatAccountId,
+            floatAccountType: floatAccount.account_type,
+          })}
         ) RETURNING id
       `;
 
       // Create GL journal entries
       for (const mapping of mappings) {
-        if (mapping.mapping_type === 'debit') {
+        if (mapping.mapping_type === "debit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -183,7 +210,7 @@ export class FloatAccountGLService {
               ${description}
             )
           `;
-        } else if (mapping.mapping_type === 'credit') {
+        } else if (mapping.mapping_type === "credit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -198,18 +225,29 @@ export class FloatAccountGLService {
         }
       }
 
-      await logger.logGLEntry(glTransaction.id, `Created GL entries for float account recharge`, {
-        floatAccountId,
-        amount,
-        transactionType,
-        glTransactionId: glTransaction.id,
-      }, { entityId: floatAccountId });
+      await logger.logGLEntry(
+        glTransaction.id,
+        `Created GL entries for float account recharge`,
+        {
+          floatAccountId,
+          amount,
+          transactionType,
+          glTransactionId: glTransaction.id,
+        },
+        { entityId: floatAccountId }
+      );
     } catch (error) {
-      await logger.error(LogCategory.GL_ENTRY, "Error creating recharge GL entries", error as Error, {
-        floatAccountId,
-        amount,
-        transactionType,
-      }, { entityId: floatAccountId });
+      await logger.error(
+        LogCategory.GL_ENTRY,
+        "Error creating recharge GL entries",
+        error as Error,
+        {
+          floatAccountId,
+          amount,
+          transactionType,
+        },
+        { entityId: floatAccountId }
+      );
       throw error;
     }
   }
@@ -248,10 +286,15 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account initial balance`, {
-          floatAccountId,
-          initialBalance,
-        }, { entityId: floatAccountId });
+        await logger.warn(
+          LogCategory.GL_ENTRY,
+          `No GL mappings found for float account initial balance`,
+          {
+            floatAccountId,
+            initialBalance,
+          },
+          { entityId: floatAccountId }
+        );
         return;
       }
 
@@ -268,13 +311,16 @@ export class FloatAccountGLService {
           'Initial float account balance',
           ${userId},
           ${branchId},
-          ${JSON.stringify({ floatAccountId, floatAccountType: floatAccount.account_type })}
+          ${JSON.stringify({
+            floatAccountId,
+            floatAccountType: floatAccount.account_type,
+          })}
         ) RETURNING id
       `;
 
       // Create GL journal entries
       for (const mapping of mappings) {
-        if (mapping.mapping_type === 'debit') {
+        if (mapping.mapping_type === "debit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -286,7 +332,7 @@ export class FloatAccountGLService {
               'Initial float account balance'
             )
           `;
-        } else if (mapping.mapping_type === 'credit') {
+        } else if (mapping.mapping_type === "credit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -301,16 +347,27 @@ export class FloatAccountGLService {
         }
       }
 
-      await logger.logGLEntry(glTransaction.id, `Created initial GL entries for float account`, {
-        floatAccountId,
-        initialBalance,
-        glTransactionId: glTransaction.id,
-      }, { entityId: floatAccountId });
+      await logger.logGLEntry(
+        glTransaction.id,
+        `Created initial GL entries for float account`,
+        {
+          floatAccountId,
+          initialBalance,
+          glTransactionId: glTransaction.id,
+        },
+        { entityId: floatAccountId }
+      );
     } catch (error) {
-      await logger.error(LogCategory.GL_ENTRY, "Error creating initial GL entries", error as Error, {
-        floatAccountId,
-        initialBalance,
-      }, { entityId: floatAccountId });
+      await logger.error(
+        LogCategory.GL_ENTRY,
+        "Error creating initial GL entries",
+        error as Error,
+        {
+          floatAccountId,
+          initialBalance,
+        },
+        { entityId: floatAccountId }
+      );
       throw error;
     }
   }
@@ -351,11 +408,16 @@ export class FloatAccountGLService {
       `;
 
       if (mappings.length === 0) {
-        await logger.warn(LogCategory.GL_ENTRY, `No GL mappings found for float account balance adjustment`, {
-          floatAccountId,
-          amount,
-          description,
-        }, { entityId: floatAccountId });
+        await logger.warn(
+          LogCategory.GL_ENTRY,
+          `No GL mappings found for float account balance adjustment`,
+          {
+            floatAccountId,
+            amount,
+            description,
+          },
+          { entityId: floatAccountId }
+        );
         return;
       }
 
@@ -372,13 +434,17 @@ export class FloatAccountGLService {
           ${reference},
           ${userId},
           ${branchId},
-          ${JSON.stringify({ floatAccountId, floatAccountType: floatAccount.account_type, adjustment: amount })}
+          ${JSON.stringify({
+            floatAccountId,
+            floatAccountType: floatAccount.account_type,
+            adjustment: amount,
+          })}
         ) RETURNING id
       `;
 
       // Create GL journal entries
       for (const mapping of mappings) {
-        if (mapping.mapping_type === 'debit') {
+        if (mapping.mapping_type === "debit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -390,7 +456,7 @@ export class FloatAccountGLService {
               ${description}
             )
           `;
-        } else if (mapping.mapping_type === 'credit') {
+        } else if (mapping.mapping_type === "credit") {
           await sql`
             INSERT INTO gl_journal_entries (
               transaction_id, account_id, debit, credit, description
@@ -405,20 +471,31 @@ export class FloatAccountGLService {
         }
       }
 
-      await logger.logGLEntry(glTransaction.id, `Created balance adjustment GL entries for float account`, {
-        floatAccountId,
-        amount,
-        description,
-        reference,
-        glTransactionId: glTransaction.id,
-      }, { entityId: floatAccountId });
+      await logger.logGLEntry(
+        glTransaction.id,
+        `Created balance adjustment GL entries for float account`,
+        {
+          floatAccountId,
+          amount,
+          description,
+          reference,
+          glTransactionId: glTransaction.id,
+        },
+        { entityId: floatAccountId }
+      );
     } catch (error) {
-      await logger.error(LogCategory.GL_ENTRY, "Error creating balance adjustment GL entries", error as Error, {
-        floatAccountId,
-        amount,
-        description,
-        reference,
-      }, { entityId: floatAccountId });
+      await logger.error(
+        LogCategory.GL_ENTRY,
+        "Error creating balance adjustment GL entries",
+        error as Error,
+        {
+          floatAccountId,
+          amount,
+          description,
+          reference,
+        },
+        { entityId: floatAccountId }
+      );
       throw error;
     }
   }
