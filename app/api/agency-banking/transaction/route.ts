@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { sql } from "@/lib/db";
 import { getSession } from "@/lib/auth-service";
 import { NotificationService } from "@/lib/services/notification-service";
+import { CustomerNotificationService } from "@/lib/services/customer-notification-service";
 import { AuditLoggerService } from "@/lib/services/audit-logger-service";
 import { GLPostingService } from "@/lib/services/gl-posting-service";
 import { v4 as uuidv4 } from "uuid";
@@ -434,32 +435,37 @@ export async function POST(request: Request) {
       },
     });
 
-    // 9. Send SMS notification to customer
+    // 9. Send customer notification (mandatory - not dependent on user preferences)
     if (customer_phone) {
       try {
-        await NotificationService.sendNotification({
-          type: "transaction",
-          title: "Agency Banking Transaction Successful",
-          message: `Thank you for using our service! Your ${type} transaction of GHS ${amount} was successful. Reference: ${reference || `AGENCY-${Date.now()}`}`,
-          phone: customer_phone,
-          userId: user.id,
-          branchId: user.branchId,
-          metadata: {
-            transactionId,
-            type,
-            amount,
-            fee: transactionFee,
-            partnerBank: partnerBank.account_name || partnerBank.provider || "",
-            customerName: customer_name,
-            accountNumber: account_number,
+        await CustomerNotificationService.sendTransactionSuccessNotification(
+          customer_phone,
+          customer_name || "Customer",
+          {
+            amount: amount,
+            service: "agency_banking",
             reference: reference || `AGENCY-${Date.now()}`,
-          },
-          priority: "medium",
-        });
+            transactionId: transactionId,
+          }
+        );
       } catch (notificationError) {
-        console.error("Failed to send SMS notification:", notificationError);
+        console.error("Failed to send customer notification:", notificationError);
         // Continue with transaction even if notification fails
       }
+    }
+
+    // 10. Send user notification (optional - based on user preferences)
+    try {
+      await NotificationService.sendTransactionAlert(user.id, {
+        type: type,
+        amount: amount,
+        service: "agency_banking",
+        reference: reference || `AGENCY-${Date.now()}`,
+        branchId: user.branchId,
+      });
+    } catch (notificationError) {
+      console.error("Failed to send user notification:", notificationError);
+      // Continue with transaction even if notification fails
     }
 
     return NextResponse.json({

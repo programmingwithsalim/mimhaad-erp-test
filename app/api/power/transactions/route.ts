@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { getSession } from "@/lib/auth-service";
 import { UnifiedGLPostingService } from "@/lib/services/unified-gl-posting-service";
 import { NotificationService } from "@/lib/services/notification-service";
+import { CustomerNotificationService } from "@/lib/services/customer-notification-service";
 import {
   updatePowerTransaction,
   deletePowerTransaction,
@@ -377,31 +378,37 @@ export async function POST(request: NextRequest) {
       WHERE id = ${transactionUUID}
     `;
 
-    // Send SMS notification to customer
+    // Send customer notification (mandatory - not dependent on user preferences)
     if (body.customer_phone) {
       try {
-        await NotificationService.sendNotification({
-          type: "transaction",
-          title: "Power Sale Successful",
-          message: `Thank you for using our service! Your power sale of GHS ${body.amount} for meter ${body.meter_number} was successful. Reference: ${transactionReference}`,
-          phone: body.customer_phone,
-          userId: body.userId,
-          branchId: body.branchId,
-          metadata: {
-            transactionId: transactionUUID,
-            type: "power_sale",
+        await CustomerNotificationService.sendTransactionSuccessNotification(
+          body.customer_phone,
+          body.customer_name || "Customer",
+          {
             amount: body.amount,
-            meterNumber: body.meter_number,
-            provider: body.provider,
-            customerName: body.customer_name,
+            service: "power",
             reference: transactionReference,
-          },
-          priority: "medium",
-        });
+            transactionId: transactionUUID,
+          }
+        );
       } catch (notificationError) {
-        console.error("Failed to send SMS notification:", notificationError);
+        console.error("Failed to send customer notification:", notificationError);
         // Continue with transaction even if notification fails
       }
+    }
+
+    // Send user notification (optional - based on user preferences)
+    try {
+      await NotificationService.sendTransactionAlert(body.userId, {
+        type: "power_sale",
+        amount: body.amount,
+        service: "power",
+        reference: transactionReference,
+        branchId: body.branchId,
+      });
+    } catch (notificationError) {
+      console.error("Failed to send user notification:", notificationError);
+      // Continue with transaction even if notification fails
     }
 
     return NextResponse.json({
