@@ -36,7 +36,7 @@ export default function TransactionsPage() {
     prevPage,
     canViewAllBranches,
     isFiltered,
-  } = useAllTransactions();
+  } = useAllTransactions(true, 30000); // Auto-refresh every 30 seconds
 
   const { user } = useCurrentUser();
 
@@ -136,6 +136,10 @@ export default function TransactionsPage() {
             <Download className="h-4 w-4 mr-2" />
             Export
           </Button>
+          <Badge variant="secondary" className="flex items-center gap-1">
+            <RefreshCw className="h-3 w-3" />
+            Auto-refresh: 30s
+          </Badge>
         </div>
       </div>
 

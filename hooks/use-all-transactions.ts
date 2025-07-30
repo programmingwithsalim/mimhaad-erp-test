@@ -46,7 +46,7 @@ const transactionCache = new Map<
 >();
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-export function useAllTransactions() {
+export function useAllTransactions(autoRefresh = true, refreshInterval = 30000) {
   const { user } = useCurrentUser();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -300,6 +300,18 @@ export function useAllTransactions() {
     const interval = setInterval(clearExpiredCache, CACHE_DURATION);
     return () => clearInterval(interval);
   }, [clearExpiredCache]);
+
+  // Auto-refresh functionality
+  useEffect(() => {
+    if (!autoRefresh || !user) return;
+
+    const refreshInterval = setInterval(() => {
+      console.log("Auto-refreshing transactions...");
+      refetch();
+    }, refreshInterval);
+
+    return () => clearInterval(refreshInterval);
+  }, [autoRefresh, refreshInterval, refetch, user]);
 
   // Cleanup timeouts on unmount
   useEffect(() => {

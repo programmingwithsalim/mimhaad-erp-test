@@ -1,12 +1,12 @@
-import { NextResponse } from "next/server"
-import { AuditService } from "@/lib/audit-service"
-import { SettingsService } from "@/lib/settings-service"
-import { sql } from "@/lib/db"
+import { NextResponse } from "next/server";
+import { AuditService } from "@/lib/audit-service";
+import { SettingsService } from "@/lib/settings-service";
+import { sql } from "@/lib/db";
 
 export async function POST() {
   try {
     // Initialize settings tables
-    await SettingsService.initializeTables()
+    await SettingsService.initializeTables();
 
     // Create user_notification_settings table
     await sql`
@@ -39,7 +39,7 @@ export async function POST() {
         sms_api_secret VARCHAR(255),
         UNIQUE(user_id)
       )
-    `
+    `;
 
     // Create system_logs table
     await sql`
@@ -58,38 +58,38 @@ export async function POST() {
         ip_address INET,
         user_agent TEXT
       )
-    `
+    `;
 
     // Create indexes for system_logs
     await sql`
       CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level)
-    `
+    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_system_logs_category ON system_logs(category)
-    `
+    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at)
-    `
+    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_system_logs_entity_id ON system_logs(entity_id)
-    `
+    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_system_logs_user_id ON system_logs(user_id)
-    `
+    `;
 
     // Create indexes for user_notification_settings
     await sql`
       CREATE INDEX IF NOT EXISTS idx_user_notification_settings_user_id ON user_notification_settings(user_id)
-    `
+    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_user_notification_settings_email_notifications ON user_notification_settings(email_notifications)
-    `
+    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_user_notification_settings_sms_notifications ON user_notification_settings(sms_notifications)
-    `
+    `;
 
     // Seed default settings and fees
-    await SettingsService.seedDefaultSettings()
+    await SettingsService.seedDefaultSettings();
 
     // Ensure SMS and Email settings are seeded in system_config
     try {
@@ -143,7 +143,7 @@ export async function POST() {
           description: "Default from email address",
           category: "notifications",
         },
-      ]
+      ];
 
       for (const setting of notificationSettings) {
         await sql`
@@ -151,18 +151,23 @@ export async function POST() {
           VALUES (${setting.config_key}, ${setting.config_value}, ${setting.config_type}, 
                   ${setting.description}, ${setting.category})
           ON CONFLICT (config_key) DO NOTHING
-        `
+        `;
       }
-      console.log("✅ Notification settings ensured in system_config")
+      console.log("✅ Notification settings ensured in system_config");
     } catch (error) {
-      console.error("❌ Error ensuring notification settings:", error)
+      console.error("❌ Error ensuring notification settings:", error);
     }
 
     // Seed GL mappings for float accounts
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/gl/mappings/seed`, {
-        method: 'POST',
-      });
+      const response = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+        }/api/gl/mappings/seed`,
+        {
+          method: "POST",
+        }
+      );
       if (response.ok) {
         const result = await response.json();
         console.log("GL mappings seeded:", result.message);
@@ -181,7 +186,7 @@ export async function POST() {
       entityType: "system_config",
       description: "System tables initialized and default settings configured",
       severity: "medium",
-    })
+    });
 
     // Add sample audit logs
     const sampleLogs = [
@@ -232,15 +237,16 @@ export async function POST() {
         status: "failure" as const,
         errorMessage: "Invalid username or password",
       },
-    ]
+    ];
 
     for (const log of sampleLogs) {
-      await AuditService.log(log)
+      await AuditService.log(log);
     }
 
     return NextResponse.json({
       success: true,
-      message: "System initialized successfully with audit logs, settings, and fee configurations",
+      message:
+        "System initialized successfully with audit logs, settings, and fee configurations",
       data: {
         audit_logs_created: true,
         settings_initialized: true,
@@ -248,16 +254,16 @@ export async function POST() {
         sample_data_added: true,
         notification_settings_table_created: true,
       },
-    })
+    });
   } catch (error) {
-    console.error("Error initializing system:", error)
+    console.error("Error initializing system:", error);
     return NextResponse.json(
       {
         success: false,
         error: "Failed to initialize system",
         details: error instanceof Error ? error.message : "Unknown error",
       },
-      { status: 500 },
-    )
+      { status: 500 }
+    );
   }
 }

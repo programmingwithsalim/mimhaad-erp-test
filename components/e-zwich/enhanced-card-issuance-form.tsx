@@ -1054,7 +1054,7 @@ export default function EnhancedCardIssuanceForm({
                               </SelectTrigger>
                               <SelectContent>
                                 {availableBatches.length === 0 ? (
-                                  <SelectItem value="" disabled>
+                                  <SelectItem value="no-batches" disabled>
                                     No batches available for your branch
                                   </SelectItem>
                                 ) : (

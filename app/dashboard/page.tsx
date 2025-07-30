@@ -315,16 +315,13 @@ export default function DashboardPage() {
     }
   }, [user, user?.branchId, user?.role]);
 
-  // Helper to map serviceBreakdown to ServiceStats[]
+  // Helper to map serviceBreakdown to ServiceStats[] for cashier dashboard
   const mappedServiceStats = Array.isArray(stats.serviceBreakdown)
     ? stats.serviceBreakdown.map((s) => ({
         service: s.service,
-        todayTransactions: s.transactions,
-        todayVolume: s.volume,
-        todayFees: s.commission,
-        totalBalance: 0,
-        weeklyGrowth: 0,
-        monthlyGrowth: 0,
+        transactions: s.transactions || 0,
+        volume: s.volume || 0,
+        commission: s.commission || 0,
       }))
     : [];
 
