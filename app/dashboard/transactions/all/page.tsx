@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -34,11 +34,14 @@ import {
   RefreshCw,
   FileText,
   X,
+  Activity,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { useAllTransactions } from "@/hooks/use-all-transactions";
 import { useCurrentUser } from "@/hooks/use-current-user";
 import { useBranches } from "@/hooks/use-branches";
+import { useRealtimeTransactions } from "@/hooks/use-realtime-transactions";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -51,14 +54,14 @@ import { TransactionsTable } from "@/components/transactions/transactions-table"
 
 export default function AllTransactionsPage() {
   const {
-    transactions,
-    loading,
-    error,
+    transactions: staticTransactions,
+    loading: staticLoading,
+    error: staticError,
     pagination,
     filters,
     updateFilters,
     clearFilters,
-    refetch,
+    refetch: staticRefetch,
     goToPage,
     nextPage,
     prevPage,
@@ -69,11 +72,33 @@ export default function AllTransactionsPage() {
   const { user } = useCurrentUser();
   const { branches } = useBranches();
 
+  // Real-time transactions hook
+  const {
+    transactions: realtimeTransactions,
+    loading: realtimeLoading,
+    error: realtimeError,
+    lastUpdate,
+    isRefreshing,
+    refresh: refreshRealtime,
+  } = useRealtimeTransactions({
+    branchId: user?.branchId,
+    limit: 100,
+    autoRefresh: true,
+    refreshInterval: 10000, // 10 seconds
+  });
+
   const [showFilters, setShowFilters] = useState(false);
   const [dateFrom, setDateFrom] = useState<Date>();
   const [dateTo, setDateTo] = useState<Date>();
   const [showTransactionDetail, setShowTransactionDetail] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [showRealtime, setShowRealtime] = useState(false);
+
+  // Combine static and real-time transactions
+  const allTransactions = showRealtime ? realtimeTransactions : staticTransactions;
+  const loading = showRealtime ? realtimeLoading : staticLoading;
+  const error = showRealtime ? realtimeError : staticError;
+  const refetch = showRealtime ? refreshRealtime : staticRefetch;
 
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
@@ -155,7 +180,7 @@ export default function AllTransactionsPage() {
 
     const csvContent = [
       headers.join(","),
-      ...transactions.map((tx) =>
+      ...allTransactions.map((tx) =>
         [
           format(new Date(tx.created_at), "MMM dd, yyyy HH:mm"),
           tx.service_type,
@@ -195,6 +220,11 @@ export default function AllTransactionsPage() {
             {canViewAllBranches
               ? "View and search all transactions across all services and branches"
               : "View and search all transactions for your branch across all services"}
+            {showRealtime && (
+              <span className="ml-2 text-green-600 font-medium">
+                • Live mode: Auto-refreshing every 10 seconds
+              </span>
+            )}
           </p>
           {!canViewAllBranches && (
             <Badge variant="outline" className="mt-2 bg-blue-50 text-blue-700">
@@ -203,6 +233,29 @@ export default function AllTransactionsPage() {
           )}
         </div>
         <div className="flex gap-2">
+          {/* Real-time Toggle */}
+          <Button
+            variant={showRealtime ? "default" : "outline"}
+            onClick={() => setShowRealtime(!showRealtime)}
+            className="gap-2"
+          >
+            <Activity className="h-4 w-4" />
+            {showRealtime ? "Live" : "Static"}
+            {showRealtime && isRefreshing && (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            )}
+          </Button>
+          
+          {/* Last Update Indicator */}
+          {showRealtime && lastUpdate && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+              <span className="text-xs text-green-700">
+                Last: {format(lastUpdate, "HH:mm:ss")}
+              </span>
+            </div>
+          )}
+          
           <Button variant="outline" onClick={refetch} disabled={loading}>
             <RefreshCw
               className={cn("h-4 w-4 mr-2", loading && "animate-spin")}
@@ -422,7 +475,7 @@ export default function AllTransactionsPage() {
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">
-                  Showing {transactions.length} of {pagination.totalCount}{" "}
+                  Showing {allTransactions.length} of {pagination.totalCount}{" "}
                   transactions
                 </span>
               </div>
@@ -469,7 +522,7 @@ export default function AllTransactionsPage() {
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
-          ) : transactions.length === 0 ? (
+          ) : allTransactions.length === 0 ? (
             <div className="text-center py-8">
               <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">
@@ -488,7 +541,7 @@ export default function AllTransactionsPage() {
             </div>
           ) : (
             <TransactionsTable
-              transactions={transactions}
+              transactions={allTransactions}
               loading={loading}
               pagination={pagination}
               onPageChange={goToPage}

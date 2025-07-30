@@ -1106,7 +1106,7 @@ export default function JumiaPage() {
       {/* Main Content Tabs */}
       <Tabs defaultValue="package_delivery" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="package_delivery">Package Delivery</TabsTrigger>
+          <TabsTrigger value="package_delivery">Package Collection</TabsTrigger>
           <TabsTrigger value="settlement">Settlement</TabsTrigger>
           <TabsTrigger value="transaction_history">
             Transaction History
@@ -1121,101 +1121,200 @@ export default function JumiaPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Package className="h-5 w-5" />
-                    Package Delivery
+                    Package Collection
                   </CardTitle>
-                  <CardDescription>Create new package receipts</CardDescription>
+                  <CardDescription>Search and collect packages for customers</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handlePackageSubmit} className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2">
+                  <form onSubmit={handlePodSubmit} className="space-y-4">
+                    <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="package_tracking_id">Tracking ID</Label>
-                        <Input
-                          id="package_tracking_id"
-                          value={packageForm.tracking_id}
+                        <Label htmlFor="pod_tracking_id">Tracking ID</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            id="pod_tracking_id"
+                            value={podForm.tracking_id}
+                            onChange={(e) =>
+                              setPodForm({
+                                ...podForm,
+                                tracking_id: e.target.value,
+                              })
+                            }
+                            placeholder="Enter tracking ID to search"
+                            required
+                          />
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => searchPackageForCollection(podForm.tracking_id)}
+                            disabled={!podForm.tracking_id.trim()}
+                          >
+                            <Search className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <Label htmlFor="pod_customer_name">Customer Name</Label>
+                          <Input
+                            id="pod_customer_name"
+                            value={podForm.customer_name}
+                            onChange={(e) =>
+                              setPodForm({
+                                ...podForm,
+                                customer_name: e.target.value,
+                              })
+                            }
+                            placeholder="Customer name"
+                            required
+                            disabled={true}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pod_customer_phone">Customer Phone</Label>
+                          <Input
+                            id="pod_customer_phone"
+                            value={podForm.customer_phone}
+                            onChange={(e) => {
+                              // Only allow digits
+                              const value = e.target.value.replace(/\D/g, "");
+                              // Limit to 10 digits
+                              const limitedValue = value.slice(0, 10);
+                              setPodForm({
+                                ...podForm,
+                                customer_phone: limitedValue,
+                              });
+                            }}
+                            placeholder="0241234567"
+                            required
+                            disabled={true}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pod_amount">Payment Amount (POD)</Label>
+                          <Input
+                            id="pod_amount"
+                            type="number"
+                            step="0.01"
+                            value={podForm.amount}
+                            onChange={(e) =>
+                              setPodForm({
+                                ...podForm,
+                                amount: parseFloat(e.target.value) || 0,
+                              })
+                            }
+                            placeholder="0.00"
+                            required
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pod_payment_method">Payment Method</Label>
+                          <Select
+                            value={podForm.payment_method}
+                            onValueChange={(value) =>
+                              setPodForm({
+                                ...podForm,
+                                payment_method: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select payment method" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="cash">Cash</SelectItem>
+                              <SelectItem value="momo">Mobile Money</SelectItem>
+                              <SelectItem value="card">Card</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pod_delivery_status">Delivery Status</Label>
+                          <Select
+                            value={podForm.delivery_status}
+                            onValueChange={(value) =>
+                              setPodForm({
+                                ...podForm,
+                                delivery_status: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select delivery status" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="delivered">Delivered</SelectItem>
+                              <SelectItem value="attempted">Attempted</SelectItem>
+                              <SelectItem value="returned">Returned</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="pod_float_account">Float Account</Label>
+                          <Select
+                            value={podForm.float_account_id}
+                            onValueChange={(value) =>
+                              setPodForm({
+                                ...podForm,
+                                float_account_id: value,
+                              })
+                            }
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select float account" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {floatAccounts.map((account) => (
+                                <SelectItem key={account.id} value={account.id}>
+                                  {account.account_name ||
+                                    account.provider ||
+                                    account.account_type}{" "}
+                                  - GHS{" "}
+                                  {Number(account.current_balance || 0).toFixed(2)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="pod_notes">Notes (Optional)</Label>
+                        <Textarea
+                          id="pod_notes"
+                          value={podForm.notes}
                           onChange={(e) =>
-                            setPackageForm({
-                              ...packageForm,
-                              tracking_id: e.target.value,
+                            setPodForm({
+                              ...podForm,
+                              notes: e.target.value,
                             })
                           }
-                          placeholder="Enter tracking ID"
-                          required
+                          placeholder="Additional notes about delivery..."
+                          rows={3}
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label htmlFor="package_customer_name">
-                          Customer Name
-                        </Label>
-                        <Input
-                          id="package_customer_name"
-                          value={packageForm.customer_name}
-                          onChange={(e) =>
-                            setPackageForm({
-                              ...packageForm,
-                              customer_name: e.target.value,
-                            })
-                          }
-                          placeholder="Enter customer name"
-                          required
-                        />
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="package_customer_phone">
-                          Customer Phone
-                        </Label>
-                        <Input
-                          id="package_customer_phone"
-                          maxLength={10}
-                          value={packageForm.customer_phone}
-                          onChange={(e) => {
-                            // Only allow digits
-                            const value = e.target.value.replace(/\D/g, "");
-                            // Limit to 10 digits
-                            const limitedValue = value.slice(0, 10);
-                            setPackageForm({
-                              ...packageForm,
-                              customer_phone: limitedValue,
-                            });
-                          }}
-                          placeholder="0241234567"
-                          required
-                        />
-                      </div>
+                      <Button
+                        type="submit"
+                        disabled={submitting || !podForm.tracking_id || !podForm.customer_name}
+                        className="w-full"
+                      >
+                        {submitting ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Processing Collection...
+                          </>
+                        ) : (
+                          "Process Collection"
+                        )}
+                      </Button>
                     </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="package_notes">Notes (Optional)</Label>
-                      <Textarea
-                        id="package_notes"
-                        value={packageForm.notes}
-                        onChange={(e) =>
-                          setPackageForm({
-                            ...packageForm,
-                            notes: e.target.value,
-                          })
-                        }
-                        placeholder="Additional notes..."
-                        rows={3}
-                      />
-                    </div>
-
-                    <Button
-                      type="submit"
-                      disabled={submitting}
-                      className="w-full"
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Creating Package...
-                        </>
-                      ) : (
-                        "Create Package"
-                      )}
-                    </Button>
                   </form>
                 </CardContent>
               </Card>

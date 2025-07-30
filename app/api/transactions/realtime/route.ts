@@ -21,44 +21,120 @@ export async function GET(request: NextRequest) {
       limit,
     })
 
-    // Build the query dynamically
+    // Build the query to union all transaction tables
     let query = `
       SELECT 
-        t.id,
-        t.type,
-        t.service_type,
-        t.amount,
-        t.fee,
-        t.status,
-        t.customer_name,
-        t.phone_number,
-        t.reference,
-        t.created_at,
-        t.updated_at,
-        t.branch_id,
-        t.processed_by,
-        u.name as processor_name
-      FROM transactions t
-      LEFT JOIN users u ON t.processed_by = u.id
-      WHERE t.branch_id = $1
+        id,
+        type,
+        'momo' as service_type,
+        amount,
+        fee,
+        status,
+        customer_name,
+        phone_number,
+        reference,
+        date as created_at,
+        date as updated_at,
+        branch_id,
+        processed_by,
+        provider
+      FROM momo_transactions 
+      WHERE branch_id = $1
+      
+      UNION ALL
+      
+      SELECT 
+        id,
+        type,
+        'agency_banking' as service_type,
+        amount,
+        fee,
+        status,
+        customer_name,
+        account_number as phone_number,
+        reference,
+        date as created_at,
+        date as updated_at,
+        branch_id,
+        processed_by,
+        bank_name as provider
+      FROM agency_banking_transactions 
+      WHERE branch_id = $1
+      
+      UNION ALL
+      
+      SELECT 
+        id,
+        'withdrawal' as type,
+        'e_zwich' as service_type,
+        amount,
+        fee_charged as fee,
+        status,
+        customer_name,
+        card_number as phone_number,
+        reference,
+        date as created_at,
+        date as updated_at,
+        branch_id,
+        processed_by,
+        'e_zwich' as provider
+      FROM e_zwich_withdrawals 
+      WHERE branch_id = $1
+      
+      UNION ALL
+      
+      SELECT 
+        id,
+        type,
+        'power' as service_type,
+        amount,
+        fee,
+        status,
+        customer_name,
+        meter_number as phone_number,
+        reference,
+        date as created_at,
+        date as updated_at,
+        branch_id,
+        processed_by,
+        provider
+      FROM power_transactions 
+      WHERE branch_id = $1
     `
 
     const params: any[] = [branchId]
     let paramIndex = 1
 
+    // Add service type filter if specified
     if (serviceType) {
-      paramIndex++
-      query += ` AND t.service_type = $${paramIndex}`
-      params.push(serviceType)
+      const serviceTypeFilter = serviceType.toLowerCase()
+      if (serviceTypeFilter === 'momo') {
+        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
+        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
+        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
+      } else if (serviceTypeFilter === 'agency_banking') {
+        query = query.replace(/SELECT[\s\S]*?FROM momo_transactions[\s\S]*?UNION ALL/g, '')
+        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
+        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
+      } else if (serviceTypeFilter === 'e_zwich') {
+        query = query.replace(/SELECT[\s\S]*?FROM momo_transactions[\s\S]*?UNION ALL/g, '')
+        query = query.replace(/SELECT[\s\S]*?FROM agency_banking_transactions[\s\S]*?UNION ALL/g, '')
+        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
+      } else if (serviceTypeFilter === 'power') {
+        query = query.replace(/SELECT[\s\S]*?FROM momo_transactions[\s\S]*?UNION ALL/g, '')
+        query = query.replace(/SELECT[\s\S]*?FROM agency_banking_transactions[\s\S]*?UNION ALL/g, '')
+        query = query.replace(/SELECT[\s\S]*?FROM e_zwich_withdrawals[\s\S]*?UNION ALL/g, '')
+      }
     }
 
+    // Add status filter if specified
     if (status) {
       paramIndex++
-      query += ` AND t.status = $${paramIndex}`
+      query += ` AND status = $${paramIndex}`
       params.push(status)
     }
 
-    query += ` ORDER BY t.created_at DESC LIMIT $${paramIndex + 1}`
+    query += ` ORDER BY created_at DESC LIMIT $${paramIndex + 1}`
     params.push(limit)
 
     const transactions = await sql.query(query, params)
