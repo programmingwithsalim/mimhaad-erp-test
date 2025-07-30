@@ -1,10 +1,12 @@
 "use client"
 
-import { AlertTriangle, Info } from "lucide-react"
+import { AlertTriangle, Info, Plus } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCashInTill } from "@/hooks/use-cash-in-till"
+import { CashTillDepositDialog } from "./cash-till-deposit-dialog"
+import { CashTillWithdrawalDialog } from "./cash-till-withdrawal-dialog"
 
 interface CashTillDisplayProps {
   branchId: string
@@ -13,10 +15,10 @@ interface CashTillDisplayProps {
 }
 
 export function CashTillDisplay({ branchId, error: propError, refetch: propRefetch }: CashTillDisplayProps) {
-  const { cashAccount, isLoading, error: hookError, updateCashBalance } = useCashInTill(branchId)
+  const { cashAccount, isLoading, error: hookError, refetch: hookRefetch } = useCashInTill({ branchId })
 
   const error = propError || (hookError && hookError.message !== "No branch ID provided" ? hookError.message : null)
-  const refetch = propRefetch || (() => window.location.reload())
+  const refetch = propRefetch || hookRefetch
 
   if (isLoading) {
     return (
@@ -60,46 +62,94 @@ export function CashTillDisplay({ branchId, error: propError, refetch: propRefet
   }
 
   // If no cash account exists and we're not loading, show informative message
-  if (!cashAccount && !isLoading) {
+  if (!cashAccount) {
     return (
       <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium">Cash Till</CardTitle>
-          <CardDescription>No cash till account found for this branch</CardDescription>
+        <CardHeader>
+          <CardTitle>Cash Till</CardTitle>
+          <CardDescription>No cash till account found</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-4">
             <Info className="h-8 w-8 text-blue-500 mx-auto mb-2" />
-            <p className="text-sm text-muted-foreground mb-2">
-              No cash-in-till account has been set up for this branch.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Please contact your administrator to set up a cash-in-till account.
-            </p>
+            <p className="text-sm text-gray-600 mb-4">No cash till account has been set up for this branch.</p>
+            <CashTillDepositDialog 
+              branchId={branchId} 
+              currentBalance={0} 
+              onDepositSuccess={refetch}
+            />
           </div>
         </CardContent>
       </Card>
     )
   }
 
+  const currentBalance = cashAccount?.current_balance || 0
+  const isLowBalance = currentBalance < (cashAccount?.min_threshold || 1000)
+  const isEmpty = currentBalance === 0
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Cash Till</CardTitle>
-        <CardDescription>Available cash for transactions</CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Cash Till</CardTitle>
+            <CardDescription>Available cash for transactions</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <CashTillDepositDialog 
+              branchId={branchId} 
+              currentBalance={currentBalance} 
+              onDepositSuccess={refetch}
+            />
+            {currentBalance > 0 && (
+              <CashTillWithdrawalDialog 
+                branchId={branchId} 
+                currentBalance={currentBalance} 
+                onWithdrawalSuccess={refetch}
+              />
+            )}
+          </div>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium">Current Balance:</span>
-            <span className="text-2xl font-bold text-green-600">
+            <span className={`text-2xl font-bold ${
+              isEmpty ? 'text-red-600' : 
+              isLowBalance ? 'text-yellow-600' : 
+              'text-green-600'
+            }`}>
               GHS{" "}
-              {(cashAccount?.current_balance || 0).toLocaleString("en-US", {
+              {currentBalance.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
               })}
             </span>
           </div>
+
+          {isEmpty && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-md">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <span className="text-sm text-red-800 font-medium">
+                  Cash till is empty! Add money to enable transactions.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {isLowBalance && !isEmpty && (
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm text-yellow-800">
+                  Low balance. Consider adding more cash.
+                </span>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="flex justify-between">

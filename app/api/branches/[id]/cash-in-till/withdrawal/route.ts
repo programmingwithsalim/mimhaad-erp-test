@@ -7,12 +7,12 @@ import { logger, LogCategory } from "@/lib/logger"
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: branchId } = await params
-    const { amount, description, userId } = await request.json()
+    const { amount, reason, userId } = await request.json()
 
-    await logger.info(LogCategory.TRANSACTION, "Cash till update request", {
+    await logger.info(LogCategory.TRANSACTION, "Cash till withdrawal request", {
       branchId,
       amount,
-      description,
+      reason,
       userId,
     })
 
@@ -34,8 +34,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: "Amount must be greater than 0" }, { status: 400 })
     }
 
-    // Get or create cash in till account
-    let cashTill = await sql`
+    if (!reason || !reason.trim()) {
+      await logger.error(LogCategory.API, "Reason is required for withdrawal", undefined, { reason })
+      return NextResponse.json({ success: false, error: "Reason is required for withdrawal" }, { status: 400 })
+    }
+
+    // Get cash in till account
+    const cashTill = await sql`
       SELECT * FROM float_accounts 
       WHERE branch_id = ${branchId} 
       AND account_type = 'cash-in-till' 
@@ -43,76 +48,47 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       LIMIT 1
     `
 
-    let newBalance = numericAmount
-    let isNewAccount = false
-
     if (cashTill.length === 0) {
-      // Create cash in till account
-      await logger.info(LogCategory.SYSTEM, "Creating new cash in till account", {
-        branchId,
-        initialAmount: numericAmount,
-      })
-
-      const [newCashTill] = await sql`
-        INSERT INTO float_accounts (
-          branch_id,
-          account_name,
-          account_type,
-          provider,
-          current_balance,
-          min_threshold,
-          max_threshold,
-          is_active,
-          created_at,
-          updated_at
-        ) VALUES (
-          ${branchId},
-          'Cash in Till',
-          'cash-in-till',
-          'Cash',
-          ${numericAmount},
-          1000,
-          50000,
-          true,
-          NOW(),
-          NOW()
-        )
-        RETURNING *
-      `
-
-      cashTill = [newCashTill]
-      isNewAccount = true
-
-      await logger.info(LogCategory.SYSTEM, "Cash in till account created successfully", {
-        accountId: newCashTill.id,
-        initialBalance: numericAmount,
-      })
-    } else {
-      // Update existing cash in till
-      const currentBalance = Number(cashTill[0].current_balance) || 0
-      newBalance = currentBalance + numericAmount
-
-      await logger.info(LogCategory.TRANSACTION, "Updating existing cash in till", {
-        accountId: cashTill[0].id,
-        currentBalance,
-        depositAmount: numericAmount,
-        newBalance,
-      })
-
-      const [updatedCashTill] = await sql`
-        UPDATE float_accounts 
-        SET 
-          current_balance = ${newBalance},
-          updated_at = NOW()
-        WHERE id = ${cashTill[0].id}
-        RETURNING *
-      `
-
-      cashTill = [updatedCashTill]
+      await logger.error(LogCategory.API, "Cash in till account not found", undefined, { branchId })
+      return NextResponse.json({ success: false, error: "Cash in till account not found" }, { status: 404 })
     }
 
-    // Log the transaction in float_transactions table
-    const transactionDescription = description || `Cash deposit of GHS ${numericAmount.toLocaleString()}`
+    const currentBalance = Number(cashTill[0].current_balance) || 0
+    
+    if (numericAmount > currentBalance) {
+      await logger.error(LogCategory.API, "Insufficient balance for withdrawal", undefined, {
+        requestedAmount: numericAmount,
+        currentBalance,
+        branchId,
+      })
+      return NextResponse.json({ 
+        success: false, 
+        error: `Insufficient balance. Available: GHS ${currentBalance.toLocaleString()}` 
+      }, { status: 400 })
+    }
+
+    const newBalance = currentBalance - numericAmount
+
+    await logger.info(LogCategory.TRANSACTION, "Processing cash till withdrawal", {
+      accountId: cashTill[0].id,
+      currentBalance,
+      withdrawalAmount: numericAmount,
+      newBalance,
+      reason,
+    })
+
+    // Update cash in till balance
+    const [updatedCashTill] = await sql`
+      UPDATE float_accounts 
+      SET 
+        current_balance = ${newBalance},
+        updated_at = NOW()
+      WHERE id = ${cashTill[0].id}
+      RETURNING *
+    `
+
+    // Log the withdrawal transaction
+    const transactionDescription = `Withdrawal: ${reason.trim()}`
     
     await sql`
       INSERT INTO float_transactions (
@@ -128,9 +104,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       ) VALUES (
         gen_random_uuid(),
         ${cashTill[0].id},
-        'deposit',
+        'withdrawal',
         ${numericAmount},
-        ${isNewAccount ? 0 : Number(cashTill[0].current_balance) - numericAmount},
+        ${currentBalance},
         ${newBalance},
         ${transactionDescription},
         ${userId || 'system'},
@@ -138,11 +114,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       )
     `
 
-    await logger.info(LogCategory.TRANSACTION, "Cash till transaction logged", {
+    await logger.info(LogCategory.TRANSACTION, "Cash till withdrawal transaction logged", {
       accountId: cashTill[0].id,
-      transactionType: 'deposit',
+      transactionType: 'withdrawal',
       amount: numericAmount,
       newBalance,
+      reason,
     })
 
     // Also log in cash_till table for backward compatibility
@@ -151,43 +128,44 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       
       await sql`
         INSERT INTO cash_till (branch_id, date, amount, description)
-        VALUES (${branchId}::uuid, ${today}, ${numericAmount}, ${transactionDescription})
+        VALUES (${branchId}::uuid, ${today}, -${numericAmount}, ${transactionDescription})
         ON CONFLICT (branch_id, date)
         DO UPDATE SET 
-          amount = cash_till.amount + ${numericAmount},
+          amount = cash_till.amount - ${numericAmount},
           updated_at = NOW()
       `
     } catch (cashTillError) {
       await logger.warn(LogCategory.SYSTEM, "Failed to update cash_till table", cashTillError as Error, {
         branchId,
-        amount: numericAmount,
+        amount: -numericAmount,
       })
       // Don't fail the entire operation if cash_till table update fails
     }
 
-    await logger.info(LogCategory.TRANSACTION, "Cash till update completed successfully", {
+    await logger.info(LogCategory.TRANSACTION, "Cash till withdrawal completed successfully", {
       branchId,
       amount: numericAmount,
       newBalance,
-      isNewAccount,
+      reason,
     })
 
     return NextResponse.json({
       success: true,
-      message: `Successfully added GHS ${numericAmount.toLocaleString()} to cash till`,
+      message: `Successfully withdrew GHS ${numericAmount.toLocaleString()} from cash till`,
       cashTill: {
-        ...cashTill[0],
+        ...updatedCashTill,
         current_balance: newBalance,
       },
     })
   } catch (error) {
-    await logger.error(LogCategory.API, "Cash till update failed", error as Error, {
+    await logger.error(LogCategory.API, "Cash till withdrawal failed", error as Error, {
       branchId,
       amount,
+      reason,
     })
     return NextResponse.json(
-      { success: false, error: "Failed to update cash till" },
+      { success: false, error: "Failed to withdraw from cash till" },
       { status: 500 }
     )
   }
-}
+} 
