@@ -138,25 +138,25 @@ export class CustomerNotificationService {
    */
   private static async getSystemSMSConfig() {
     try {
-      console.log("🔍 Fetching SMS configuration from system_settings...")
+      console.log("🔍 Fetching SMS configuration from system_config...")
       
       const config = await sql`
         SELECT 
-          key, value
-        FROM system_settings 
-        WHERE key IN ('sms_provider', 'sms_api_key', 'sms_api_secret', 'sms_sender_id')
+          config_key, config_value
+        FROM system_config 
+        WHERE config_key IN ('sms_provider', 'sms_api_key', 'sms_api_secret', 'sms_sender_id')
       `
 
       console.log("📋 Raw SMS config from database:", config)
 
       if (config.length === 0) {
-        console.log("❌ No SMS settings found in system_settings table")
+        console.log("❌ No SMS settings found in system_config table")
         return null
       }
 
       // Convert to object
       const configObj = config.reduce((acc: any, setting: any) => {
-        acc[setting.key] = setting.value
+        acc[setting.config_key] = setting.config_value
         return acc
       }, {})
 

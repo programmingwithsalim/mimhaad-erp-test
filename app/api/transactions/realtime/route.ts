@@ -35,8 +35,8 @@ export async function GET(request: NextRequest) {
 
     if (!serviceType || serviceType === 'agency_banking') {
       const agencyQuery = status 
-        ? sql`SELECT id, type, 'agency_banking' as service_type, amount, fee, status, customer_name, account_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, bank_name as provider FROM agency_banking_transactions WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
-        : sql`SELECT id, type, 'agency_banking' as service_type, amount, fee, status, customer_name, account_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, bank_name as provider FROM agency_banking_transactions WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
+        ? sql`SELECT id, type, 'agency_banking' as service_type, amount, fee, status, customer_name, account_number as phone_number, reference, date as created_at, date as updated_at, branch_id, user_id as processed_by, partner_bank as provider FROM agency_banking_transactions WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
+        : sql`SELECT id, type, 'agency_banking' as service_type, amount, fee, status, customer_name, account_number as phone_number, reference, date as created_at, date as updated_at, branch_id, user_id as processed_by, partner_bank as provider FROM agency_banking_transactions WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
       
       const agencyTransactions = await agencyQuery
       transactions.push(...agencyTransactions)
@@ -44,8 +44,8 @@ export async function GET(request: NextRequest) {
 
     if (!serviceType || serviceType === 'e_zwich') {
       const ezwichQuery = status 
-        ? sql`SELECT id, 'withdrawal' as type, 'e_zwich' as service_type, amount, fee_charged as fee, status, customer_name, card_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, 'e_zwich' as provider FROM e_zwich_withdrawals WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
-        : sql`SELECT id, 'withdrawal' as type, 'e_zwich' as service_type, amount, fee_charged as fee, status, customer_name, card_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, 'e_zwich' as provider FROM e_zwich_withdrawals WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
+        ? sql`SELECT id, 'withdrawal' as type, 'e_zwich' as service_type, amount, fee, status, customer_name, card_number as phone_number, reference, transaction_date as created_at, transaction_date as updated_at, branch_id, processed_by, partner_bank as provider FROM e_zwich_withdrawals WHERE branch_id = ${branchId} AND status = ${status} ORDER BY transaction_date DESC LIMIT ${limit}`
+        : sql`SELECT id, 'withdrawal' as type, 'e_zwich' as service_type, amount, fee, status, customer_name, card_number as phone_number, reference, transaction_date as created_at, transaction_date as updated_at, branch_id, processed_by, partner_bank as provider FROM e_zwich_withdrawals WHERE branch_id = ${branchId} ORDER BY transaction_date DESC LIMIT ${limit}`
       
       const ezwichTransactions = await ezwichQuery
       transactions.push(...ezwichTransactions)

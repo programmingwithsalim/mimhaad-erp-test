@@ -234,8 +234,8 @@ export default function FloatManagementPage() {
   };
 
   const canDeposit = (accountType: string) => {
-    // MoMo and agency banking can accept deposits, but not E-Zwich
-    return ["momo", "agency-banking"].includes(accountType?.toLowerCase());
+    // MoMo, agency banking, and cash-in-till can accept deposits
+    return ["momo", "agency-banking", "cash-in-till"].includes(accountType?.toLowerCase());
   };
 
   const canBeUsedAsSource = (accountType: string) => {

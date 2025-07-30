@@ -55,54 +55,71 @@ export async function POST() {
     // Seed default settings and fees
     await SettingsService.seedDefaultSettings()
 
-    // Ensure SMS settings are seeded
+    // Ensure SMS and Email settings are seeded in system_config
     try {
-      const smsSettings = [
+      const notificationSettings = [
         {
-          key: "sms_provider",
-          value: "hubtel",
-          category: "sms",
+          config_key: "sms_provider",
+          config_value: "hubtel",
+          config_type: "string",
           description: "Default SMS provider (hubtel, smsonlinegh)",
-          data_type: "string" as const,
-          is_public: false,
+          category: "notifications",
         },
         {
-          key: "sms_api_key",
-          value: "",
-          category: "sms",
+          config_key: "sms_api_key",
+          config_value: "",
+          config_type: "string",
           description: "SMS API key for notifications",
-          data_type: "string" as const,
-          is_public: false,
+          category: "notifications",
         },
         {
-          key: "sms_api_secret",
-          value: "",
-          category: "sms",
+          config_key: "sms_api_secret",
+          config_value: "",
+          config_type: "string",
           description: "SMS API secret for notifications",
-          data_type: "string" as const,
-          is_public: false,
+          category: "notifications",
         },
         {
-          key: "sms_sender_id",
-          value: "MIMHAAD",
-          category: "sms",
+          config_key: "sms_sender_id",
+          config_value: "MIMHAAD",
+          config_type: "string",
           description: "SMS sender ID for notifications",
-          data_type: "string" as const,
-          is_public: false,
+          category: "notifications",
+        },
+        {
+          config_key: "email_provider",
+          config_value: "resend",
+          config_type: "string",
+          description: "Default email provider (resend, sendgrid)",
+          category: "notifications",
+        },
+        {
+          config_key: "email_api_key",
+          config_value: "",
+          config_type: "string",
+          description: "Email API key for notifications",
+          category: "notifications",
+        },
+        {
+          config_key: "email_from_address",
+          config_value: "noreply@mimhaad.com",
+          config_type: "string",
+          description: "Default from email address",
+          category: "notifications",
         },
       ]
 
-      for (const setting of smsSettings) {
+      for (const setting of notificationSettings) {
         await sql`
-          INSERT INTO system_settings (key, value, category, description, data_type, is_public)
-          VALUES (${setting.key}, ${setting.value}, ${setting.category}, 
-                  ${setting.description}, ${setting.data_type}, ${setting.is_public})
-          ON CONFLICT (key) DO NOTHING
+          INSERT INTO system_config (config_key, config_value, config_type, description, category)
+          VALUES (${setting.config_key}, ${setting.config_value}, ${setting.config_type}, 
+                  ${setting.description}, ${setting.category})
+          ON CONFLICT (config_key) DO NOTHING
         `
       }
-      console.log("✅ SMS settings ensured")
+      console.log("✅ Notification settings ensured in system_config")
     } catch (error) {
-      console.error("❌ Error ensuring SMS settings:", error)
+      console.error("❌ Error ensuring notification settings:", error)
     }
 
     // Seed GL mappings for float accounts

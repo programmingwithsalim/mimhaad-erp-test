@@ -93,41 +93,69 @@ interface EnhancedCashierDashboardProps {
 }
 
 export function EnhancedCashierDashboard({
-  serviceStats,
-  totalStats,
+  serviceStats = [],
+  totalStats = {
+    totalTransactions: 0,
+    totalVolume: 0,
+    totalCommission: 0,
+    todayTransactions: 0,
+    todayVolume: 0,
+    todayCommission: 0,
+  },
 }: EnhancedCashierDashboardProps) {
   const { toast } = useToast()
   const { user } = useCurrentUser()
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [selectedTransaction, setSelectedTransaction] = useState<any>(null)
-  const [showTransactionDetail, setShowTransactionDetail] = useState(false)
-  const [showMarkDeliveredDialog, setShowMarkDeliveredDialog] = useState(false)
-  const [showSendSMSDialog, setShowSendSMSDialog] = useState(false)
-  const [processingTransaction, setProcessingTransaction] = useState<string | null>(null)
-  const [smsMessage, setSmsMessage] = useState("")
   const [activeTab, setActiveTab] = useState("all")
+  const [selectedTransaction, setSelectedTransaction] = useState<any>(null)
+  const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
+  const [isSMSDialogOpen, setIsSMSDialogOpen] = useState(false)
+  const [processingTransaction, setProcessingTransaction] = useState<string | null>(null)
+  const [isRefreshingTransactions, setIsRefreshingTransactions] = useState(false)
+  const [smsMessage, setSmsMessage] = useState("")
 
-  // Real-time transactions hook
+  // Use real-time transactions with 10-second refresh interval
   const {
     transactions,
     loading,
     error,
     lastUpdate,
-    isRefreshing: isRefreshingTransactions,
+    isRefreshing,
     refresh,
     updateTransactionStatus,
   } = useRealtimeTransactions({
     branchId: user?.branchId,
     limit: 100,
     autoRefresh: true,
-    refreshInterval: 3000, // 3 seconds
+    refreshInterval: 10000, // 10 seconds instead of 3 seconds
   })
 
+  // Filter transactions based on active tab
+  const filteredTransactions = activeTab === "all" 
+    ? transactions 
+    : transactions.filter(tx => tx.service_type === activeTab)
+
+  // Safe statistics with fallbacks for NaN values
+  const safeServiceStats = serviceStats.map(stat => ({
+    ...stat,
+    transactions: isNaN(stat.transactions) ? 0 : stat.transactions,
+    volume: isNaN(stat.volume) ? 0 : stat.volume,
+    commission: isNaN(stat.commission) ? 0 : stat.commission,
+  }))
+
+  const safeTotalStats = {
+    totalTransactions: isNaN(totalStats.totalTransactions) ? 0 : totalStats.totalTransactions,
+    totalVolume: isNaN(totalStats.totalVolume) ? 0 : totalStats.totalVolume,
+    totalCommission: isNaN(totalStats.totalCommission) ? 0 : totalStats.totalCommission,
+    todayTransactions: isNaN(totalStats.todayTransactions) ? 0 : totalStats.todayTransactions,
+    todayVolume: isNaN(totalStats.todayVolume) ? 0 : totalStats.todayVolume,
+    todayCommission: isNaN(totalStats.todayCommission) ? 0 : totalStats.todayCommission,
+  }
+
   const handleRefresh = () => {
-    setIsRefreshing(true)
+    setIsRefreshingTransactions(true)
     refresh()
     setTimeout(() => {
-      setIsRefreshing(false)
+      setIsRefreshingTransactions(false)
     }, 1000)
   }
 
@@ -186,7 +214,7 @@ export function EnhancedCashierDashboard({
 
   const handleViewTransaction = (transaction: any) => {
     setSelectedTransaction(transaction)
-    setShowTransactionDetail(true)
+    setIsViewDialogOpen(true)
   }
 
   const handleMarkDelivered = async (transactionId: string) => {
@@ -256,7 +284,7 @@ export function EnhancedCashierDashboard({
           description: "SMS notification sent successfully",
         })
         setSmsMessage("")
-        setShowSendSMSDialog(false)
+        setIsSMSDialogOpen(false)
       } else {
         throw new Error("Failed to send SMS")
       }
@@ -286,11 +314,6 @@ export function EnhancedCashierDashboard({
     return phone
   }
 
-  const filteredTransactions = transactions.filter(tx => {
-    if (activeTab === "all") return true
-    return tx.service_type.toLowerCase() === activeTab.toLowerCase()
-  })
-
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header with refresh indicator */}
@@ -308,11 +331,11 @@ export function EnhancedCashierDashboard({
         </div>
         <Button
           onClick={handleRefresh}
-          disabled={isRefreshing || isRefreshingTransactions}
+          disabled={isRefreshingTransactions || isRefreshing}
           variant="outline"
           className="gap-2"
         >
-          {(isRefreshing || isRefreshingTransactions) ? (
+          {(isRefreshingTransactions || isRefreshing) ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <RefreshCw className="h-4 w-4" />
@@ -323,7 +346,7 @@ export function EnhancedCashierDashboard({
 
       {/* Service Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {serviceStats.map((stat) => (
+        {safeServiceStats.map((stat) => (
           <Card key={stat.service}>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">
@@ -351,9 +374,9 @@ export function EnhancedCashierDashboard({
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{totalStats.todayTransactions}</div>
+            <div className="text-2xl font-bold">{safeTotalStats.todayTransactions}</div>
             <p className="text-xs text-muted-foreground">
-              {formatCurrency(totalStats.todayVolume)} volume
+              {formatCurrency(safeTotalStats.todayVolume)} volume
             </p>
           </CardContent>
         </Card>
@@ -364,9 +387,9 @@ export function EnhancedCashierDashboard({
             <Banknote className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalStats.totalVolume)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(safeTotalStats.totalVolume)}</div>
             <p className="text-xs text-muted-foreground">
-              {totalStats.totalTransactions} transactions
+              {safeTotalStats.totalTransactions} transactions
             </p>
           </CardContent>
         </Card>
@@ -377,9 +400,9 @@ export function EnhancedCashierDashboard({
             <CreditCard className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalStats.totalCommission)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(safeTotalStats.totalCommission)}</div>
             <p className="text-xs text-muted-foreground">
-              {formatCurrency(totalStats.todayCommission)} today
+              {formatCurrency(safeTotalStats.todayCommission)} today
             </p>
           </CardContent>
         </Card>
@@ -390,7 +413,7 @@ export function EnhancedCashierDashboard({
         <CardHeader>
           <CardTitle>Recent Transactions</CardTitle>
           <CardDescription>
-            Live transaction updates - refreshing every 3 seconds
+            Live transaction updates - refreshing every 10 seconds
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -500,7 +523,7 @@ export function EnhancedCashierDashboard({
                                 )}
                                 <DropdownMenuItem onClick={() => {
                                   setSelectedTransaction(transaction)
-                                  setShowSendSMSDialog(true)
+                                  setIsSMSDialogOpen(true)
                                 }}>
                                   <MessageSquare className="mr-2 h-4 w-4" />
                                   Send SMS
@@ -529,7 +552,7 @@ export function EnhancedCashierDashboard({
       </Card>
 
       {/* Transaction Detail Dialog */}
-      <Dialog open={showTransactionDetail} onOpenChange={setShowTransactionDetail}>
+      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Transaction Details</DialogTitle>
@@ -587,7 +610,7 @@ export function EnhancedCashierDashboard({
       </Dialog>
 
       {/* Send SMS Dialog */}
-      <Dialog open={showSendSMSDialog} onOpenChange={setShowSendSMSDialog}>
+      <Dialog open={isSMSDialogOpen} onOpenChange={setIsSMSDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Send SMS Notification</DialogTitle>
@@ -614,7 +637,7 @@ export function EnhancedCashierDashboard({
             )}
           </div>
           <div className="flex justify-end space-x-2">
-            <Button variant="outline" onClick={() => setShowSendSMSDialog(false)}>
+            <Button variant="outline" onClick={() => setIsSMSDialogOpen(false)}>
               Cancel
             </Button>
             <Button 
