@@ -3,10 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "next build && npm run clean:post-build",
+    "build:clean": "npm run clean:pre-build && next build && npm run clean:post-build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "clean": "powershell -ExecutionPolicy Bypass -File clean-cache.ps1",
+    "clean:cache": "next clear && npm cache clean --force",
+    "clean:all": "powershell -ExecutionPolicy Bypass -File clean-cache.ps1 && npm install",
+    "clean:pre-build": "next clear",
+    "clean:post-build": "powershell -Command \"if (Test-Path '.next/cache') { Remove-Item -Recurse -Force '.next/cache'; Write-Host '✅ Build cache cleaned' -ForegroundColor Green }\"",
+    "build:amplify": "powershell -ExecutionPolicy Bypass -File amplify-build.ps1"
   },
   "dependencies": {
     "@auth/core": "latest",
