@@ -237,7 +237,6 @@ export function EditFloatAccountModal({
       // Prepare update data
       const updateData: any = {
         branch_id: branchId,
-        current_balance: currentBalanceValue,
         min_threshold: minThresholdValue,
         max_threshold: maxThresholdValue,
       };
@@ -411,7 +410,11 @@ export function EditFloatAccountModal({
               min="0"
               value={currentBalance}
               onChange={(e) => setCurrentBalance(e.target.value)}
+              disabled
             />
+            <p className="text-xs text-muted-foreground">
+              Current balance cannot be modified directly. Use deposit/recharge functions to change the balance.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
