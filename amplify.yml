@@ -3,10 +3,11 @@ frontend:
   phases:
     preBuild:
       commands:
-        - npm ci
+        - nvm use 19
+        - chmod +x amplify-build.sh
     build:
       commands:
-        - npm run build:amplify
+        - ./amplify-build.sh
   artifacts:
     baseDirectory: .next
     files:

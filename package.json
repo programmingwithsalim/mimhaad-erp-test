@@ -2,6 +2,10 @@
   "name": "my-v0-project",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
   "scripts": {
     "build": "next build && npm run clean:post-build",
     "build:clean": "npm run clean:pre-build && next build && npm run clean:post-build",
@@ -13,7 +17,8 @@
     "clean:all": "powershell -ExecutionPolicy Bypass -File clean-cache.ps1 && npm install",
     "clean:pre-build": "next clear",
     "clean:post-build": "powershell -Command \"if (Test-Path '.next/cache') { Remove-Item -Recurse -Force '.next/cache'; Write-Host '✅ Build cache cleaned' -ForegroundColor Green }\"",
-    "build:amplify": "powershell -ExecutionPolicy Bypass -File amplify-build.ps1"
+    "build:amplify": "powershell -ExecutionPolicy Bypass -File amplify-build.ps1",
+    "build:amplify:linux": "./amplify-build.sh"
   },
   "dependencies": {
     "@auth/core": "latest",
