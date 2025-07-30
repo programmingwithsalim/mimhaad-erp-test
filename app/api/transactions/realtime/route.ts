@@ -21,123 +21,50 @@ export async function GET(request: NextRequest) {
       limit,
     })
 
-    // Build the query to union all transaction tables
-    let query = `
-      SELECT 
-        id,
-        type,
-        'momo' as service_type,
-        amount,
-        fee,
-        status,
-        customer_name,
-        phone_number,
-        reference,
-        date as created_at,
-        date as updated_at,
-        branch_id,
-        processed_by,
-        provider
-      FROM momo_transactions 
-      WHERE branch_id = $1
-      
-      UNION ALL
-      
-      SELECT 
-        id,
-        type,
-        'agency_banking' as service_type,
-        amount,
-        fee,
-        status,
-        customer_name,
-        account_number as phone_number,
-        reference,
-        date as created_at,
-        date as updated_at,
-        branch_id,
-        processed_by,
-        bank_name as provider
-      FROM agency_banking_transactions 
-      WHERE branch_id = $1
-      
-      UNION ALL
-      
-      SELECT 
-        id,
-        'withdrawal' as type,
-        'e_zwich' as service_type,
-        amount,
-        fee_charged as fee,
-        status,
-        customer_name,
-        card_number as phone_number,
-        reference,
-        date as created_at,
-        date as updated_at,
-        branch_id,
-        processed_by,
-        'e_zwich' as provider
-      FROM e_zwich_withdrawals 
-      WHERE branch_id = $1
-      
-      UNION ALL
-      
-      SELECT 
-        id,
-        type,
-        'power' as service_type,
-        amount,
-        fee,
-        status,
-        customer_name,
-        meter_number as phone_number,
-        reference,
-        date as created_at,
-        date as updated_at,
-        branch_id,
-        processed_by,
-        provider
-      FROM power_transactions 
-      WHERE branch_id = $1
-    `
+    let transactions: any[] = []
 
-    const params: any[] = [branchId]
-    let paramIndex = 1
-
-    // Add service type filter if specified
-    if (serviceType) {
-      const serviceTypeFilter = serviceType.toLowerCase()
-      if (serviceTypeFilter === 'momo') {
-        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
-        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
-        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
-      } else if (serviceTypeFilter === 'agency_banking') {
-        query = query.replace(/SELECT[\s\S]*?FROM momo_transactions[\s\S]*?UNION ALL/g, '')
-        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
-        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
-      } else if (serviceTypeFilter === 'e_zwich') {
-        query = query.replace(/SELECT[\s\S]*?FROM momo_transactions[\s\S]*?UNION ALL/g, '')
-        query = query.replace(/SELECT[\s\S]*?FROM agency_banking_transactions[\s\S]*?UNION ALL/g, '')
-        query = query.replace(/UNION ALL[\s\S]*?WHERE branch_id = \$\d+/g, '')
-      } else if (serviceTypeFilter === 'power') {
-        query = query.replace(/SELECT[\s\S]*?FROM momo_transactions[\s\S]*?UNION ALL/g, '')
-        query = query.replace(/SELECT[\s\S]*?FROM agency_banking_transactions[\s\S]*?UNION ALL/g, '')
-        query = query.replace(/SELECT[\s\S]*?FROM e_zwich_withdrawals[\s\S]*?UNION ALL/g, '')
-      }
+    // Fetch transactions based on service type
+    if (!serviceType || serviceType === 'momo') {
+      const momoQuery = status 
+        ? sql`SELECT id, type, 'momo' as service_type, amount, fee, status, customer_name, phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, provider FROM momo_transactions WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
+        : sql`SELECT id, type, 'momo' as service_type, amount, fee, status, customer_name, phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, provider FROM momo_transactions WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
+      
+      const momoTransactions = await momoQuery
+      transactions.push(...momoTransactions)
     }
 
-    // Add status filter if specified
-    if (status) {
-      paramIndex++
-      query += ` AND status = $${paramIndex}`
-      params.push(status)
+    if (!serviceType || serviceType === 'agency_banking') {
+      const agencyQuery = status 
+        ? sql`SELECT id, type, 'agency_banking' as service_type, amount, fee, status, customer_name, account_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, bank_name as provider FROM agency_banking_transactions WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
+        : sql`SELECT id, type, 'agency_banking' as service_type, amount, fee, status, customer_name, account_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, bank_name as provider FROM agency_banking_transactions WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
+      
+      const agencyTransactions = await agencyQuery
+      transactions.push(...agencyTransactions)
     }
 
-    query += ` ORDER BY created_at DESC LIMIT $${paramIndex + 1}`
-    params.push(limit)
+    if (!serviceType || serviceType === 'e_zwich') {
+      const ezwichQuery = status 
+        ? sql`SELECT id, 'withdrawal' as type, 'e_zwich' as service_type, amount, fee_charged as fee, status, customer_name, card_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, 'e_zwich' as provider FROM e_zwich_withdrawals WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
+        : sql`SELECT id, 'withdrawal' as type, 'e_zwich' as service_type, amount, fee_charged as fee, status, customer_name, card_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, 'e_zwich' as provider FROM e_zwich_withdrawals WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
+      
+      const ezwichTransactions = await ezwichQuery
+      transactions.push(...ezwichTransactions)
+    }
 
-    const transactions = await sql.query(query, params)
+    if (!serviceType || serviceType === 'power') {
+      const powerQuery = status 
+        ? sql`SELECT id, type, 'power' as service_type, amount, fee, status, customer_name, meter_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, provider FROM power_transactions WHERE branch_id = ${branchId} AND status = ${status} ORDER BY date DESC LIMIT ${limit}`
+        : sql`SELECT id, type, 'power' as service_type, amount, fee, status, customer_name, meter_number as phone_number, reference, date as created_at, date as updated_at, branch_id, processed_by, provider FROM power_transactions WHERE branch_id = ${branchId} ORDER BY date DESC LIMIT ${limit}`
+      
+      const powerTransactions = await powerQuery
+      transactions.push(...powerTransactions)
+    }
+
+    // Sort all transactions by created_at descending
+    transactions.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+
+    // Limit the total results
+    transactions = transactions.slice(0, limit)
 
     await logger.info(LogCategory.API, "Real-time transactions fetched successfully", {
       branchId,
@@ -151,6 +78,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     await logger.error(LogCategory.API, "Real-time transactions fetch failed", error as Error)
+    console.error("Real-time transactions error:", error)
     return NextResponse.json(
       { error: "Failed to fetch transactions" },
       { status: 500 }

@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { neon } from "@neondatabase/serverless";
+import { sql } from "@/lib/db";
 import { getDatabaseSession } from "@/lib/database-session-service";
-
-const sql = neon(process.env.DATABASE_URL!);
+import { logger, LogCategory } from "@/lib/logger";
 
 export async function GET() {
   try {
@@ -18,6 +17,8 @@ export async function GET() {
 
     const userId = session.user.id;
 
+    await logger.info(LogCategory.API, "Fetching notification settings", { userId });
+
     // Get user's notification settings
     const settings = await sql`
       SELECT * FROM user_notification_settings 
@@ -25,6 +26,7 @@ export async function GET() {
     `;
 
     if (settings.length === 0) {
+      await logger.info(LogCategory.API, "No notification settings found, returning defaults", { userId });
       // Return default settings if none exist
       return NextResponse.json({
         success: true,
@@ -53,6 +55,8 @@ export async function GET() {
 
     // Transform database fields to expected format
     const userSettings = settings[0];
+    await logger.info(LogCategory.API, "Notification settings fetched successfully", { userId });
+    
     return NextResponse.json({
       success: true,
       data: {
@@ -77,6 +81,7 @@ export async function GET() {
       },
     });
   } catch (error) {
+    await logger.error(LogCategory.API, "Error fetching notification settings", error as Error);
     console.error("Error fetching notification settings:", error);
     return NextResponse.json(
       {
@@ -102,8 +107,16 @@ export async function PUT(request: Request) {
     }
 
     const userId = session.user.id;
-
     const data = await request.json();
+
+    await logger.info(LogCategory.API, "Updating notification settings", { 
+      userId, 
+      settings: {
+        emailNotifications: data.emailNotifications,
+        smsNotifications: data.smsNotifications,
+        pushNotifications: data.pushNotifications,
+      }
+    });
 
     // Upsert notification settings
     await sql`
@@ -173,11 +186,14 @@ export async function PUT(request: Request) {
         updated_at = EXCLUDED.updated_at
     `;
 
+    await logger.info(LogCategory.API, "Notification settings updated successfully", { userId });
+
     return NextResponse.json({
       success: true,
       message: "Notification settings updated successfully",
     });
   } catch (error) {
+    await logger.error(LogCategory.API, "Error updating notification settings", error as Error);
     console.error("Error updating notification settings:", error);
     return NextResponse.json(
       {
