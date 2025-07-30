@@ -1,8 +1,5 @@
-import { neon } from "@neondatabase/serverless";
 import { sql } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth-utils";
-
-const sqlNeon = neon(process.env.DATABASE_URL!);
 
 export interface FloatStatementFilters {
   branchId?: string;
@@ -175,14 +172,11 @@ export class EnhancedFloatStatementService {
     filters: FloatStatementFilters
   ): Promise<any[]> {
     // First, let's check if there are any transactions at all for this account
-    const basicCheck = await sqlNeon(
-      `
+    const basicCheck = await sql`
       SELECT COUNT(*) as total_count
       FROM float_transactions 
-      WHERE float_account_id = $1
-    `,
-      [floatAccountId]
-    );
+      WHERE float_account_id = ${floatAccountId}
+    `;
 
     console.log(
       `🔍 [FLOAT TRANSACTIONS] Total transactions for account: ${
@@ -199,16 +193,13 @@ export class EnhancedFloatStatementService {
 
     // Check transactions in date range
     if (filters.startDate && filters.endDate) {
-      const dateRangeCheck = await sqlNeon(
-        `
+      const dateRangeCheck = await sql`
         SELECT COUNT(*) as count_in_range
         FROM float_transactions 
-        WHERE float_account_id = $1
-        AND created_at >= $2::date
-        AND created_at <= $3::date + INTERVAL '1 day'
-      `,
-        [floatAccountId, filters.startDate, filters.endDate]
-      );
+        WHERE float_account_id = ${floatAccountId}
+        AND created_at >= ${filters.startDate}::date
+        AND created_at <= ${filters.endDate}::date + INTERVAL '1 day'
+      `;
 
       console.log(
         `🔍 [FLOAT TRANSACTIONS] Transactions in date range: ${
@@ -278,7 +269,7 @@ export class EnhancedFloatStatementService {
     console.log(`🔍 [FLOAT TRANSACTIONS] Query: ${queryString}`);
     console.log(`🔍 [FLOAT TRANSACTIONS] Params:`, params);
 
-    const result = await sqlNeon(queryString, params);
+    const result = await sql.query(queryString, params);
     console.log(`🔍 [FLOAT TRANSACTIONS] Result count: ${result.length}`);
 
     return result;
@@ -415,7 +406,7 @@ export class EnhancedFloatStatementService {
     console.log(`🔍 [GL ENTRIES] Query: ${queryString}`);
     console.log(`🔍 [GL ENTRIES] Params:`, params);
 
-    const result = await sqlNeon(queryString, params);
+    const result = await sql.query(queryString, params);
     console.log(
       `🔍 [GL ENTRIES] Found ${result.length} GL entries for float account ${floatAccountId}`
     );
