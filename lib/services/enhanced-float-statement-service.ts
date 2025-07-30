@@ -130,7 +130,9 @@ export class EnhancedFloatStatementService {
       const mergedEntries = await this.mergeTransactionsWithGL(
         floatTransactions,
         glEntries,
-        account
+        account,
+        filters,
+        floatAccountId
       );
 
       // Calculate summary
@@ -420,7 +422,9 @@ export class EnhancedFloatStatementService {
   private static async mergeTransactionsWithGL(
     floatTransactions: any[],
     glEntries: any[],
-    account: any
+    account: any,
+    filters: FloatStatementFilters,
+    floatAccountId: string
   ): Promise<FloatStatementEntry[]> {
     const merged: FloatStatementEntry[] = [];
     const processedGLTransactions = new Set<string>();
