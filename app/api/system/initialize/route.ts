@@ -55,6 +55,56 @@ export async function POST() {
     // Seed default settings and fees
     await SettingsService.seedDefaultSettings()
 
+    // Ensure SMS settings are seeded
+    try {
+      const smsSettings = [
+        {
+          key: "sms_provider",
+          value: "hubtel",
+          category: "sms",
+          description: "Default SMS provider (hubtel, smsonlinegh)",
+          data_type: "string" as const,
+          is_public: false,
+        },
+        {
+          key: "sms_api_key",
+          value: "",
+          category: "sms",
+          description: "SMS API key for notifications",
+          data_type: "string" as const,
+          is_public: false,
+        },
+        {
+          key: "sms_api_secret",
+          value: "",
+          category: "sms",
+          description: "SMS API secret for notifications",
+          data_type: "string" as const,
+          is_public: false,
+        },
+        {
+          key: "sms_sender_id",
+          value: "MIMHAAD",
+          category: "sms",
+          description: "SMS sender ID for notifications",
+          data_type: "string" as const,
+          is_public: false,
+        },
+      ]
+
+      for (const setting of smsSettings) {
+        await sql`
+          INSERT INTO system_settings (key, value, category, description, data_type, is_public)
+          VALUES (${setting.key}, ${setting.value}, ${setting.category}, 
+                  ${setting.description}, ${setting.data_type}, ${setting.is_public})
+          ON CONFLICT (key) DO NOTHING
+        `
+      }
+      console.log("✅ SMS settings ensured")
+    } catch (error) {
+      console.error("❌ Error ensuring SMS settings:", error)
+    }
+
     // Seed GL mappings for float accounts
     try {
       const response = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/gl/mappings/seed`, {

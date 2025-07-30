@@ -32,16 +32,29 @@ export class CustomerNotificationService {
       const formattedPhone = formatGhanaPhoneNumber(data.customerPhone)
       const smsPhone = formatPhoneForSMS(data.customerPhone)
 
+      console.log("📱 Customer notification details:", {
+        originalPhone: data.customerPhone,
+        formattedPhone,
+        smsPhone,
+        customerName: data.customerName,
+        message: data.message,
+      })
+
       // Get system SMS configuration
       const smsConfig = await this.getSystemSMSConfig()
       
+      console.log("📧 SMS Configuration:", smsConfig)
+      
       if (!smsConfig) {
         await logger.warn(LogCategory.TRANSACTION, "No SMS configuration found, skipping customer notification")
+        console.log("❌ No SMS configuration found in system_settings")
         return { success: false, error: "No SMS configuration found" }
       }
 
       // Send SMS notification
       const smsResult = await this.sendSMSNotification(data, smsPhone, smsConfig)
+      
+      console.log("📤 SMS Result:", smsResult)
       
       // Log the notification attempt
       await this.logCustomerNotification(data, smsResult.success)
@@ -52,6 +65,7 @@ export class CustomerNotificationService {
         customerPhone: data.customerPhone,
         type: data.type,
       })
+      console.error("❌ Customer notification error:", error)
       return {
         success: false,
         error: error instanceof Error ? error.message : "Customer notification failed",
@@ -124,6 +138,8 @@ export class CustomerNotificationService {
    */
   private static async getSystemSMSConfig() {
     try {
+      console.log("🔍 Fetching SMS configuration from system_settings...")
+      
       const config = await sql`
         SELECT 
           key, value
@@ -131,7 +147,10 @@ export class CustomerNotificationService {
         WHERE key IN ('sms_provider', 'sms_api_key', 'sms_api_secret', 'sms_sender_id')
       `
 
+      console.log("📋 Raw SMS config from database:", config)
+
       if (config.length === 0) {
+        console.log("❌ No SMS settings found in system_settings table")
         return null
       }
 
@@ -141,14 +160,19 @@ export class CustomerNotificationService {
         return acc
       }, {})
 
-      return {
+      console.log("🔧 Processed SMS config object:", configObj)
+
+      const result = {
         provider: configObj.sms_provider || "hubtel",
         apiKey: configObj.sms_api_key,
         apiSecret: configObj.sms_api_secret,
         senderId: configObj.sms_sender_id,
       }
+
+      console.log("✅ Final SMS config:", result)
+      return result
     } catch (error) {
-      console.error("Error getting system SMS config:", error)
+      console.error("❌ Error getting system SMS config:", error)
       return null
     }
   }
