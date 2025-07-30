@@ -41,6 +41,42 @@ export async function POST() {
       )
     `
 
+    // Create system_logs table
+    await sql`
+      CREATE TABLE IF NOT EXISTS system_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        level VARCHAR(20) NOT NULL CHECK (level IN ('DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')),
+        category VARCHAR(50) NOT NULL,
+        message TEXT NOT NULL,
+        details JSONB,
+        entity_id VARCHAR(255),
+        entity_type VARCHAR(50),
+        metadata JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        user_id UUID REFERENCES users(id),
+        branch_id UUID REFERENCES branches(id),
+        ip_address INET,
+        user_agent TEXT
+      )
+    `
+
+    // Create indexes for system_logs
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_system_logs_category ON system_logs(category)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_system_logs_created_at ON system_logs(created_at)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_system_logs_entity_id ON system_logs(entity_id)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_system_logs_user_id ON system_logs(user_id)
+    `
+
     // Create indexes for user_notification_settings
     await sql`
       CREATE INDEX IF NOT EXISTS idx_user_notification_settings_user_id ON user_notification_settings(user_id)
@@ -136,44 +172,6 @@ export async function POST() {
     } catch (error) {
       console.log("GL mappings seeding error:", error);
     }
-
-    // Create system_logs table for structured logging
-    await sql`
-      CREATE TABLE IF NOT EXISTS system_logs (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-        level VARCHAR(20) NOT NULL,
-        category VARCHAR(50) NOT NULL,
-        message TEXT NOT NULL,
-        details JSONB,
-        user_id UUID REFERENCES users(id),
-        branch_id UUID REFERENCES branches(id),
-        transaction_id VARCHAR(255),
-        entity_id VARCHAR(255),
-        entity_type VARCHAR(100),
-        metadata JSONB,
-        error_message TEXT,
-        stack_trace TEXT,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      )
-    `;
-
-    // Create index for efficient querying
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_system_logs_timestamp ON system_logs(timestamp)
-    `;
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_system_logs_category ON system_logs(category)
-    `;
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level)
-    `;
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_system_logs_user_id ON system_logs(user_id)
-    `;
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_system_logs_transaction_id ON system_logs(transaction_id)
-    `;
 
     // Create some sample audit logs
     await AuditService.log({

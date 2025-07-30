@@ -486,17 +486,21 @@ export class UnifiedTransactionService {
         },
       });
 
-      // Notify customer
-      if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-        await NotificationService.sendNotification({
-          type: "transaction",
-          title: "Transaction Alert",
-          message: `Your transaction of GHS ${data.amount} was successful.`,
-          phone: data.phoneNumber || data.customerPhone,
-          email: data.customerEmail,
-          userId: data.userId,
-          metadata: { ...data },
-        });
+      // Notify customer (mandatory - not dependent on user preferences)
+      if (data.phoneNumber || data.customerPhone) {
+        const customerPhone = data.phoneNumber || data.customerPhone
+        const customerName = data.customerName || "Customer"
+        
+        await CustomerNotificationService.sendTransactionSuccessNotification(
+          customerPhone,
+          customerName,
+          {
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference || transaction[0].id,
+            transactionId: transaction[0].id,
+          }
+        )
       }
       // Notify user (staff)
       if (data.userId) {
@@ -583,17 +587,21 @@ export class UnifiedTransactionService {
           transaction[0]
         );
 
-        // Notify customer
-        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-          await NotificationService.sendNotification({
-            type: "transaction",
-            title: "Transaction Alert",
-            message: `Your transaction of GHS ${data.amount} was successful.`,
-            phone: data.phoneNumber || data.customerPhone,
-            email: data.customerEmail,
-            userId: data.userId,
-            metadata: { ...data },
-          });
+        // Notify customer (mandatory - not dependent on user preferences)
+        if (data.phoneNumber || data.customerPhone) {
+          const customerPhone = data.phoneNumber || data.customerPhone
+          const customerName = data.customerName || "Customer"
+          
+          await CustomerNotificationService.sendTransactionSuccessNotification(
+            customerPhone,
+            customerName,
+            {
+              amount: data.amount,
+              service: data.serviceType || data.provider || "transaction",
+              reference: data.reference || transaction[0].id,
+              transactionId: transaction[0].id,
+            }
+          )
         }
         // Notify user (staff)
         if (data.userId) {
@@ -688,17 +696,21 @@ export class UnifiedTransactionService {
           transaction[0]
         );
 
-        // Notify customer
-        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-          await NotificationService.sendNotification({
-            type: "transaction",
-            title: "Transaction Alert",
-            message: `Your transaction of GHS ${data.amount} was successful.`,
-            phone: data.phoneNumber || data.customerPhone,
-            email: data.customerEmail,
-            userId: data.userId,
-            metadata: { ...data },
-          });
+        // Notify customer (mandatory - not dependent on user preferences)
+        if (data.phoneNumber || data.customerPhone) {
+          const customerPhone = data.phoneNumber || data.customerPhone
+          const customerName = data.customerName || "Customer"
+          
+          await CustomerNotificationService.sendTransactionSuccessNotification(
+            customerPhone,
+            customerName,
+            {
+              amount: data.amount,
+              service: data.serviceType || data.provider || "transaction",
+              reference: data.reference || transaction[0].id,
+              transactionId: transaction[0].id,
+            }
+          )
         }
         // Notify user (staff)
         if (data.userId) {
@@ -836,17 +848,21 @@ export class UnifiedTransactionService {
         },
       });
 
-      // Notify customer
-      if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-        await NotificationService.sendNotification({
-          type: "transaction",
-          title: "Transaction Alert",
-          message: `Your transaction of GHS ${data.amount} was successful.`,
-          phone: data.phoneNumber || data.customerPhone,
-          email: data.customerEmail,
-          userId: data.userId,
-          metadata: { ...data },
-        });
+      // Notify customer (mandatory - not dependent on user preferences)
+      if (data.phoneNumber || data.customerPhone) {
+        const customerPhone = data.phoneNumber || data.customerPhone
+        const customerName = data.customerName || "Customer"
+        
+        await CustomerNotificationService.sendTransactionSuccessNotification(
+          customerPhone,
+          customerName,
+          {
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference || transaction[0].id,
+            transactionId: transaction[0].id,
+          }
+        )
       }
       // Notify user (staff)
       if (data.userId) {
@@ -896,17 +912,21 @@ export class UnifiedTransactionService {
           RETURNING *
         `;
 
-        // Notify customer
-        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-          await NotificationService.sendNotification({
-            type: "transaction",
-            title: "Transaction Alert",
-            message: `Your transaction of GHS ${data.amount} was successful.`,
-            phone: data.phoneNumber || data.customerPhone,
-            email: data.customerEmail,
-            userId: data.userId,
-            metadata: { ...data },
-          });
+        // Notify customer (mandatory - not dependent on user preferences)
+        if (data.phoneNumber || data.customerPhone) {
+          const customerPhone = data.phoneNumber || data.customerPhone
+          const customerName = data.customerName || "Customer"
+          
+          await CustomerNotificationService.sendTransactionSuccessNotification(
+            customerPhone,
+            customerName,
+            {
+              amount: data.amount,
+              service: data.serviceType || data.provider || "transaction",
+              reference: data.reference || transaction[0].id,
+              transactionId: transaction[0].id,
+            }
+          )
         }
         // Notify user (staff)
         if (data.userId) {
@@ -1003,17 +1023,21 @@ export class UnifiedTransactionService {
           transaction[0]
         );
 
-        // Notify customer
-        if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-          await NotificationService.sendNotification({
-            type: "transaction",
-            title: "Transaction Alert",
-            message: `Your transaction of GHS ${data.amount} was successful.`,
-            phone: data.phoneNumber || data.customerPhone,
-            email: data.customerEmail,
-            userId: data.userId,
-            metadata: { ...data },
-          });
+        // Notify customer (mandatory - not dependent on user preferences)
+        if (data.phoneNumber || data.customerPhone) {
+          const customerPhone = data.phoneNumber || data.customerPhone
+          const customerName = data.customerName || "Customer"
+          
+          await CustomerNotificationService.sendTransactionSuccessNotification(
+            customerPhone,
+            customerName,
+            {
+              amount: data.amount,
+              service: data.serviceType || data.provider || "transaction",
+              reference: data.reference || transaction[0].id,
+              transactionId: transaction[0].id,
+            }
+          )
         }
         // Notify user (staff)
         if (data.userId) {
