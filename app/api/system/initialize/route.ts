@@ -8,6 +8,42 @@ export async function POST() {
     // Initialize settings tables
     await SettingsService.initializeTables()
 
+    // Create user_notification_settings table
+    await sql`
+      CREATE TABLE IF NOT EXISTS user_notification_settings (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        email_enabled BOOLEAN DEFAULT true,
+        sms_enabled BOOLEAN DEFAULT true,
+        push_enabled BOOLEAN DEFAULT false,
+        login_alerts BOOLEAN DEFAULT true,
+        transaction_alerts BOOLEAN DEFAULT true,
+        low_balance_alerts BOOLEAN DEFAULT true,
+        high_value_transaction_threshold DECIMAL(10,2) DEFAULT 1000.00,
+        low_balance_threshold DECIMAL(10,2) DEFAULT 100.00,
+        email_address VARCHAR(255),
+        phone_number VARCHAR(20),
+        sms_provider VARCHAR(50) DEFAULT 'hubtel',
+        sms_api_key VARCHAR(255),
+        sms_api_secret VARCHAR(255),
+        sms_sender_id VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(user_id)
+      )
+    `
+
+    // Create indexes for user_notification_settings
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_user_id ON user_notification_settings(user_id)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_email_enabled ON user_notification_settings(email_enabled)
+    `
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_user_notification_settings_sms_enabled ON user_notification_settings(sms_enabled)
+    `
+
     // Seed default settings and fees
     await SettingsService.seedDefaultSettings()
 
@@ -137,6 +173,7 @@ export async function POST() {
         settings_initialized: true,
         fee_configurations_created: true,
         sample_data_added: true,
+        notification_settings_table_created: true,
       },
     })
   } catch (error) {

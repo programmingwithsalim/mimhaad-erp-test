@@ -3,6 +3,9 @@ import { UnifiedGLPostingService } from "./unified-gl-posting-service";
 import { MissingGLMethods } from "./gl-missing-methods";
 import { AuditLoggerService } from "./audit-logger-service";
 import { NotificationService } from "@/lib/services/notification-service";
+import { CustomerNotificationService } from "./customer-notification-service";
+import { FloatAccountGLService } from "./float-account-gl-service";
+import { logger, LogCategory } from "./logger";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -290,19 +293,24 @@ export class UnifiedTransactionService {
         "Branch"
       );
 
-      // Notify customer
-      if (data.phoneNumber || data.customerPhone || data.customerEmail) {
-        await NotificationService.sendNotification({
-          type: "transaction",
-          title: "Transaction Alert",
-          message: `Thank you for using our service! Your transaction of GHS ${data.amount} was successful.`,
-          phone: data.phoneNumber || data.customerPhone,
-          email: data.customerEmail,
-          userId: data.userId,
-          metadata: { ...data },
-        });
+      // Notify customer (mandatory - not dependent on user preferences)
+      if (data.phoneNumber || data.customerPhone) {
+        const customerPhone = data.phoneNumber || data.customerPhone
+        const customerName = data.customerName || "Customer"
+        
+        await CustomerNotificationService.sendTransactionSuccessNotification(
+          customerPhone,
+          customerName,
+          {
+            amount: data.amount,
+            service: data.serviceType || data.provider || "transaction",
+            reference: data.reference || transaction[0].id,
+            transactionId: transaction[0].id,
+          }
+        )
       }
-      // Notify user (staff)
+
+      // Notify user (staff) - optional based on their notification preferences
       if (data.userId) {
         await NotificationService.sendTransactionAlert(data.userId, {
           type: data.transactionType || data.type,

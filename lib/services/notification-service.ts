@@ -227,7 +227,32 @@ export class NotificationService {
       `;
 
       if (settings.length === 0) {
-        // Return default settings if none found
+        // Create default settings for the user
+        await sql`
+          INSERT INTO user_notification_settings (
+            user_id,
+            email_enabled,
+            sms_enabled,
+            push_enabled,
+            login_alerts,
+            transaction_alerts,
+            low_balance_alerts,
+            high_value_transaction_threshold,
+            low_balance_threshold
+          ) VALUES (
+            ${userId},
+            true,
+            true,
+            false,
+            true,
+            true,
+            true,
+            1000.00,
+            100.00
+          )
+        `;
+
+        // Return default settings
         return {
           email_enabled: true,
           sms_enabled: true,
@@ -243,7 +268,18 @@ export class NotificationService {
       return settings[0];
     } catch (error) {
       console.error("Error getting user notification settings:", error);
-      return null;
+      
+      // Return default settings if there's an error
+      return {
+        email_enabled: true,
+        sms_enabled: true,
+        push_enabled: false,
+        login_alerts: true,
+        transaction_alerts: true,
+        low_balance_alerts: true,
+        high_value_transaction_threshold: 1000,
+        low_balance_threshold: 100,
+      };
     }
   }
 
