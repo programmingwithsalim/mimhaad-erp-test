@@ -54,10 +54,19 @@ const API_ROUTE_RESTRICTIONS: Record<
   string,
   { roles: Role[]; permissions?: Permission[] }
 > = {
+  "/api/users/notification-settings": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
   "/api/users": { roles: ["Admin"] },
-  "/api/branches": { roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"] },
-  "/api/branches/statistics": { roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"] },
-  "/api/branches/search": { roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"] },
+  "/api/branches": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
+  "/api/branches/statistics": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
+  "/api/branches/search": {
+    roles: ["Admin", "Manager", "Finance", "Operations", "Cashier"],
+  },
   "/api/settings": { roles: ["Admin", "Manager", "Finance"] },
   "/api/gl": { roles: ["Admin", "Finance"] },
   "/api/audit-logs": { roles: ["Admin", "Manager", "Finance"] },
@@ -137,19 +146,33 @@ export async function middleware(request: NextRequest) {
 
       // Check role-based access for API routes
       const userRole = normalizeRole(session.user.role);
+      console.log(
+        `🔍 [MIDDLEWARE] Checking API access for ${userRole} on ${pathname}`
+      );
+
       if (userRole) {
         // Check if this API route has restrictions
         for (const [route, restriction] of Object.entries(
           API_ROUTE_RESTRICTIONS
         )) {
           if (pathname.startsWith(route)) {
+            console.log(`🔍 [MIDDLEWARE] Found matching route: ${route}`);
+            console.log(
+              `🔍 [MIDDLEWARE] Allowed roles: ${restriction.roles.join(", ")}`
+            );
+            console.log(`🔍 [MIDDLEWARE] User role: ${userRole}`);
+
             // Check role restriction
             if (!restriction.roles.includes(userRole)) {
               console.log(
-                `Access denied: ${userRole} cannot access ${pathname}`
+                `❌ [MIDDLEWARE] Access denied: ${userRole} cannot access ${pathname}`
               );
               return NextResponse.json({ error: "Forbidden" }, { status: 403 });
             }
+
+            console.log(
+              `✅ [MIDDLEWARE] Access granted: ${userRole} can access ${pathname}`
+            );
 
             // Check permission restriction if specified
             if (restriction.permissions) {
@@ -158,7 +181,7 @@ export async function middleware(request: NextRequest) {
               );
               if (!hasRequiredPermission) {
                 console.log(
-                  `Permission denied: ${userRole} lacks required permissions for ${pathname}`
+                  `❌ [MIDDLEWARE] Permission denied: ${userRole} lacks required permissions for ${pathname}`
                 );
                 return NextResponse.json(
                   { error: "Forbidden" },

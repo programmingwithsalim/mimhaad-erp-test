@@ -12,6 +12,7 @@ export interface CurrentUser {
   role: string;
   branchId: string;
   branchName: string;
+  phone?: string;
 }
 
 export async function getCurrentUser(
@@ -95,6 +96,7 @@ export async function getCurrentUser(
             branchId:
               session.user.branchId || "635844ab-029a-43f8-8523-d7882915266a",
             branchName: session.user.branchName || "Unknown Branch",
+            phone: session.user.phone,
           };
         } else {
           console.log("❌ [AUTH-UTILS] Invalid or expired session token");

@@ -234,6 +234,12 @@ export function useNotifications() {
     async (preferences: UserPreferences, userId: string) => {
       try {
         setIsLoading(true);
+        console.log(
+          "🔍 [USE-NOTIFICATIONS] Saving preferences for user:",
+          userId
+        );
+        console.log("📋 [USE-NOTIFICATIONS] Preferences data:", preferences);
+
         const response = await fetch("/api/users/notification-settings", {
           method: "PUT",
           headers: {
@@ -242,19 +248,40 @@ export function useNotifications() {
           body: JSON.stringify(preferences),
         });
 
+        console.log("🔍 [USE-NOTIFICATIONS] Response status:", response.status);
+        console.log("🔍 [USE-NOTIFICATIONS] Response ok:", response.ok);
+
         if (response.ok) {
           const data = await response.json();
+          console.log("🔍 [USE-NOTIFICATIONS] Response data:", data);
+
           if (data.success) {
             setPreferences(preferences);
+            console.log(
+              "✅ [USE-NOTIFICATIONS] Preferences saved successfully"
+            );
             return true;
           } else {
+            console.error(
+              "❌ [USE-NOTIFICATIONS] API returned error:",
+              data.error
+            );
             throw new Error(data.error || "Failed to save preferences");
           }
         } else {
-          throw new Error("Failed to save preferences");
+          const errorText = await response.text();
+          console.error(
+            "❌ [USE-NOTIFICATIONS] HTTP error:",
+            response.status,
+            errorText
+          );
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
       } catch (error) {
-        console.error("Error saving preferences:", error);
+        console.error(
+          "❌ [USE-NOTIFICATIONS] Error saving preferences:",
+          error
+        );
         return false;
       } finally {
         setIsLoading(false);

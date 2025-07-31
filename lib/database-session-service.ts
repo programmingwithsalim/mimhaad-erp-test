@@ -13,6 +13,7 @@ export interface SessionUser {
   role: string;
   branchId?: string;
   branchName?: string;
+  phone?: string;
 }
 
 export interface DatabaseSession {
@@ -128,6 +129,7 @@ export async function getDatabaseSession(
         u.last_name as "user_lastName",
         u.role as "user_role",
         u.primary_branch_id as "user_branchId",
+        u.phone as "user_phone",
         b.name as "user_branchName"
       FROM user_sessions s
       JOIN users u ON s.user_id = u.id
@@ -165,6 +167,7 @@ export async function getDatabaseSession(
         role: sessionData.user_role,
         branchId: sessionData.user_branchId,
         branchName: sessionData.user_branchName,
+        phone: sessionData.user_phone,
       },
     };
 

@@ -12,6 +12,7 @@ export interface CurrentUser {
   role: string;
   branchId: string;
   branchName?: string;
+  phone?: string;
 }
 
 export function useCurrentUser() {
@@ -70,6 +71,7 @@ export function useCurrentUser() {
             role: "manager",
             branchId: "635844ab-029a-43f8-8523-d7882915266a", // Valid UUID
             branchName: "Main Branch",
+            phone: "+233500000000",
           };
           console.log("Using default development user:", defaultUser);
           setUser(defaultUser);
