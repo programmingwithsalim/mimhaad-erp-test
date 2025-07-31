@@ -233,12 +233,24 @@ export default function AgencyBankingPage() {
       !formData.type ||
       !formData.amount ||
       !formData.customer_name ||
+      !formData.customer_phone ||
       !formData.account_number ||
       !formData.partner_bank_id
     ) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields including customer phone number",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate customer phone number (must be 10 digits for Ghana)
+    const phoneRegex = /^\d{10}$/;
+    if (!phoneRegex.test(formData.customer_phone)) {
+      toast({
+        title: "Invalid Phone Number",
+        description: "Customer phone number must be exactly 10 digits (e.g., 0241234567)",
         variant: "destructive",
       });
       return;

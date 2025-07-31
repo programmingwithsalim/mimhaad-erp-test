@@ -304,20 +304,27 @@ export default function EZwichPage() {
       return;
     }
 
-    // Validate customer phone (if provided, must be exactly 10 digits)
-    if (withdrawalForm.customer_phone) {
-      if (
-        withdrawalForm.customer_phone.length !== 10 ||
-        !/^\d{10}$/.test(withdrawalForm.customer_phone)
-      ) {
-        toast({
-          title: "Invalid Phone Number",
-          description:
-            "Phone number must be exactly 10 digits (e.g., 0241234567)",
-          variant: "destructive",
-        });
-        return;
-      }
+    // Validate customer phone (must be exactly 10 digits)
+    if (!withdrawalForm.customer_phone) {
+      toast({
+        title: "Missing Phone Number",
+        description: "Customer phone number is required",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      withdrawalForm.customer_phone.length !== 10 ||
+      !/^\d{10}$/.test(withdrawalForm.customer_phone)
+    ) {
+      toast({
+        title: "Invalid Phone Number",
+        description:
+          "Phone number must be exactly 10 digits (e.g., 0241234567)",
+        variant: "destructive",
+      });
+      return;
     }
 
     setSubmitting(true);

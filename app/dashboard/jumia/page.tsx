@@ -279,20 +279,27 @@ export default function JumiaPage() {
       return;
     }
 
-    // Validate customer phone (if provided, must be exactly 10 digits)
-    if (packageForm.customer_phone) {
-      if (
-        packageForm.customer_phone.length !== 10 ||
-        !/^\d{10}$/.test(packageForm.customer_phone)
-      ) {
-        toast({
-          title: "Invalid Phone Number",
-          description:
-            "Phone number must be exactly 10 digits (e.g., 0241234567)",
-          variant: "destructive",
-        });
-        return;
-      }
+    // Validate customer phone (must be exactly 10 digits for package collection)
+    if (!packageForm.customer_phone) {
+      toast({
+        title: "Missing Phone Number",
+        description: "Customer phone number is required for package collection",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      packageForm.customer_phone.length !== 10 ||
+      !/^\d{10}$/.test(packageForm.customer_phone)
+    ) {
+      toast({
+        title: "Invalid Phone Number",
+        description:
+          "Phone number must be exactly 10 digits (e.g., 0241234567)",
+        variant: "destructive",
+      });
+      return;
     }
 
     setSubmitting(true);
@@ -364,6 +371,29 @@ export default function JumiaPage() {
       toast({
         title: "Missing Required Fields",
         description: "Please fill in all required fields",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate customer phone (must be exactly 10 digits for POD collection)
+    if (!podForm.customer_phone) {
+      toast({
+        title: "Missing Phone Number",
+        description: "Customer phone number is required for package collection",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (
+      podForm.customer_phone.length !== 10 ||
+      !/^\d{10}$/.test(podForm.customer_phone)
+    ) {
+      toast({
+        title: "Invalid Phone Number",
+        description:
+          "Phone number must be exactly 10 digits (e.g., 0241234567)",
         variant: "destructive",
       });
       return;

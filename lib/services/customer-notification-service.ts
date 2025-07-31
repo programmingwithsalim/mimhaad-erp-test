@@ -16,6 +16,28 @@ export interface CustomerNotificationData {
 }
 
 export class CustomerNotificationService {
+  // List of known test/hardcoded phone numbers to avoid sending SMS to
+  private static readonly TEST_PHONE_NUMBERS = [
+    "0549514616",
+    "549514616", 
+    "+233549514616",
+    "233549514616",
+    "0549514617",
+    "549514617",
+    "+233549514617",
+    "233549514617"
+  ]
+
+  /**
+   * Check if a phone number is a test/hardcoded number
+   */
+  private static isTestPhoneNumber(phone: string): boolean {
+    if (!phone) return false
+    
+    const cleaned = phone.replace(/[\s\-\(\)]/g, "")
+    return this.TEST_PHONE_NUMBERS.includes(cleaned)
+  }
+
   /**
    * Send mandatory notification to customer (not dependent on user preferences)
    */
@@ -28,6 +50,20 @@ export class CustomerNotificationService {
         amount: data.amount,
       })
 
+      // Check if this is a test phone number
+      if (this.isTestPhoneNumber(data.customerPhone)) {
+        await logger.warn(LogCategory.TRANSACTION, "Skipping SMS to test phone number", {
+          customerPhone: data.customerPhone,
+          transactionId: data.transactionId,
+        })
+        console.log("⚠️ Skipping SMS to test phone number:", data.customerPhone)
+        return { 
+          success: false, 
+          error: "Cannot send SMS to test phone number",
+          skipped: true 
+        }
+      }
+
       // Format phone number for Ghana
       const formattedPhone = formatGhanaPhoneNumber(data.customerPhone)
       const smsPhone = formatPhoneForSMS(data.customerPhone)
@@ -38,6 +74,7 @@ export class CustomerNotificationService {
         smsPhone,
         customerName: data.customerName,
         message: data.message,
+        isTestNumber: this.isTestPhoneNumber(data.customerPhone),
       })
 
       // Get system SMS configuration
@@ -305,4 +342,4 @@ export class CustomerNotificationService {
       console.error("Error logging customer notification:", error)
     }
   }
-} 
+}

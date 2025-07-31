@@ -65,8 +65,8 @@ const powerTransactionSchema = z.object({
   meterNumber: z.string().min(1, "Meter number is required"),
   floatAccountId: z.string().min(1, "Power provider is required"),
   amount: z.number().min(1, "Amount must be greater than 0"),
-  customerName: z.string().optional(),
-  customerPhone: z.string().optional(),
+  customerName: z.string().min(1, "Customer name is required"),
+  customerPhone: z.string().min(10, "Customer phone number is required").max(10, "Phone number must be exactly 10 digits").regex(/^\d{10}$/, "Phone number must contain only digits (e.g., 0241234567)"),
   reference: z.string().optional(),
 });
 
