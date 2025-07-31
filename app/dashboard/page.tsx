@@ -325,6 +325,16 @@ export default function DashboardPage() {
       }))
     : [];
 
+  // Ensure totalStats has proper fallback values to prevent NaN
+  const safeTotalStats = {
+    totalTransactions: stats.totalTransactions || 0,
+    totalVolume: stats.totalVolume || 0,
+    totalCommission: stats.totalCommission || 0,
+    todayTransactions: stats.todayTransactions || 0,
+    todayVolume: stats.todayVolume || 0,
+    todayCommission: stats.todayCommission || 0,
+  };
+
   if (loading) {
     return (
       <div className="container mx-auto p-6 space-y-6">
@@ -413,7 +423,7 @@ export default function DashboardPage() {
     return (
       <EnhancedCashierDashboard
         serviceStats={mappedServiceStats}
-        totalStats={stats}
+        totalStats={safeTotalStats}
       />
     );
   }

@@ -19,10 +19,6 @@ export async function GET(request: NextRequest) {
     // Determine effective branch filter based on user role
     const isAdmin = userRole === "Admin";
     const effectiveBranchId = isAdmin ? branch : userBranchId;
-    const branchFilter =
-      effectiveBranchId && effectiveBranchId !== "all"
-        ? sql`AND branch_id = ${effectiveBranchId}`
-        : sql``;
 
     // Date filter
     const dateFilter =
@@ -30,11 +26,31 @@ export async function GET(request: NextRequest) {
 
     // 1. Total Revenue (sum of amount from all transaction tables)
     const [agency, momo, ezwich, power, jumia] = await Promise.all([
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-      sql`SELECT COALESCE(SUM(amount),0) as total FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM agency_banking_transactions WHERE status = 'completed' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND agency_banking_transactions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM momo_transactions WHERE status = 'completed' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND momo_transactions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM e_zwich_withdrawals WHERE status = 'completed' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND e_zwich_withdrawals.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM power_transactions WHERE status = 'completed' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND power_transactions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`,
+      sql`SELECT COALESCE(SUM(amount),0) as total FROM jumia_transactions WHERE status = 'completed' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND jumia_transactions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`,
     ]);
     const totalRevenue =
       Number(agency[0].total) +
@@ -45,27 +61,59 @@ export async function GET(request: NextRequest) {
 
     // 2. Total Expenses
     const expensesResult =
-      await sql`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}`;
+      await sql`SELECT COALESCE(SUM(amount),0) as total FROM expenses WHERE status IN ('approved', 'paid') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND expenses.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`;
     const totalExpenses = Number(expensesResult[0].total);
 
     // 3. Total Commissions
     const commissionsResult =
-      await sql`SELECT COALESCE(SUM(amount),0) as total FROM commissions WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}`;
+      await sql`SELECT COALESCE(SUM(amount),0) as total FROM commissions WHERE status IN ('approved', 'paid') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND commissions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}`;
     const totalCommissions = Number(commissionsResult[0].total);
 
     // 4. Cash Position (float accounts)
     const cashResult =
-      await sql`SELECT COALESCE(SUM(current_balance),0) as total FROM float_accounts WHERE is_active = true ${branchFilter}`;
+      await sql`SELECT COALESCE(SUM(current_balance),0) as total FROM float_accounts WHERE is_active = true ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND float_accounts.branch_id = ${effectiveBranchId}`
+          : sql``
+      }`;
     const cashPosition = Number(cashResult[0].total);
 
     // 5. Service Breakdown (transactions, volume, fees per table)
     const [agencyStats, momoStats, ezwichStats, powerStats, jumiaStats] =
       await Promise.all([
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
-        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM agency_banking_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND agency_banking_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM momo_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND momo_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM e_zwich_withdrawals WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND e_zwich_withdrawals.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM power_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND power_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}`,
+        sql`SELECT COUNT(*) as transactions, COALESCE(SUM(amount),0) as volume, COALESCE(SUM(fee),0) as fees FROM jumia_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND jumia_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}`,
       ]);
     const services = [
       {

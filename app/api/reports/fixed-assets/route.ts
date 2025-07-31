@@ -25,10 +25,6 @@ export async function GET(request: Request) {
 
     // Determine effective branch filter
     const effectiveBranchId = user.role === "admin" ? branch : user.branchId;
-    const branchFilter =
-      effectiveBranchId && effectiveBranchId !== "all"
-        ? sql`AND branch_id = ${effectiveBranchId}`
-        : sql``;
 
     // Get fixed assets data
     const assetsResult = await sql`
@@ -54,7 +50,11 @@ export async function GET(request: Request) {
         next_maintenance,
         created_at
       FROM fixed_assets
-      WHERE 1=1 ${branchFilter}
+      WHERE 1=1 ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
       ORDER BY category, name
     `;
 
@@ -70,7 +70,11 @@ export async function GET(request: Request) {
         COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation,
         COALESCE(SUM(purchase_cost - current_value), 0) as total_depreciation_calc
       FROM fixed_assets
-      WHERE 1=1 ${branchFilter}
+      WHERE 1=1 ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
     `;
 
     // Get assets by category
@@ -82,7 +86,11 @@ export async function GET(request: Request) {
         COALESCE(SUM(current_value), 0) as total_value,
         COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation
       FROM fixed_assets
-      WHERE 1=1 ${branchFilter}
+      WHERE 1=1 ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
       GROUP BY category
       ORDER BY total_cost DESC
     `;
@@ -109,7 +117,11 @@ export async function GET(request: Request) {
       WHERE status = 'active' 
         AND purchase_date <= CURRENT_DATE
         AND current_value > salvage_value
-        ${branchFilter}
+        ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+            : sql``
+        }
       ORDER BY annual_depreciation DESC
     `;
 

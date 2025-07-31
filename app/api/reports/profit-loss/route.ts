@@ -152,7 +152,11 @@ export async function GET(request: Request) {
         COUNT(*) as count
       FROM expenses e
       LEFT JOIN expense_heads eh ON e.expense_head_id = eh.id
-      WHERE e.status IN ('approved', 'paid') ${branchFilter} ${
+      WHERE e.status IN ('approved', 'paid') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND e.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${
       from && to ? sql`AND e.created_at::date BETWEEN ${from} AND ${to}` : sql``
     }
       GROUP BY eh.category
@@ -168,7 +172,11 @@ export async function GET(request: Request) {
     const commissionsResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_commissions
       FROM commissions 
-      WHERE status IN ('approved', 'paid') ${branchFilter} ${
+      WHERE status IN ('approved', 'paid') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND commissions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${
       from && to
         ? sql`AND commissions.created_at::date BETWEEN ${from} AND ${to}`
         : sql``

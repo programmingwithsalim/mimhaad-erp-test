@@ -25,10 +25,6 @@ export async function GET(request: Request) {
 
     // Determine effective branch filter
     const effectiveBranchId = user.role === "Admin" ? branch : user.branchId;
-    const branchFilter =
-      effectiveBranchId && effectiveBranchId !== "all"
-        ? sql`AND branch_id = ${effectiveBranchId}`
-        : sql``;
 
     // Date filter
     const dateFilter =
@@ -39,15 +35,35 @@ export async function GET(request: Request) {
     const revenueResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_revenue
       FROM (
-        SELECT amount FROM agency_banking_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        SELECT amount FROM agency_banking_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND agency_banking_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM momo_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        SELECT amount FROM momo_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND momo_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM e_zwich_withdrawals WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND e_zwich_withdrawals.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM power_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        SELECT amount FROM power_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND power_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM jumia_transactions WHERE status = 'completed' ${branchFilter} ${dateFilter}
+        SELECT amount FROM jumia_transactions WHERE status = 'completed' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND jumia_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
       ) completed_transactions
     `;
     const totalRevenue = Number(revenueResult[0].total_revenue) || 0;
@@ -55,7 +71,11 @@ export async function GET(request: Request) {
     const expensesResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses 
-      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+      WHERE status IN ('approved', 'paid') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND expenses.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}
     `;
     const totalExpenses = Number(expensesResult[0].total_expenses) || 0;
 
@@ -65,7 +85,11 @@ export async function GET(request: Request) {
     const depreciationResult = await sql`
       SELECT COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation
       FROM fixed_assets 
-      WHERE status = 'active' ${branchFilter}
+      WHERE status = 'active' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
     `;
     const depreciation = Number(depreciationResult[0].total_depreciation) || 0;
 
@@ -74,15 +98,35 @@ export async function GET(request: Request) {
     const receivablesResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_receivables
       FROM (
-        SELECT amount FROM agency_banking_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        SELECT amount FROM agency_banking_transactions WHERE status = 'pending' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND agency_banking_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM momo_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        SELECT amount FROM momo_transactions WHERE status = 'pending' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND momo_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM e_zwich_withdrawals WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        SELECT amount FROM e_zwich_withdrawals WHERE status = 'pending' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND e_zwich_withdrawals.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM power_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        SELECT amount FROM power_transactions WHERE status = 'pending' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND power_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
         UNION ALL
-        SELECT amount FROM jumia_transactions WHERE status = 'pending' ${branchFilter} ${dateFilter}
+        SELECT amount FROM jumia_transactions WHERE status = 'pending' ${
+          effectiveBranchId && effectiveBranchId !== "all"
+            ? sql`AND jumia_transactions.branch_id = ${effectiveBranchId}`
+            : sql``
+        } ${dateFilter}
       ) pending_transactions
     `;
     const accountsReceivable =
@@ -92,7 +136,11 @@ export async function GET(request: Request) {
     const payablesResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_payables
       FROM expenses 
-      WHERE status IN ('pending', 'approved') ${branchFilter} ${dateFilter}
+      WHERE status IN ('pending', 'approved') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND expenses.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}
     `;
     const accountsPayable = Number(payablesResult[0].total_payables) || 0;
 
@@ -104,7 +152,11 @@ export async function GET(request: Request) {
     const fixedAssetsPurchaseResult = await sql`
       SELECT COALESCE(SUM(purchase_cost), 0) as total_purchase
       FROM fixed_assets 
-      WHERE purchase_date BETWEEN ${from} AND ${to} ${branchFilter}
+      WHERE purchase_date BETWEEN ${from} AND ${to} ${
+      effectiveBranchId && effectiveBranchId !== "all"
+        ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+        : sql``
+    }
     `;
     const purchaseOfFixedAssets =
       Number(fixedAssetsPurchaseResult[0].total_purchase) || 0;
@@ -116,7 +168,11 @@ export async function GET(request: Request) {
     const dividendsResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_commissions
       FROM commissions 
-      WHERE status = 'paid' ${branchFilter} ${dateFilter}
+      WHERE status = 'paid' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND commissions.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}
     `;
     const dividendsPaid = Number(dividendsResult[0].total_commissions) || 0;
 
@@ -130,7 +186,11 @@ export async function GET(request: Request) {
     const endingCashResult = await sql`
       SELECT COALESCE(SUM(current_balance), 0) as total_cash
       FROM float_accounts 
-      WHERE is_active = true ${branchFilter}
+      WHERE is_active = true ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND float_accounts.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
     `;
     const endingCashBalance = Number(endingCashResult[0].total_cash) || 0;
 

@@ -87,7 +87,11 @@ export async function GET(request: Request) {
       AND gt.source_transaction_type = 'inventory_purchase'
       AND gt.status = 'posted'
       AND ga.type = 'Asset'
-      ${branchFilter}
+      ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND gt.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
     `;
     const totalGLInventory =
       Number(glInventoryResult[0].total_gl_inventory_value) || 0;
@@ -102,7 +106,11 @@ export async function GET(request: Request) {
         COALESCE(SUM(accumulated_depreciation), 0) as total_depreciation,
         COUNT(*) as asset_count
       FROM fixed_assets 
-      WHERE status = 'active' ${branchFilter}
+      WHERE status = 'active' ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND fixed_assets.branch_id = ${effectiveBranchId}`
+          : sql``
+      }
     `;
     const totalFixedAssets =
       Number(fixedAssetsResult[0].total_fixed_assets) || 0;
@@ -115,7 +123,11 @@ export async function GET(request: Request) {
     const payablesResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_payables
       FROM expenses 
-      WHERE status IN ('pending', 'approved') ${branchFilter} ${dateFilter}
+      WHERE status IN ('pending', 'approved') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND expenses.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}
     `;
     const totalPayables = Number(payablesResult[0].total_payables) || 0;
 
@@ -140,7 +152,11 @@ export async function GET(request: Request) {
     const expensesResult = await sql`
       SELECT COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses 
-      WHERE status IN ('approved', 'paid') ${branchFilter} ${dateFilter}
+      WHERE status IN ('approved', 'paid') ${
+        effectiveBranchId && effectiveBranchId !== "all"
+          ? sql`AND expenses.branch_id = ${effectiveBranchId}`
+          : sql``
+      } ${dateFilter}
     `;
     const totalExpenses = Number(expensesResult[0].total_expenses) || 0;
 
