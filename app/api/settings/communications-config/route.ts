@@ -12,6 +12,8 @@ export async function GET() {
         OR config_key LIKE 'resend_%'
         OR config_key LIKE 'smtp_%'
         OR config_key LIKE 'sms_%'
+        OR config_key LIKE '%_sms_client_id'
+        OR config_key LIKE '%_sms_client_secret'
         OR config_key LIKE '%_sms_api_key'
         OR config_key LIKE '%_sms_api_secret'
         OR config_key LIKE '%_sms_sender_id'
@@ -49,41 +51,43 @@ export async function PUT(request: Request) {
       (c) => c.config_key === "sms_provider"
     );
     const smsProvider = smsProviderConfig?.config_value;
-    const smsFields = [
-      "sms_api_key",
-      "sms_api_secret",
-      "sms_sender_id",
-      "sms_webhook_url",
-      "sms_test_mode",
-    ];
+
+    // Define SMS fields based on provider
+    const smsFields =
+      smsProvider === "hubtel"
+        ? [
+            "client_id",
+            "client_secret",
+            "sender_id",
+            "webhook_url",
+            "test_mode",
+          ]
+        : ["api_key", "api_secret", "sender_id", "webhook_url", "test_mode"];
+
     const smsValues: Record<string, string> = {};
+
     for (const field of smsFields) {
       const config = configs.find(
-        (c) =>
-          c.config_key === `${smsProvider}_${field}` || c.config_key === field
+        (c) => c.config_key === `${smsProvider}_sms_${field}`
       );
       if (config) {
         smsValues[field] = config.config_value;
       }
     }
 
-    // For each SMS field, add both generic and provider-specific configs
+    // For each SMS field, add provider-specific configs
     const extendedConfigs = [...configs];
     if (smsProvider) {
       for (const field of smsFields) {
-        const providerKey = `${smsProvider}_${field}`;
-        const genericKey = field;
+        const providerKey = `${smsProvider}_sms_${field}`;
         const value = smsValues[field] ?? "";
+
         // Add/replace provider-specific config
         if (!extendedConfigs.some((c) => c.config_key === providerKey)) {
           extendedConfigs.push({
             config_key: providerKey,
             config_value: value,
           });
-        }
-        // Add/replace generic config
-        if (!extendedConfigs.some((c) => c.config_key === genericKey)) {
-          extendedConfigs.push({ config_key: genericKey, config_value: value });
         }
       }
     }

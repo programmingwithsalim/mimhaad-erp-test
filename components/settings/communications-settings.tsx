@@ -110,6 +110,17 @@ const smsProviders = [
   { value: "custom", label: "Custom Provider" },
 ];
 
+// Helper function to get provider-specific field names
+const getProviderFieldName = (provider: string, field: string) => {
+  if (provider === "hubtel") {
+    // Use ClientID/ClientSecret naming for Hubtel
+    if (field === "sms_api_key") return "hubtel_sms_client_id";
+    if (field === "sms_api_secret") return "hubtel_sms_client_secret";
+    return `hubtel_sms_${field}`;
+  }
+  return `${provider}_sms_${field}`;
+};
+
 export function CommunicationsSettings({ userRole }: { userRole: string }) {
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
@@ -182,29 +193,27 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
 
           // Update SMS form
           const provider = configData.sms_provider || "hubtel";
+
+          // Helper function to get provider-specific field values
+          const getSmsFieldValue = (field: string) => {
+            if (provider === "hubtel") {
+              if (field === "api_key")
+                return configData["hubtel_sms_client_id"] || "";
+              if (field === "api_secret")
+                return configData["hubtel_sms_client_secret"] || "";
+              return configData[`hubtel_sms_${field}`] || "";
+            }
+            return configData[`${provider}_sms_${field}`] || "";
+          };
+
           smsForm.reset({
             smsProvider: provider,
-            smsApiKey:
-              configData[`${provider}_sms_api_key`] ||
-              configData["hubtel_sms_api_key"] ||
-              "",
-            smsApiSecret:
-              configData[`${provider}_sms_api_secret`] ||
-              configData["hubtel_sms_api_secret"] ||
-              "",
-            smsSenderId:
-              configData[`${provider}_sms_sender_id`] ||
-              configData["hubtel_sms_sender_id"] ||
-              "",
-            smsWebhookUrl:
-              configData[`${provider}_sms_webhook_url`] ||
-              configData["hubtel_sms_webhook_url"] ||
-              "",
+            smsApiKey: getSmsFieldValue("api_key"),
+            smsApiSecret: getSmsFieldValue("api_secret"),
+            smsSenderId: getSmsFieldValue("sender_id"),
+            smsWebhookUrl: getSmsFieldValue("webhook_url"),
             smsTestMode:
-              (configData[`${provider}_sms_test_mode`] ||
-                configData["hubtel_sms_test_mode"]) === "true"
-                ? true
-                : false,
+              getSmsFieldValue("test_mode") === "true" ? true : false,
           });
           setSelectedSmsProvider(provider);
         }
@@ -222,14 +231,34 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
   // Robust auto-population for SMS provider fields
   useEffect(() => {
     const provider = selectedSmsProvider;
+
+    // Get provider-specific field names
+    const getFieldValue = (field: string) => {
+      if (provider === "hubtel") {
+        if (field === "smsApiKey")
+          return allSmsConfigs["hubtel_sms_client_id"] || "";
+        if (field === "smsApiSecret")
+          return allSmsConfigs["hubtel_sms_client_secret"] || "";
+        return (
+          allSmsConfigs[
+            `hubtel_sms_${field.replace("sms", "").toLowerCase()}`
+          ] || ""
+        );
+      }
+      return (
+        allSmsConfigs[
+          `${provider}_sms_${field.replace("sms", "").toLowerCase()}`
+        ] || ""
+      );
+    };
+
     smsForm.reset({
       smsProvider: provider,
-      smsApiKey: allSmsConfigs[`${provider}_sms_api_key`] || "",
-      smsApiSecret: allSmsConfigs[`${provider}_sms_api_secret`] || "",
-      smsSenderId: allSmsConfigs[`${provider}_sms_sender_id`] || "",
-      smsWebhookUrl: allSmsConfigs[`${provider}_sms_webhook_url`] || "",
-      smsTestMode:
-        allSmsConfigs[`${provider}_sms_test_mode`] === "true" ? true : false,
+      smsApiKey: getFieldValue("smsApiKey"),
+      smsApiSecret: getFieldValue("smsApiSecret"),
+      smsSenderId: getFieldValue("smsSenderId"),
+      smsWebhookUrl: getFieldValue("smsWebhookUrl"),
+      smsTestMode: getFieldValue("smsTestMode") === "true" ? true : false,
     });
   }, [selectedSmsProvider, allSmsConfigs]);
 
@@ -307,50 +336,60 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
     setIsSaving(true);
     try {
       const provider = values.smsProvider;
+
+      // Helper function to get provider-specific field names
+      const getProviderFieldName = (field: string) => {
+        if (provider === "hubtel") {
+          if (field === "api_key") return "hubtel_sms_client_id";
+          if (field === "api_secret") return "hubtel_sms_client_secret";
+          return `hubtel_sms_${field}`;
+        }
+        return `${provider}_sms_${field}`;
+      };
+
       const configs = [
         { config_key: "sms_provider", config_value: provider },
         {
-          config_key: `${provider}_sms_api_key`,
+          config_key: getProviderFieldName("api_key"),
           config_value: values.smsApiKey,
         },
         {
-          config_key: `${provider}_sms_api_secret`,
+          config_key: getProviderFieldName("api_secret"),
           config_value: values.smsApiSecret,
         },
         {
-          config_key: `${provider}_sms_sender_id`,
+          config_key: getProviderFieldName("sender_id"),
           config_value: values.smsSenderId,
         },
         {
-          config_key: `${provider}_sms_webhook_url`,
+          config_key: getProviderFieldName("webhook_url"),
           config_value: values.smsWebhookUrl || "",
         },
         {
-          config_key: `${provider}_sms_test_mode`,
+          config_key: getProviderFieldName("test_mode"),
           config_value: values.smsTestMode.toString(),
         },
       ];
+
       const response = await fetch("/api/settings/communications-config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ configs, userId: 1 }),
       });
+
       if (response.ok) {
         toast({
           title: "Settings updated",
           description: "SMS configuration has been updated successfully.",
         });
         setSmsTestResult(null); // Clear previous test results
+
         // Update allSmsConfigs with new values
-        setAllSmsConfigs((prev: any) => ({
-          ...prev,
-          [`${provider}_sms_api_key`]: values.smsApiKey,
-          [`${provider}_sms_api_secret`]: values.smsApiSecret,
-          [`${provider}_sms_sender_id`]: values.smsSenderId,
-          [`${provider}_sms_webhook_url`]: values.smsWebhookUrl,
-          [`${provider}_sms_test_mode`]: values.smsTestMode.toString(),
-          sms_provider: provider,
-        }));
+        const updatedConfigs = { ...allSmsConfigs };
+        configs.forEach((config) => {
+          updatedConfigs[config.config_key] = config.config_value;
+        });
+        setAllSmsConfigs(updatedConfigs);
       } else {
         throw new Error("Failed to update settings");
       }
@@ -866,6 +905,12 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                               </Select>
                               <FormDescription>
                                 Choose your SMS service provider
+                                {selectedSmsProvider === "hubtel" && (
+                                  <span className="block text-xs text-amber-600 mt-1">
+                                    Note: Hubtel uses URL authentication with
+                                    Client ID and Client Secret
+                                  </span>
+                                )}
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
@@ -897,16 +942,26 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                           name="smsApiKey"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>API Key</FormLabel>
+                              <FormLabel>
+                                {selectedSmsProvider === "hubtel"
+                                  ? "Client ID"
+                                  : "API Key"}
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   type="password"
-                                  placeholder="••••••••••••••••"
+                                  placeholder={
+                                    selectedSmsProvider === "hubtel"
+                                      ? "cbkmgino"
+                                      : "••••••••••••••••"
+                                  }
                                   {...field}
                                 />
                               </FormControl>
                               <FormDescription>
-                                SMS provider API key
+                                {selectedSmsProvider === "hubtel"
+                                  ? "Hubtel Client ID for authentication"
+                                  : "SMS provider API key"}
                               </FormDescription>
                               <FormMessage />
                             </FormItem>
@@ -918,16 +973,26 @@ export function CommunicationsSettings({ userRole }: { userRole: string }) {
                           name="smsApiSecret"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>API Secret</FormLabel>
+                              <FormLabel>
+                                {selectedSmsProvider === "hubtel"
+                                  ? "Client Secret"
+                                  : "API Secret"}
+                              </FormLabel>
                               <FormControl>
                                 <Input
                                   type="password"
-                                  placeholder="••••••••••••••••"
+                                  placeholder={
+                                    selectedSmsProvider === "hubtel"
+                                      ? "alywcjxo"
+                                      : "••••••••••••••••"
+                                  }
                                   {...field}
                                 />
                               </FormControl>
                               <FormDescription>
-                                SMS provider API secret
+                                {selectedSmsProvider === "hubtel"
+                                  ? "Hubtel Client Secret for authentication"
+                                  : "SMS provider API secret"}
                               </FormDescription>
                               <FormMessage />
                             </FormItem>

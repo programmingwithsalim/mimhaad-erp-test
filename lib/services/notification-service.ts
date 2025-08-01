@@ -1,6 +1,9 @@
 import { sql } from "@/lib/db";
 import { EmailTemplates } from "@/lib/email-templates";
-import { formatGhanaPhoneNumber, formatPhoneForSMS } from "@/lib/utils/phone-utils";
+import {
+  formatGhanaPhoneNumber,
+  formatPhoneForSMS,
+} from "@/lib/utils/phone-utils";
 
 export interface NotificationConfig {
   email_enabled: boolean;
@@ -47,7 +50,10 @@ export class NotificationService {
       // Get user notification preferences
       const userPrefs = await this.getUserNotificationSettings(data.userId);
       if (!userPrefs) {
-        console.log("❌ No notification preferences found for user:", data.userId);
+        console.log(
+          "❌ No notification preferences found for user:",
+          data.userId
+        );
         return { success: false, error: "No notification preferences found" };
       }
 
@@ -59,7 +65,7 @@ export class NotificationService {
 
       // Format phone number with Ghana country code
       if (userPrefs.phone_number) {
-        userPrefs.phone_number = formatGhanaPhoneNumber(userPrefs.phone_number)
+        userPrefs.phone_number = formatGhanaPhoneNumber(userPrefs.phone_number);
       }
 
       console.log("✅ Notification preferences loaded:", {
@@ -190,7 +196,13 @@ export class NotificationService {
     return this.sendNotification({
       type: "low_balance",
       title: "Low Balance Alert",
-      message: `Low balance alert for ${floatData.accountName}. Current balance: GHS ${floatData.currentBalance.toFixed(2)}. Threshold: GHS ${floatData.threshold.toFixed(2)}. Please recharge soon.`,
+      message: `Low balance alert for ${
+        floatData.accountName
+      }. Current balance: GHS ${floatData.currentBalance.toFixed(
+        2
+      )}. Threshold: GHS ${floatData.threshold.toFixed(
+        2
+      )}. Please recharge soon.`,
       userId,
       branchId: floatData.branchId,
       metadata: {
@@ -205,6 +217,25 @@ export class NotificationService {
     userId: string
   ): Promise<NotificationConfig | null> {
     try {
+      // First, get the user's basic info including phone number
+      const userInfo = await sql`
+        SELECT first_name, last_name, email, phone
+        FROM users 
+        WHERE id = ${userId}
+      `;
+
+      if (userInfo.length === 0) {
+        console.error("User not found:", userId);
+        return null;
+      }
+
+      const user = userInfo[0];
+      console.log("🔍 [NOTIFICATION] User info:", {
+        userId,
+        userPhone: user.phone,
+        userEmail: user.email,
+      });
+
       // Get user's notification settings
       const settings = await sql`
         SELECT 
@@ -222,7 +253,7 @@ export class NotificationService {
           sms_sender_id
         FROM user_notification_settings
         WHERE user_id = ${userId}
-      `
+      `;
 
       if (settings.length === 0) {
         // Create default settings for the user
@@ -234,7 +265,9 @@ export class NotificationService {
             push_notifications,
             login_alerts,
             transaction_alerts,
-            float_threshold_alerts
+            float_threshold_alerts,
+            phone_number,
+            email_address
           ) VALUES (
             ${userId},
             true,
@@ -242,11 +275,18 @@ export class NotificationService {
             false,
             true,
             true,
-            true
+            true,
+            ${user.phone || null},
+            ${user.email || null}
           )
-        `
+        `;
 
-        // Return default settings
+        console.log(
+          "✅ Created default notification settings for user:",
+          userId
+        );
+
+        // Return default settings with user's phone and email
         return {
           email_enabled: true,
           sms_enabled: true,
@@ -256,10 +296,27 @@ export class NotificationService {
           low_balance_alerts: true,
           high_value_transaction_threshold: 1000,
           low_balance_threshold: 100,
-        }
+          email_address: user.email,
+          phone_number: user.phone, // Use user's phone from users table
+        };
       }
 
-      const setting = settings[0]
+      const setting = settings[0];
+
+      // Use notification settings phone if available, otherwise fall back to user's phone
+      const phoneNumber = setting.phone_number || user.phone;
+      const emailAddress = setting.email_address || user.email;
+
+      console.log("🔍 [NOTIFICATION] Final settings:", {
+        userId,
+        notificationPhone: setting.phone_number,
+        userPhone: user.phone,
+        finalPhone: phoneNumber,
+        notificationEmail: setting.email_address,
+        userEmail: user.email,
+        finalEmail: emailAddress,
+      });
+
       return {
         email_enabled: setting.email_notifications,
         sms_enabled: setting.sms_notifications,
@@ -269,16 +326,16 @@ export class NotificationService {
         low_balance_alerts: setting.float_threshold_alerts,
         high_value_transaction_threshold: 1000,
         low_balance_threshold: 100,
-        email_address: setting.email_address,
-        phone_number: setting.phone_number,
+        email_address: emailAddress,
+        phone_number: phoneNumber, // Use notification settings or fall back to user's phone
         sms_provider: setting.sms_provider,
         sms_api_key: setting.sms_api_key,
         sms_api_secret: setting.sms_api_secret,
         sms_sender_id: setting.sms_sender_id,
-      }
+      };
     } catch (error) {
-      console.error("Error getting user notification settings:", error)
-      
+      console.error("Error getting user notification settings:", error);
+
       // Return default settings if there's an error
       return {
         email_enabled: true,
@@ -289,7 +346,7 @@ export class NotificationService {
         low_balance_alerts: true,
         high_value_transaction_threshold: 1000,
         low_balance_threshold: 100,
-      }
+      };
     }
   }
 
@@ -318,17 +375,60 @@ export class NotificationService {
         return { success: false, error: "No email address configured" };
       }
 
-      // Get email template
-      const template = EmailTemplates[data.type] || EmailTemplates.default;
-      const htmlContent = template(data);
+      // Get email template based on notification type
+      let htmlContent;
+
+      switch (data.type) {
+        case "transaction":
+          htmlContent = EmailTemplates.transactionAlert(
+            prefs.email_address?.split("@")[0] || "User",
+            {
+              id: data.metadata?.transactionId || "N/A",
+              amount: data.metadata?.amount || 0,
+              type: data.metadata?.service || "transaction",
+              date: new Date().toISOString(),
+            }
+          );
+          break;
+        case "login":
+          htmlContent = EmailTemplates.loginAlert(
+            prefs.email_address?.split("@")[0] || "User",
+            {
+              timestamp: new Date().toISOString(),
+              ipAddress: data.metadata?.ipAddress || "Unknown",
+              location: data.metadata?.location || "Unknown",
+              userAgent: data.metadata?.userAgent || "Unknown",
+            }
+          );
+          break;
+        case "low_balance":
+          htmlContent = EmailTemplates.lowBalanceAlert(
+            prefs.email_address?.split("@")[0] || "User",
+            data.metadata?.accountType || "Float",
+            data.metadata?.currentBalance || 0,
+            data.metadata?.threshold || 0
+          );
+          break;
+        default:
+          // Fallback to a simple template
+          htmlContent = EmailTemplates.welcome(
+            prefs.email_address?.split("@")[0] || "User"
+          );
+      }
 
       // Send email using your email service
       console.log("📧 Sending email to:", prefs.email_address);
-      
+
       // Simulate email sending
       await new Promise((resolve) => setTimeout(resolve, 100));
       console.log(
-        `\n===== EMAIL NOTIFICATION =====\nTo: ${prefs.email_address}\nSubject: ${data.title}\nMessage: ${data.message}\nPriority: ${data.priority}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
+        `\n===== EMAIL NOTIFICATION =====\nTo: ${
+          prefs.email_address
+        }\nSubject: ${data.title}\nMessage: ${data.message}\nPriority: ${
+          data.priority
+        }\nType: ${
+          data.type
+        }\nTimestamp: ${new Date().toISOString()}\n============================\n`
       );
 
       return {
@@ -354,7 +454,7 @@ export class NotificationService {
       }
 
       // Format phone number for SMS providers
-      const formattedPhone = formatPhoneForSMS(prefs.phone_number)
+      const formattedPhone = formatPhoneForSMS(prefs.phone_number);
 
       // Determine provider
       const provider = prefs.sms_provider || "hubtel";
@@ -400,28 +500,57 @@ export class NotificationService {
           };
         }
       } else if (provider === "hubtel") {
-        // Hubtel API - use HTTP Basic Auth
-        const url = "https://devp-sms03726-api.hubtel.com/v1/messages/send";
-        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64");
+        // Hubtel API - use URL Authentication with query parameters
+        const url = new URL("https://smsc.hubtel.com/v1/messages/send");
 
-        const response = await fetch(url, {
-          method: "POST",
+        // Use ClientID and ClientSecret for authentication via URL parameters
+        const clientId = apiKey; // apiKey is actually the ClientID
+        const clientSecret = apiSecret; // apiSecret is actually the ClientSecret
+
+        // Build URL with query parameters
+        if (clientId && clientSecret && senderId && formattedPhone && message) {
+          url.searchParams.set("clientid", clientId);
+          url.searchParams.set("clientsecret", clientSecret);
+          url.searchParams.set("from", senderId);
+          url.searchParams.set("to", formattedPhone);
+          url.searchParams.set("content", message);
+        } else {
+          return {
+            success: false,
+            error: "Missing required Hubtel configuration parameters",
+          };
+        }
+
+        console.log("🔐 Hubtel URL Authentication:", {
+          clientId: clientId ? "***" : "MISSING",
+          clientSecret: clientSecret ? "***" : "MISSING",
+          senderId,
+          formattedPhone,
+          messageLength: message.length,
+          url: url
+            .toString()
+            .replace(
+              /clientid=([^&]+)&clientsecret=([^&]+)/,
+              "clientid=***&clientsecret=***"
+            ),
+        });
+
+        const response = await fetch(url.toString(), {
+          method: "GET", // Hubtel URL auth uses GET requests
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Basic ${auth}`,
           },
-          body: JSON.stringify({
-            from: senderId,
-            to: formattedPhone,
-            content: message,
-          }),
         });
         const result = await response.json();
         console.log("🔍 [HUBTEL] API Response:", result);
 
         // Hubtel returns status: 0 for success, or other values for failure
         if (result.status === 0 || (result.data && result.data.status === 0)) {
-          return { success: true, message: "SMS sent via Hubtel" };
+          return {
+            success: true,
+            message: "SMS sent via Hubtel",
+            messageId: result.messageId || result.data?.messageId,
+          };
         } else {
           return {
             success: false,
@@ -436,7 +565,11 @@ export class NotificationService {
       // Simulate SMS sending with a delay
       await new Promise((resolve) => setTimeout(resolve, 100));
       console.log(
-        `\n===== SMS NOTIFICATION =====\nTo: ${formattedPhone}\nMessage: ${message}\nPriority: ${data.priority}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
+        `\n===== SMS NOTIFICATION =====\nTo: ${formattedPhone}\nMessage: ${message}\nPriority: ${
+          data.priority
+        }\nType: ${
+          data.type
+        }\nTimestamp: ${new Date().toISOString()}\n============================\n`
       );
       return {
         success: true,
@@ -457,11 +590,15 @@ export class NotificationService {
   ) {
     try {
       console.log("📱 Sending push notification");
-      
+
       // Simulate push notification
       await new Promise((resolve) => setTimeout(resolve, 100));
       console.log(
-        `\n===== PUSH NOTIFICATION =====\nTitle: ${data.title}\nMessage: ${data.message}\nPriority: ${data.priority}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
+        `\n===== PUSH NOTIFICATION =====\nTitle: ${data.title}\nMessage: ${
+          data.message
+        }\nPriority: ${data.priority}\nType: ${
+          data.type
+        }\nTimestamp: ${new Date().toISOString()}\n============================\n`
       );
 
       return {
@@ -617,7 +754,9 @@ export class NotificationService {
         params.push(status);
       }
 
-      query += ` ORDER BY created_at DESC LIMIT $${paramIndex + 1} OFFSET $${paramIndex + 2}`;
+      query += ` ORDER BY created_at DESC LIMIT $${paramIndex + 1} OFFSET $${
+        paramIndex + 2
+      }`;
       params.push(limit, offset);
 
       const notifications = await sql.query(query, params);
@@ -631,7 +770,10 @@ export class NotificationService {
       console.error("Error getting notifications:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to get notifications",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to get notifications",
       };
     }
   }
@@ -649,7 +791,8 @@ export class NotificationService {
       console.error("Error marking notification as read:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Failed to mark as read",
+        error:
+          error instanceof Error ? error.message : "Failed to mark as read",
       };
     }
   }
@@ -658,7 +801,8 @@ export class NotificationService {
     return this.sendNotification({
       type: "system_alert",
       title: "Test Notification",
-      message: "This is a test notification to verify your notification settings are working correctly.",
+      message:
+        "This is a test notification to verify your notification settings are working correctly.",
       userId,
       priority: "medium",
     });

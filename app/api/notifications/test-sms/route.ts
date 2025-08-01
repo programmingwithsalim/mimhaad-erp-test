@@ -52,8 +52,8 @@ export async function POST(request: NextRequest) {
         FROM system_config
         WHERE config_key IN (
           'sms_provider',
-          'hubtel_sms_api_key',
-          'hubtel_sms_api_secret', 
+          'hubtel_sms_client_id',
+          'hubtel_sms_client_secret', 
           'hubtel_sms_sender_id',
           'smsonlinegh_sms_api_key',
           'smsonlinegh_sms_api_secret',
@@ -79,10 +79,10 @@ export async function POST(request: NextRequest) {
         sms_provider: systemConfigObj.sms_provider || "hubtel",
         phone_number: testPhone,
         sms_api_key:
-          systemConfigObj.hubtel_sms_api_key ||
+          systemConfigObj.hubtel_sms_client_id ||
           systemConfigObj.smsonlinegh_sms_api_key,
         sms_api_secret:
-          systemConfigObj.hubtel_sms_api_secret ||
+          systemConfigObj.hubtel_sms_client_secret ||
           systemConfigObj.smsonlinegh_sms_api_secret,
         sms_sender_id:
           systemConfigObj.hubtel_sms_sender_id ||
@@ -92,8 +92,29 @@ export async function POST(request: NextRequest) {
 
     console.log("🔍 [TEST-SMS] Sending test SMS to:", testPhone);
     console.log("🔍 [TEST-SMS] Using provider:", prefs.sms_provider);
+    console.log("🔍 [TEST-SMS] Configuration:", {
+      provider: prefs.sms_provider,
+      apiKey: prefs.sms_api_key ? "***" : "MISSING",
+      apiSecret: prefs.sms_api_secret ? "***" : "MISSING",
+      senderId: prefs.sms_sender_id,
+      originalPhone: testPhone,
+      formattedPhone: testPhone.replace(/^\+/, ""), // Remove + prefix for API
+      messageLength: 92,
+    });
 
-    const result = await NotificationService["sendSMSNotification"](
+    // Test with a different sender ID if the current one doesn't work
+    const testConfig = {
+      ...prefs,
+      sms_sender_id: "MIMHAAD", // Try a shorter sender ID
+    };
+
+    console.log(
+      "🔍 [TEST-SMS] Testing with sender ID:",
+      testConfig.sms_sender_id
+    );
+
+    // First try with the original configuration
+    let result = await NotificationService["sendSMSNotification"](
       {
         type: "system_alert",
         title: "Test SMS Notification",
@@ -102,13 +123,48 @@ export async function POST(request: NextRequest) {
         userId: session.id,
         priority: "low",
       },
-      prefs
+      testConfig
     );
+
+    // If the first attempt fails, try with a different phone format
+    if (!result.success) {
+      console.log(
+        "🔍 [TEST-SMS] First attempt failed, trying alternative format..."
+      );
+
+      const alternativeConfig = {
+        ...testConfig,
+        phone_number: testPhone.replace(/^\+233/, "0"), // Try local format
+      };
+
+      result = await NotificationService["sendSMSNotification"](
+        {
+          type: "system_alert",
+          title: "Test SMS Notification",
+          message:
+            "This is a test SMS to verify your SMS notification settings from Mimhaad Financial Services.",
+          userId: session.id,
+          priority: "low",
+        },
+        alternativeConfig
+      );
+    }
+
+    console.log("🔍 [TEST-SMS] Result:", result);
+
+    // If successful, log the message ID for delivery tracking
+    if (result.success && (result as any).messageId) {
+      console.log(
+        "🔍 [TEST-SMS] Message ID for delivery tracking:",
+        (result as any).messageId
+      );
+    }
 
     return NextResponse.json({
       success: result.success,
       message: result.success ? `Test SMS sent to ${testPhone}` : result.error,
       result,
+      messageId: (result as any).messageId || null,
     });
   } catch (error) {
     console.error("🔍 [TEST-SMS] Error:", error);

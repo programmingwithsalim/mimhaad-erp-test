@@ -12,7 +12,7 @@ const sql = neon(process.env.DATABASE_URL!);
 // Helper function to get user's full name
 async function getUserFullName(userId: string): Promise<string> {
   try {
-    if (!userId || userId === "unknown" || userId === "System") {
+    if (!userId) {
       return "System User";
     }
 
@@ -295,27 +295,32 @@ export class UnifiedTransactionService {
 
       // Notify customer (mandatory - not dependent on user preferences)
       if (data.phoneNumber) {
-        const customerPhone = data.phoneNumber
-        const customerName = data.customerName || "Customer"
-        
-        console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-          phoneNumber: data.phoneNumber,
-          finalCustomerPhone: customerPhone,
-          customerName: customerName,
-          serviceType: data.serviceType,
-          provider: data.provider,
-          transactionId: transaction[0].id,
-          reference: data.reference || transaction[0].id,
-          userId: data.userId,
-          processedBy: data.processedBy,
-        })
-        
+        const customerPhone = data.phoneNumber;
+        const customerName = data.customerName || "Customer";
+
+        console.log(
+          "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+          {
+            phoneNumber: data.phoneNumber,
+            finalCustomerPhone: customerPhone,
+            customerName: customerName,
+            serviceType: data.serviceType,
+            provider: data.provider,
+            transactionId: transaction[0].id,
+            reference: data.reference || transaction[0].id,
+            userId: data.userId,
+            processedBy: data.processedBy,
+          }
+        );
+
         console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
           hasPhoneNumber: !!data.phoneNumber,
           phoneNumberLength: data.phoneNumber?.length,
           phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-        })
-        
+        });
+
+        console.log("UNIFIED TRANSACTION AUDIT", customerPhone);
+
         await CustomerNotificationService.sendTransactionSuccessNotification(
           customerPhone,
           customerName,
@@ -325,14 +330,17 @@ export class UnifiedTransactionService {
             reference: data.reference || transaction[0].id,
             transactionId: transaction[0].id,
           }
-        )
+        );
       } else {
-        console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-          phoneNumber: data.phoneNumber,
-          serviceType: data.serviceType,
-          provider: data.provider,
-          transactionId: transaction[0].id,
-        })
+        console.log(
+          "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+          {
+            phoneNumber: data.phoneNumber,
+            serviceType: data.serviceType,
+            provider: data.provider,
+            transactionId: transaction[0].id,
+          }
+        );
       }
 
       // Notify user (staff) - optional based on their notification preferences
@@ -513,27 +521,30 @@ export class UnifiedTransactionService {
 
       // Notify customer (mandatory - not dependent on user preferences)
       if (data.phoneNumber) {
-        const customerPhone = data.phoneNumber
-        const customerName = data.customerName || "Customer"
-        
-        console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-          phoneNumber: data.phoneNumber,
-          finalCustomerPhone: customerPhone,
-          customerName: customerName,
-          serviceType: data.serviceType,
-          provider: data.provider,
-          transactionId: transaction[0].id,
-          reference: data.reference || transaction[0].id,
-          userId: data.userId,
-          processedBy: data.processedBy,
-        })
-        
+        const customerPhone = data.phoneNumber;
+        const customerName = data.customerName || "Customer";
+
+        console.log(
+          "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+          {
+            phoneNumber: data.phoneNumber,
+            finalCustomerPhone: customerPhone,
+            customerName: customerName,
+            serviceType: data.serviceType,
+            provider: data.provider,
+            transactionId: transaction[0].id,
+            reference: data.reference || transaction[0].id,
+            userId: data.userId,
+            processedBy: data.processedBy,
+          }
+        );
+
         console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
           hasPhoneNumber: !!data.phoneNumber,
           phoneNumberLength: data.phoneNumber?.length,
           phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-        })
-        
+        });
+
         await CustomerNotificationService.sendTransactionSuccessNotification(
           customerPhone,
           customerName,
@@ -543,14 +554,17 @@ export class UnifiedTransactionService {
             reference: data.reference || transaction[0].id,
             transactionId: transaction[0].id,
           }
-        )
+        );
       } else {
-        console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-          phoneNumber: data.phoneNumber,
-          serviceType: data.serviceType,
-          provider: data.provider,
-          transactionId: transaction[0].id,
-        })
+        console.log(
+          "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+          {
+            phoneNumber: data.phoneNumber,
+            serviceType: data.serviceType,
+            provider: data.provider,
+            transactionId: transaction[0].id,
+          }
+        );
       }
       // Notify user (staff)
       if (data.userId) {
@@ -638,32 +652,34 @@ export class UnifiedTransactionService {
         );
 
         // Notify customer (mandatory - not dependent on user preferences)
-        if (data.phoneNumber || data.customerPhone) {
-          const customerPhone = data.phoneNumber || data.customerPhone
-          const customerName = data.customerName || "Customer"
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            finalCustomerPhone: customerPhone,
-            customerName: customerName,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-            reference: data.reference || transaction[0].id,
-            userId: data.userId,
-            processedBy: data.processedBy,
-          })
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
-            hasPhoneNumber: !!data.phoneNumber,
-            hasCustomerPhone: !!data.customerPhone,
-            phoneNumberLength: data.phoneNumber?.length,
-            customerPhoneLength: data.customerPhone?.length,
-            phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-            customerPhoneStartsWith: data.customerPhone?.substring(0, 4),
-          })
-          
+        if (data.phoneNumber) {
+          const customerPhone = data.phoneNumber;
+          const customerName = data.customerName || "Customer";
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+            {
+              phoneNumber: data.phoneNumber,
+              finalCustomerPhone: customerPhone,
+              customerName: customerName,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+              reference: data.reference || transaction[0].id,
+              userId: data.userId,
+              processedBy: data.processedBy,
+            }
+          );
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:",
+            {
+              hasPhoneNumber: !!data.phoneNumber,
+              phoneNumberLength: data.phoneNumber?.length,
+              phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
+            }
+          );
+
           await CustomerNotificationService.sendTransactionSuccessNotification(
             customerPhone,
             customerName,
@@ -673,23 +689,25 @@ export class UnifiedTransactionService {
               reference: data.reference || transaction[0].id,
               transactionId: transaction[0].id,
             }
-          )
+          );
         } else {
-          console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-          })
+          console.log(
+            "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+            {
+              phoneNumber: data.phoneNumber,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+            }
+          );
         }
         // Notify user (staff)
         if (data.userId) {
           await NotificationService.sendTransactionAlert(data.userId, {
-            type: data.transactionType || data.type,
+            type: data.transactionType,
             amount: data.amount,
             service: data.serviceType || data.provider || "transaction",
-            reference: data.reference,
+            reference: data.reference || "",
             branchId: data.branchId,
           });
         }
@@ -777,32 +795,34 @@ export class UnifiedTransactionService {
         );
 
         // Notify customer (mandatory - not dependent on user preferences)
-        if (data.phoneNumber || data.customerPhone) {
-          const customerPhone = data.phoneNumber || data.customerPhone
-          const customerName = data.customerName || "Customer"
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            finalCustomerPhone: customerPhone,
-            customerName: customerName,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-            reference: data.reference || transaction[0].id,
-            userId: data.userId,
-            processedBy: data.processedBy,
-          })
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
-            hasPhoneNumber: !!data.phoneNumber,
-            hasCustomerPhone: !!data.customerPhone,
-            phoneNumberLength: data.phoneNumber?.length,
-            customerPhoneLength: data.customerPhone?.length,
-            phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-            customerPhoneStartsWith: data.customerPhone?.substring(0, 4),
-          })
-          
+        if (data.phoneNumber) {
+          const customerPhone = data.phoneNumber;
+          const customerName = data.customerName || "Customer";
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+            {
+              phoneNumber: data.phoneNumber,
+              finalCustomerPhone: customerPhone,
+              customerName: customerName,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+              reference: data.reference || transaction[0].id,
+              userId: data.userId,
+              processedBy: data.processedBy,
+            }
+          );
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:",
+            {
+              hasPhoneNumber: !!data.phoneNumber,
+              phoneNumberLength: data.phoneNumber?.length,
+              phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
+            }
+          );
+
           await CustomerNotificationService.sendTransactionSuccessNotification(
             customerPhone,
             customerName,
@@ -812,23 +832,25 @@ export class UnifiedTransactionService {
               reference: data.reference || transaction[0].id,
               transactionId: transaction[0].id,
             }
-          )
+          );
         } else {
-          console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-          })
+          console.log(
+            "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+            {
+              phoneNumber: data.phoneNumber,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+            }
+          );
         }
         // Notify user (staff)
         if (data.userId) {
           await NotificationService.sendTransactionAlert(data.userId, {
-            type: data.transactionType || data.type,
+            type: data.transactionType,
             amount: data.amount,
             service: data.serviceType || data.provider || "transaction",
-            reference: data.reference,
+            reference: data.reference || "",
             branchId: data.branchId,
           });
         }
@@ -959,32 +981,31 @@ export class UnifiedTransactionService {
       });
 
       // Notify customer (mandatory - not dependent on user preferences)
-      if (data.phoneNumber || data.customerPhone) {
-        const customerPhone = data.phoneNumber || data.customerPhone
-        const customerName = data.customerName || "Customer"
-        
-        console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-          phoneNumber: data.phoneNumber,
-          customerPhone: data.customerPhone,
-          finalCustomerPhone: customerPhone,
-          customerName: customerName,
-          serviceType: data.serviceType,
-          provider: data.provider,
-          transactionId: transaction[0].id,
-          reference: data.reference || transaction[0].id,
-          userId: data.userId,
-          processedBy: data.processedBy,
-        })
-        
+      if (data.phoneNumber) {
+        const customerPhone = data.phoneNumber;
+        const customerName = data.customerName || "Customer";
+
+        console.log(
+          "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+          {
+            phoneNumber: data.phoneNumber,
+            finalCustomerPhone: customerPhone,
+            customerName: customerName,
+            serviceType: data.serviceType,
+            provider: data.provider,
+            transactionId: transaction[0].id,
+            reference: data.reference || transaction[0].id,
+            userId: data.userId,
+            processedBy: data.processedBy,
+          }
+        );
+
         console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
           hasPhoneNumber: !!data.phoneNumber,
-          hasCustomerPhone: !!data.customerPhone,
           phoneNumberLength: data.phoneNumber?.length,
-          customerPhoneLength: data.customerPhone?.length,
           phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-          customerPhoneStartsWith: data.customerPhone?.substring(0, 4),
-        })
-        
+        });
+
         await CustomerNotificationService.sendTransactionSuccessNotification(
           customerPhone,
           customerName,
@@ -994,23 +1015,25 @@ export class UnifiedTransactionService {
             reference: data.reference || transaction[0].id,
             transactionId: transaction[0].id,
           }
-        )
+        );
       } else {
-        console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-          phoneNumber: data.phoneNumber,
-          customerPhone: data.customerPhone,
-          serviceType: data.serviceType,
-          provider: data.provider,
-          transactionId: transaction[0].id,
-        })
+        console.log(
+          "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+          {
+            phoneNumber: data.phoneNumber,
+            serviceType: data.serviceType,
+            provider: data.provider,
+            transactionId: transaction[0].id,
+          }
+        );
       }
       // Notify user (staff)
       if (data.userId) {
         await NotificationService.sendTransactionAlert(data.userId, {
-          type: data.transactionType || data.type,
+          type: data.transactionType,
           amount: data.amount,
           service: data.serviceType || data.provider || "transaction",
-          reference: data.reference,
+          reference: data.reference || "",
           branchId: data.branchId,
         });
       }
@@ -1053,32 +1076,34 @@ export class UnifiedTransactionService {
         `;
 
         // Notify customer (mandatory - not dependent on user preferences)
-        if (data.phoneNumber || data.customerPhone) {
-          const customerPhone = data.phoneNumber || data.customerPhone
-          const customerName = data.customerName || "Customer"
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            finalCustomerPhone: customerPhone,
-            customerName: customerName,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-            reference: data.reference || transaction[0].id,
-            userId: data.userId,
-            processedBy: data.processedBy,
-          })
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
-            hasPhoneNumber: !!data.phoneNumber,
-            hasCustomerPhone: !!data.customerPhone,
-            phoneNumberLength: data.phoneNumber?.length,
-            customerPhoneLength: data.customerPhone?.length,
-            phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-            customerPhoneStartsWith: data.customerPhone?.substring(0, 4),
-          })
-          
+        if (data.phoneNumber) {
+          const customerPhone = data.phoneNumber;
+          const customerName = data.customerName || "Customer";
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+            {
+              phoneNumber: data.phoneNumber,
+              finalCustomerPhone: customerPhone,
+              customerName: customerName,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+              reference: data.reference || transaction[0].id,
+              userId: data.userId,
+              processedBy: data.processedBy,
+            }
+          );
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:",
+            {
+              hasPhoneNumber: !!data.phoneNumber,
+              phoneNumberLength: data.phoneNumber?.length,
+              phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
+            }
+          );
+
           await CustomerNotificationService.sendTransactionSuccessNotification(
             customerPhone,
             customerName,
@@ -1088,23 +1113,25 @@ export class UnifiedTransactionService {
               reference: data.reference || transaction[0].id,
               transactionId: transaction[0].id,
             }
-          )
+          );
         } else {
-          console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-          })
+          console.log(
+            "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+            {
+              phoneNumber: data.phoneNumber,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+            }
+          );
         }
         // Notify user (staff)
         if (data.userId) {
           await NotificationService.sendTransactionAlert(data.userId, {
-            type: data.transactionType || data.type,
+            type: data.transactionType,
             amount: data.amount,
             service: data.serviceType || data.provider || "transaction",
-            reference: data.reference,
+            reference: data.reference || "",
             branchId: data.branchId,
           });
         }
@@ -1194,32 +1221,34 @@ export class UnifiedTransactionService {
         );
 
         // Notify customer (mandatory - not dependent on user preferences)
-        if (data.phoneNumber || data.customerPhone) {
-          const customerPhone = data.phoneNumber || data.customerPhone
-          const customerName = data.customerName || "Customer"
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            finalCustomerPhone: customerPhone,
-            customerName: customerName,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-            reference: data.reference || transaction[0].id,
-            userId: data.userId,
-            processedBy: data.processedBy,
-          })
-          
-          console.log("🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:", {
-            hasPhoneNumber: !!data.phoneNumber,
-            hasCustomerPhone: !!data.customerPhone,
-            phoneNumberLength: data.phoneNumber?.length,
-            customerPhoneLength: data.customerPhone?.length,
-            phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
-            customerPhoneStartsWith: data.customerPhone?.substring(0, 4),
-          })
-          
+        if (data.phoneNumber) {
+          const customerPhone = data.phoneNumber;
+          const customerName = data.customerName || "Customer";
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Customer notification data:",
+            {
+              phoneNumber: data.phoneNumber,
+              finalCustomerPhone: customerPhone,
+              customerName: customerName,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+              reference: data.reference || transaction[0].id,
+              userId: data.userId,
+              processedBy: data.processedBy,
+            }
+          );
+
+          console.log(
+            "🔍 [UNIFIED TRANSACTION AUDIT] Transaction data source:",
+            {
+              hasPhoneNumber: !!data.phoneNumber,
+              phoneNumberLength: data.phoneNumber?.length,
+              phoneNumberStartsWith: data.phoneNumber?.substring(0, 4),
+            }
+          );
+
           await CustomerNotificationService.sendTransactionSuccessNotification(
             customerPhone,
             customerName,
@@ -1229,23 +1258,25 @@ export class UnifiedTransactionService {
               reference: data.reference || transaction[0].id,
               transactionId: transaction[0].id,
             }
-          )
+          );
         } else {
-          console.log("⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:", {
-            phoneNumber: data.phoneNumber,
-            customerPhone: data.customerPhone,
-            serviceType: data.serviceType,
-            provider: data.provider,
-            transactionId: transaction[0].id,
-          })
+          console.log(
+            "⚠️ [UNIFIED TRANSACTION AUDIT] NO CUSTOMER PHONE PROVIDED:",
+            {
+              phoneNumber: data.phoneNumber,
+              serviceType: data.serviceType,
+              provider: data.provider,
+              transactionId: transaction[0].id,
+            }
+          );
         }
         // Notify user (staff)
         if (data.userId) {
           await NotificationService.sendTransactionAlert(data.userId, {
-            type: data.transactionType || data.type,
+            type: data.transactionType,
             amount: data.amount,
             service: data.serviceType || data.provider || "transaction",
-            reference: data.reference,
+            reference: data.reference || "",
             branchId: data.branchId,
           });
         }

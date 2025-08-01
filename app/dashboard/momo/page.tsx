@@ -73,7 +73,7 @@ interface Transaction {
   amount: number;
   fee: number;
   customer_name: string;
-  phone_number: string;
+  customer_phone: string;
   provider: string;
   reference?: string;
   status: string;
@@ -115,10 +115,12 @@ export default function MoMoPage() {
     amount: "",
     fee: "",
     customer_name: "",
-    phone_number: "",
+    customer_phone: "",
     provider: "",
     notes: "",
   });
+
+  const [formKey, setFormKey] = useState(0); // Add this to force form re-render
 
   const [feeLoading, setFeeLoading] = useState(false);
 
@@ -138,27 +140,27 @@ export default function MoMoPage() {
 
       // Only auto-calculate if user hasn't manually modified the fee
       if (!userModifiedFee) {
-      setFeeLoading(true);
-      try {
-        // Map transaction types for fee calculation
-        const transactionTypeForFee =
-          formData.type === "cash-in" ? "deposit" : "withdrawal";
-        const feeResult = await calculateFee(
-          "momo",
-          transactionTypeForFee,
-          Number(formData.amount)
-        );
-        setFormData((prev) => ({
-          ...prev,
+        setFeeLoading(true);
+        try {
+          // Map transaction types for fee calculation
+          const transactionTypeForFee =
+            formData.type === "cash-in" ? "deposit" : "withdrawal";
+          const feeResult = await calculateFee(
+            "momo",
+            transactionTypeForFee,
+            Number(formData.amount)
+          );
+          setFormData((prev) => ({
+            ...prev,
             fee: feeResult.fee.toString(),
-        }));
-      } catch (err) {
-        setFormData((prev) => ({
-          ...prev,
+          }));
+        } catch (err) {
+          setFormData((prev) => ({
+            ...prev,
             fee: "0",
-        }));
-      } finally {
-        setFeeLoading(false);
+          }));
+        } finally {
+          setFeeLoading(false);
         }
       }
     };
@@ -178,6 +180,11 @@ export default function MoMoPage() {
       setUserModifiedFee(false);
     }
   }, [formData.fee]);
+
+  // Debug: Log initial form state
+  useEffect(() => {
+    console.log("🔍 [FORM INIT DEBUG] Initial form data:", formData);
+  }, []); // Only run once on mount
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-GH", {
@@ -268,9 +275,18 @@ export default function MoMoPage() {
       return;
     }
 
+    // Debug: Log the form data being submitted
+    console.log("🔍 [FORM DEBUG] Form data being submitted:", {
+      phone_number: formData.customer_phone,
+      customer_name: formData.customer_name,
+      amount: formData.amount,
+      type: formData.type,
+      provider: formData.provider,
+    });
+
     // Validate phone number - must be exactly 10 digits with no letters
     const phoneRegex = /^\d{10}$/;
-    if (!phoneRegex.test(formData.phone_number)) {
+    if (!phoneRegex.test(formData.customer_phone)) {
       toast({
         title: "Invalid Phone Number",
         description:
@@ -284,7 +300,7 @@ export default function MoMoPage() {
       !formData.type ||
       !formData.amount ||
       !formData.customer_name ||
-      !formData.phone_number ||
+      !formData.customer_phone ||
       !formData.provider
     ) {
       toast({
@@ -300,25 +316,31 @@ export default function MoMoPage() {
     try {
       const transactionTypeForFee =
         formData.type === "cash-in" ? "deposit" : "withdrawal";
+
+      const requestBody = {
+        serviceType: "momo",
+        transactionType: transactionTypeForFee,
+        amount: Number(formData.amount),
+        fee: Number(formData.fee) || 0, // Use the fee from form (modified or auto-calculated)
+        customerName: formData.customer_name,
+        phoneNumber: formData.customer_phone,
+        provider: formData.provider,
+        reference: `MOMO-${Date.now()}`,
+        notes: formData.notes,
+        branchId: user.branchId,
+        userId: user.id,
+        processedBy: user.name || user.username,
+      };
+
+      // Debug: Log the request body being sent
+      console.log("🔍 [FORM DEBUG] Request body being sent:", requestBody);
+
       const response = await fetch("/api/transactions/unified", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          serviceType: "momo",
-          transactionType: transactionTypeForFee,
-          amount: Number(formData.amount),
-          fee: Number(formData.fee) || 0, // Use the fee from form (modified or auto-calculated)
-          customerName: formData.customer_name,
-          phoneNumber: formData.phone_number,
-          provider: formData.provider,
-          reference: `MOMO-${Date.now()}`,
-          notes: formData.notes,
-          branchId: user.branchId,
-          userId: user.id,
-          processedBy: user.name || user.username,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const result = await response.json();
@@ -342,10 +364,11 @@ export default function MoMoPage() {
           amount: "",
           fee: "",
           customer_name: "",
-          phone_number: "",
+          customer_phone: "",
           provider: "",
           notes: "",
         });
+        setFormKey((prev) => prev + 1); // Force complete form re-render
 
         // Refresh data
         loadTransactions();
@@ -446,7 +469,7 @@ export default function MoMoPage() {
       format(new Date(transaction.created_at), "yyyy-MM-dd HH:mm:ss"),
       transaction.type,
       transaction.customer_name,
-      transaction.phone_number,
+      transaction.customer_phone,
       transaction.provider,
       transaction.amount,
       transaction.fee,
@@ -678,7 +701,11 @@ export default function MoMoPage() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <form onSubmit={handleSubmit} className="space-y-4">
+                  <form
+                    onSubmit={handleSubmit}
+                    className="space-y-4"
+                    key={formKey}
+                  >
                     <div className="grid gap-4 md:grid-cols-2">
                       <div className="space-y-2">
                         <Label htmlFor="type">Transaction Type *</Label>
@@ -745,28 +772,42 @@ export default function MoMoPage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor="phone_number">Phone Number *</Label>
+                        <Label htmlFor="customer_phone">Phone Number *</Label>
                         <Input
-                          id="phone_number"
-                          value={formData.phone_number}
+                          id="customer_phone"
+                          name="momo_customer_phone"
+                          value={formData.customer_phone}
                           onChange={(e) => {
                             // Only allow digits
                             const value = e.target.value.replace(/\D/g, "");
                             // Limit to 10 digits
                             const limitedValue = value.slice(0, 10);
+
+                            // Debug: Log the phone number being entered
+                            console.log(
+                              "🔍 [PHONE DEBUG] Phone number input:",
+                              {
+                                originalValue: e.target.value,
+                                cleanedValue: value,
+                                limitedValue: limitedValue,
+                                currentFormData: formData.customer_phone,
+                              }
+                            );
+
                             setFormData({
                               ...formData,
-                              phone_number: limitedValue,
+                              customer_phone: limitedValue,
                             });
                           }}
                           placeholder="0241234567"
                           maxLength={10}
                           pattern="[0-9]{10}"
                           title="Phone number must be exactly 10 digits"
+                          autoComplete="off"
                           required
                         />
-                        {formData.phone_number &&
-                          formData.phone_number.length !== 10 && (
+                        {formData.customer_phone &&
+                          formData.customer_phone.length !== 10 && (
                             <p className="text-sm text-destructive">
                               Phone number must be exactly 10 digits
                             </p>
@@ -912,8 +953,7 @@ export default function MoMoPage() {
                       <TableRow key={transaction.id}>
                         <TableCell>
                           {(() => {
-                            const rawDate =
-                              transaction.created_at || transaction.date;
+                            const rawDate = transaction.created_at;
                             const parsedDate = rawDate
                               ? new Date(rawDate)
                               : null;
@@ -928,13 +968,8 @@ export default function MoMoPage() {
                         <TableCell className="capitalize">
                           {transaction.type}
                         </TableCell>
-                        <TableCell>
-                          {transaction.customerName ||
-                            transaction.customer_name}
-                        </TableCell>
-                        <TableCell>
-                          {transaction.phoneNumber || transaction.phone_number}
-                        </TableCell>
+                        <TableCell>{transaction.customer_name}</TableCell>
+                        <TableCell>{transaction.customer_phone}</TableCell>
                         <TableCell>{transaction.provider}</TableCell>
                         <TableCell>
                           {formatCurrency(transaction.amount)}

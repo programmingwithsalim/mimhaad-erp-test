@@ -1,72 +1,47 @@
-import { sql } from "@/lib/db"
-import { formatGhanaPhoneNumber, formatPhoneForSMS } from "@/lib/utils/phone-utils"
-import { logger, LogCategory } from "@/lib/logger"
+import { sql } from "@/lib/db";
+import {
+  formatGhanaPhoneNumber,
+  formatPhoneForSMS,
+} from "@/lib/utils/phone-utils";
+import { logger, LogCategory } from "@/lib/logger";
 
 export interface CustomerNotificationData {
-  type: "transaction_success" | "transaction_failed" | "balance_update" | "service_alert"
-  title: string
-  message: string
-  customerPhone: string
-  customerName?: string
-  transactionId?: string
-  amount?: number
-  service?: string
-  reference?: string
-  metadata?: Record<string, any>
+  type:
+    | "transaction_success"
+    | "transaction_failed"
+    | "balance_update"
+    | "service_alert";
+  title: string;
+  message: string;
+  customerPhone: string;
+  customerName?: string;
+  transactionId?: string;
+  amount?: number;
+  service?: string;
+  reference?: string;
+  metadata?: Record<string, any>;
 }
 
 export class CustomerNotificationService {
-  // List of known test/hardcoded phone numbers to avoid sending SMS to
-  private static readonly TEST_PHONE_NUMBERS = [
-    "0549514616",
-    "549514616", 
-    "+233549514616",
-    "233549514616",
-    "0549514617",
-    "549514617",
-    "+233549514617",
-    "233549514617"
-  ]
-
-  /**
-   * Check if a phone number is a test/hardcoded number
-   */
-  private static isTestPhoneNumber(phone: string): boolean {
-    if (!phone) return false
-    
-    const cleaned = phone.replace(/[\s\-\(\)]/g, "")
-    return this.TEST_PHONE_NUMBERS.includes(cleaned)
-  }
-
   /**
    * Send mandatory notification to customer (not dependent on user preferences)
    */
   static async sendCustomerNotification(data: CustomerNotificationData) {
     try {
-      await logger.info(LogCategory.TRANSACTION, "Sending customer notification", {
-        type: data.type,
-        customerPhone: data.customerPhone,
-        transactionId: data.transactionId,
-        amount: data.amount,
-      })
-
-      // Check if this is a test phone number
-      if (this.isTestPhoneNumber(data.customerPhone)) {
-        await logger.warn(LogCategory.TRANSACTION, "Skipping SMS to test phone number", {
+      await logger.info(
+        LogCategory.TRANSACTION,
+        "Sending customer notification",
+        {
+          type: data.type,
           customerPhone: data.customerPhone,
           transactionId: data.transactionId,
-        })
-        console.log("⚠️ Skipping SMS to test phone number:", data.customerPhone)
-        return { 
-          success: false, 
-          error: "Cannot send SMS to test phone number",
-          skipped: true 
+          amount: data.amount,
         }
-      }
+      );
 
       // Format phone number for Ghana
-      const formattedPhone = formatGhanaPhoneNumber(data.customerPhone)
-      const smsPhone = formatPhoneForSMS(data.customerPhone)
+      const formattedPhone = formatGhanaPhoneNumber(data.customerPhone);
+      const smsPhone = formatPhoneForSMS(data.customerPhone);
 
       console.log("📱 Customer notification details:", {
         originalPhone: data.customerPhone,
@@ -74,39 +49,53 @@ export class CustomerNotificationService {
         smsPhone,
         customerName: data.customerName,
         message: data.message,
-        isTestNumber: this.isTestPhoneNumber(data.customerPhone),
-      })
+      });
 
       // Get system SMS configuration
-      const smsConfig = await this.getSystemSMSConfig()
-      
-      console.log("📧 SMS Configuration:", smsConfig)
-      
+      const smsConfig = await this.getSystemSMSConfig();
+
+      console.log("📧 SMS Configuration:", smsConfig);
+
       if (!smsConfig) {
-        await logger.warn(LogCategory.TRANSACTION, "No SMS configuration found, skipping customer notification")
-        console.log("❌ No SMS configuration found in system_settings")
-        return { success: false, error: "No SMS configuration found" }
+        await logger.warn(
+          LogCategory.TRANSACTION,
+          "No SMS configuration found, skipping customer notification"
+        );
+        console.log("❌ No SMS configuration found in system_settings");
+        return { success: false, error: "No SMS configuration found" };
       }
 
       // Send SMS notification
-      const smsResult = await this.sendSMSNotification(data, smsPhone, smsConfig)
-      
-      console.log("📤 SMS Result:", smsResult)
-      
-      // Log the notification attempt
-      await this.logCustomerNotification(data, smsResult.success)
+      const smsResult = await this.sendSMSNotification(
+        data,
+        smsPhone,
+        smsConfig
+      );
 
-      return smsResult
+      console.log("📤 SMS Result:", smsResult);
+
+      // Log the notification attempt
+      await this.logCustomerNotification(data, smsResult.success);
+
+      return smsResult;
     } catch (error) {
-      await logger.error(LogCategory.TRANSACTION, "Customer notification failed", error as Error, {
-        customerPhone: data.customerPhone,
-        type: data.type,
-      })
-      console.error("❌ Customer notification error:", error)
+      await logger.error(
+        LogCategory.TRANSACTION,
+        "Customer notification failed",
+        error as Error,
+        {
+          customerPhone: data.customerPhone,
+          type: data.type,
+        }
+      );
+      console.error("❌ Customer notification error:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Customer notification failed",
-      }
+        error:
+          error instanceof Error
+            ? error.message
+            : "Customer notification failed",
+      };
     }
   }
 
@@ -117,13 +106,19 @@ export class CustomerNotificationService {
     customerPhone: string,
     customerName: string,
     transactionData: {
-      amount: number
-      service: string
-      reference: string
-      transactionId: string
+      amount: number;
+      service: string;
+      reference: string;
+      transactionId: string;
     }
   ) {
-    const message = `Dear ${customerName}, your ${transactionData.service} transaction of GHS ${transactionData.amount.toFixed(2)} has been processed successfully. Reference: ${transactionData.reference}. Thank you for using our service.`
+    const message = `Dear ${customerName}, your ${
+      transactionData.service
+    } transaction of GHS ${transactionData.amount.toFixed(
+      2
+    )} has been processed successfully. Reference: ${
+      transactionData.reference
+    }. Thank you for using our service.`;
 
     return this.sendCustomerNotification({
       type: "transaction_success",
@@ -136,7 +131,7 @@ export class CustomerNotificationService {
       service: transactionData.service,
       reference: transactionData.reference,
       metadata: transactionData,
-    })
+    });
   }
 
   /**
@@ -146,15 +141,21 @@ export class CustomerNotificationService {
     customerPhone: string,
     customerName: string,
     transactionData: {
-      amount: number
-      service: string
-      reference: string
-      transactionId: string
-      reason?: string
+      amount: number;
+      service: string;
+      reference: string;
+      transactionId: string;
+      reason?: string;
     }
   ) {
-    const reason = transactionData.reason || "technical issue"
-    const message = `Dear ${customerName}, your ${transactionData.service} transaction of GHS ${transactionData.amount.toFixed(2)} could not be processed due to ${reason}. Reference: ${transactionData.reference}. Please try again or contact support.`
+    const reason = transactionData.reason || "technical issue";
+    const message = `Dear ${customerName}, your ${
+      transactionData.service
+    } transaction of GHS ${transactionData.amount.toFixed(
+      2
+    )} could not be processed due to ${reason}. Reference: ${
+      transactionData.reference
+    }. Please try again or contact support.`;
 
     return this.sendCustomerNotification({
       type: "transaction_failed",
@@ -167,7 +168,7 @@ export class CustomerNotificationService {
       service: transactionData.service,
       reference: transactionData.reference,
       metadata: { ...transactionData, reason },
-    })
+    });
   }
 
   /**
@@ -175,42 +176,93 @@ export class CustomerNotificationService {
    */
   private static async getSystemSMSConfig() {
     try {
-      console.log("🔍 Fetching SMS configuration from system_config...")
-      
-      const config = await sql`
-        SELECT 
-          config_key, config_value
-        FROM system_config 
-        WHERE config_key IN ('sms_provider', 'sms_api_key', 'sms_api_secret', 'sms_sender_id')
-      `
+      console.log("🔍 Fetching SMS configuration from system_config...");
 
-      console.log("📋 Raw SMS config from database:", config)
+      // First, get the active SMS provider
+      const providerConfig = await sql`
+        SELECT config_value 
+        FROM system_config 
+        WHERE config_key = 'sms_provider'
+      `;
+
+      console.log("📋 Provider config from database:", providerConfig);
+
+      if (providerConfig.length === 0) {
+        console.log("❌ No SMS provider found in system_config table");
+        return null;
+      }
+
+      const provider = providerConfig[0].config_value;
+      console.log("📱 Active SMS provider:", provider);
+
+      // Get provider-specific configuration
+      let configKeys: string[] = [];
+
+      if (provider === "hubtel") {
+        configKeys = [
+          "hubtel_sms_client_id", // Changed from hubtel_sms_api_key
+          "hubtel_sms_client_secret", // Changed from hubtel_sms_api_secret
+          "hubtel_sms_sender_id",
+          "hubtel_sms_test_mode",
+        ];
+      } else if (provider === "smsonlinegh") {
+        configKeys = [
+          "smsonlinegh_sms_api_key",
+          "smsonlinegh_sms_api_secret",
+          "smsonlinegh_sms_sender_id",
+          "smsonlinegh_sms_test_mode",
+        ];
+      } else {
+        console.log("❌ Unsupported SMS provider:", provider);
+        return null;
+      }
+
+      const config = await sql`
+        SELECT config_key, config_value
+        FROM system_config 
+        WHERE config_key = ANY(${configKeys})
+      `;
+
+      console.log("📋 Raw SMS config from database:", config);
 
       if (config.length === 0) {
-        console.log("❌ No SMS settings found in system_config table")
-        return null
+        console.log("❌ No SMS settings found in system_config table");
+        return null;
       }
 
       // Convert to object
       const configObj = config.reduce((acc: any, setting: any) => {
-        acc[setting.config_key] = setting.config_value
-        return acc
-      }, {})
+        acc[setting.config_key] = setting.config_value;
+        return acc;
+      }, {});
 
-      console.log("🔧 Processed SMS config object:", configObj)
+      console.log("🔧 Processed SMS config object:", configObj);
 
       const result = {
-        provider: configObj.sms_provider || "hubtel",
-        apiKey: configObj.sms_api_key,
-        apiSecret: configObj.sms_api_secret,
-        senderId: configObj.sms_sender_id,
-      }
+        provider: provider,
+        apiKey:
+          provider === "hubtel"
+            ? configObj.hubtel_sms_client_id // Changed from hubtel_sms_api_key
+            : configObj.smsonlinegh_sms_api_key,
+        apiSecret:
+          provider === "hubtel"
+            ? configObj.hubtel_sms_client_secret // Changed from hubtel_sms_api_secret
+            : configObj.smsonlinegh_sms_api_secret,
+        senderId:
+          provider === "hubtel"
+            ? configObj.hubtel_sms_sender_id
+            : configObj.smsonlinegh_sms_sender_id,
+        testMode:
+          provider === "hubtel"
+            ? configObj.hubtel_sms_test_mode === "true"
+            : configObj.smsonlinegh_sms_test_mode === "true",
+      };
 
-      console.log("✅ Final SMS config:", result)
-      return result
+      console.log("✅ Final SMS config:", result);
+      return result;
     } catch (error) {
-      console.error("❌ Error getting system SMS config:", error)
-      return null
+      console.error("❌ Error getting system SMS config:", error);
+      return null;
     }
   }
 
@@ -223,14 +275,39 @@ export class CustomerNotificationService {
     config: any
   ) {
     try {
-      const { provider, apiKey, apiSecret, senderId } = config
+      const { provider, apiKey, apiSecret, senderId, testMode } = config;
+
+      console.log("📤 Sending SMS notification:", {
+        provider,
+        senderId,
+        phone,
+        testMode,
+        messageLength: data.message.length,
+      });
 
       if (!apiKey || !senderId || !phone) {
-        return { success: false, error: "Missing SMS configuration" }
+        console.log("❌ Missing SMS configuration:", {
+          apiKey: !!apiKey,
+          senderId: !!senderId,
+          phone: !!phone,
+        });
+        return { success: false, error: "Missing SMS configuration" };
       }
+
+      // If in test mode, log but don't actually send
+      // if (testMode) {
+      //   console.log("🧪 TEST MODE: SMS would be sent to:", phone);
+      //   console.log("🧪 TEST MODE: Message:", data.message);
+      //   return {
+      //     success: true,
+      //     message: "SMS logged in test mode",
+      //     testMode: true,
+      //   };
+      // }
 
       if (provider === "smsonlinegh") {
         // SMSOnlineGH API
+        console.log("📤 Sending via SMSOnlineGH...");
         const response = await fetch(
           "https://api.smsonlinegh.com/v4/message/sms/send",
           {
@@ -245,64 +322,86 @@ export class CustomerNotificationService {
               recipients: [phone],
             }),
           }
-        )
-        const result = await response.json()
+        );
+        const result = await response.json();
+        console.log("📤 SMSOnlineGH response:", result);
+
         if (result.status === "success" || result.status === true) {
-          return { success: true, message: "SMS sent via SMSOnlineGH" }
+          return { success: true, message: "SMS sent via SMSOnlineGH" };
         } else {
           return {
             success: false,
             error: result.message || "SMSOnlineGH send failed",
-          }
+          };
         }
       } else if (provider === "hubtel") {
-        // Hubtel API - use HTTP Basic Auth
-        const url = "https://devp-sms03726-api.hubtel.com/v1/messages/send"
-        const auth = Buffer.from(`${apiKey}:${apiSecret}`).toString("base64")
+        // Hubtel API - use URL Authentication with query parameters
+        console.log("📤 Sending via Hubtel...");
 
-        const response = await fetch(url, {
-          method: "POST",
+        // Use ClientID and ClientSecret for authentication via URL parameters
+        const clientId = apiKey; // apiKey is actually the ClientID
+        const clientSecret = apiSecret; // apiSecret is actually the ClientSecret
+
+        // Build URL with query parameters
+        const url = new URL("https://smsc.hubtel.com/v1/messages/send");
+        url.searchParams.set("clientid", clientId);
+        url.searchParams.set("clientsecret", clientSecret);
+        url.searchParams.set("from", senderId);
+        url.searchParams.set("to", phone);
+        url.searchParams.set("content", data.message);
+
+        console.log("🔐 Hubtel URL Authentication:", {
+          clientId: clientId ? "***" : "MISSING",
+          clientSecret: clientSecret ? "***" : "MISSING",
+          senderId,
+          phone,
+          messageLength: data.message.length,
+          url: url
+            .toString()
+            .replace(
+              /clientid=([^&]+)&clientsecret=([^&]+)/,
+              "clientid=***&clientsecret=***"
+            ),
+        });
+
+        const response = await fetch(url.toString(), {
+          method: "GET", // Hubtel URL auth uses GET requests
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Basic ${auth}`,
           },
-          body: JSON.stringify({
-            from: senderId,
-            to: phone,
-            content: data.message,
-          }),
-        })
-        const result = await response.json()
+        });
+        const result = await response.json();
+        console.log("📤 Hubtel response:", result);
 
         // Hubtel returns status: 0 for success, or other values for failure
         if (result.status === 0 || (result.data && result.data.status === 0)) {
-          return { success: true, message: "SMS sent via Hubtel" }
+          return {
+            success: true,
+            message: "SMS sent via Hubtel",
+            messageId: result.messageId || result.data?.messageId,
+          };
         } else {
           return {
             success: false,
             error:
               result.statusDescription ||
               result.message ||
-              `Hubtel send failed with status: ${result.status}`,
-          }
+              result.error ||
+              "Hubtel send failed",
+          };
         }
-      }
-
-      // Simulate SMS sending for testing
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      console.log(
-        `\n===== CUSTOMER SMS NOTIFICATION =====\nTo: ${phone}\nMessage: ${data.message}\nType: ${data.type}\nTimestamp: ${new Date().toISOString()}\n============================\n`
-      )
-      return {
-        success: true,
-        message: "Customer SMS notification sent successfully (simulated)",
+      } else {
+        return {
+          success: false,
+          error: `Unsupported SMS provider: ${provider}`,
+        };
       }
     } catch (error) {
-      console.error("Customer SMS notification error:", error)
+      console.error("❌ Error sending SMS notification:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "SMS send failed",
-      }
+        error: error instanceof Error ? error.message : "Unknown error",
+      };
     }
   }
 
@@ -324,9 +423,11 @@ export class CustomerNotificationService {
           entity_type,
           metadata
         ) VALUES (
-          ${success ? 'INFO' : 'ERROR'},
+          ${success ? "INFO" : "ERROR"},
           'CUSTOMER_NOTIFICATION',
-          ${`Customer notification ${success ? 'sent' : 'failed'}: ${data.type}`},
+          ${`Customer notification ${success ? "sent" : "failed"}: ${
+            data.type
+          }`},
           ${JSON.stringify(data)},
           ${data.transactionId || null},
           'customer_notification',
@@ -337,9 +438,9 @@ export class CustomerNotificationService {
             success,
           })}
         )
-      `
+      `;
     } catch (error) {
-      console.error("Error logging customer notification:", error)
+      console.error("Error logging customer notification:", error);
     }
   }
 }
